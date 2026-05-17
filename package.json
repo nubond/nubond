@@ -12,7 +12,6 @@
     "url": "git+https://github.com/nubond/nubond.git"
   },
   "license": "MIT",
-  "version": "1.0.4",
   "main": "src/index.js",
   "types": "src/index.d.ts",
   "scripts": {
