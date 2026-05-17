@@ -1,0 +1,33 @@
+{
+  "name": "nubond",
+  "description": "Declarative TypeScript framework for building reactive web apps with Web Components, DI, Routing and complete binding system",
+  "author": "Dmytro Tomayly",
+  "keywords": [
+    "typescript", "web-components", "shadow-dom", "framework", "spa", "reactive", "data-binding", "dependency-injection", 
+    "routing", "change-detection", "declarative", "ui-framework"
+  ],
+  "homepage": "https://github.com/nubond/nubond",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nubond/nubond.git"
+  },
+  "license": "MIT",
+  "version": "1.0.4",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "scripts": {
+    "start": "tsc -w",
+    "build": "tsc",
+    
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "ts-jest": "^29.4.9",
+    "tslib": "^2.8.1"
+  }
+}
