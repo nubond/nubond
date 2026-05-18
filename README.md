@@ -13,6 +13,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/nubond"><img alt="npm" src="https://img.shields.io/npm/v/nubond.svg"></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/npm/l/nubond.svg"></a>
+  <img alt="coverage" src="https://img.shields.io/badge/coverage-96%25-brightgreen.svg">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white">
   <img alt="web components" src="https://img.shields.io/badge/Web%20Components-Shadow%20DOM-blue">
   <img alt="Made in Ukraine" src="https://img.shields.io/badge/Made_in-Ukraine-FFD800.svg?labelColor=0056B9">
@@ -147,9 +148,9 @@ nuBond ships alongside a set of satellite packages:
 
 | Package | Purpose |
 |---|---|
-| **[`create-nubond`]()** | Project scaffolder — `npm create nubond`. Includes `blank`, `native`, and `showcase` templates. |
-| **[`posthtml-value-interpolation`]()** | Parcel/PostHTML plugin enabling `{{ expression }}` text interpolation in templates. |
-| **[`nuBond Language Service`]()** | VS Code extension: hover, completion, go-to-definition, rename, references, diagnostics, CodeLens, and a TypeScript plugin for cross-file template ↔ class navigation. |
+| **[`create-nubond`](https://www.npmjs.com/package/nubond)** | Project scaffolder — `npm create nubond`. Includes `blank`, `native`, and `showcase` templates. |
+| **[`posthtml-value-interpolation`](https://www.npmjs.com/package/@nubond/posthtml-value-interpolation)** | Parcel/PostHTML plugin enabling `{{ expression }}` text interpolation in templates. |
+| **[`nuBond Language Service`](https://marketplace.visualstudio.com/items?itemName=nuBond.nubond-language-service)** | VS Code extension: hover, completion, go-to-definition, rename, references, diagnostics, CodeLens, and a TypeScript plugin for cross-file template ↔ class navigation. |
 
 ## License
 

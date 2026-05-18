@@ -1,10 +1,12 @@
 {
   "name": "nubond",
-  "description": "Declarative TypeScript framework for building reactive web apps with Web Components, DI, Routing and complete binding system",
+  "description": "A declarative TypeScript progressive framework with Web Components, Shadow DOM, and an attribute-driven binding system — featuring dependency injection, routing, automatic change detection, aspects, transformers, and content projection.",
   "author": "Dmytro Tomayly",
   "keywords": [
-    "typescript", "web-components", "shadow-dom", "framework", "spa", "reactive", "data-binding", "dependency-injection", 
-    "routing", "change-detection", "declarative", "ui-framework"
+    "typescript", "web-components", "custom-elements", "shadow-dom", "framework", "progressive", "spa", "pwa",
+    "reactive", "declarative", "ui-framework", "data-binding", "attribute-binding", "decorators",
+    "dependency-injection", "routing", "change-detection", "aspects", "transformers", "content-projection",
+    "adopted-styles", "lightweight", "zero-dependencies"
   ],
   "homepage": "https://github.com/nubond/nubond",
   "repository": {
