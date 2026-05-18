@@ -148,9 +148,9 @@ nuBond ships alongside a set of satellite packages:
 
 | Package | Purpose |
 |---|---|
-| **[`create-nubond`](https://www.npmjs.com/package/nubond)** | Project scaffolder — `npm create nubond`. Includes `blank`, `native`, and `showcase` templates. |
-| **[`posthtml-value-interpolation`](https://www.npmjs.com/package/@nubond/posthtml-value-interpolation)** | Parcel/PostHTML plugin enabling `{{ expression }}` text interpolation in templates. |
-| **[`nuBond Language Service`](https://marketplace.visualstudio.com/items?itemName=nuBond.nubond-language-service)** | VS Code extension: hover, completion, go-to-definition, rename, references, diagnostics, CodeLens, and a TypeScript plugin for cross-file template ↔ class navigation. |
+| **[`create-nubond`](https://github.com/nubond/create-nubond)** | Project scaffolder — `npm create nubond`. Includes `blank`, `native`, and `showcase` templates. |
+| **[`posthtml-value-interpolation`](https://github.com/nubond/posthtml-value-interpolation)** | Parcel/PostHTML plugin enabling `{{ expression }}` text interpolation in templates. |
+| **[`nuBond Language Service`](https://github.com/nubond/vscode-extension)** | VS Code extension: hover, completion, go-to-definition, rename, references, diagnostics, CodeLens, and a TypeScript plugin for cross-file template ↔ class navigation. |
 
 ## License
 
