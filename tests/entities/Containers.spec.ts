@@ -95,7 +95,7 @@ describe('Containers', () => {
         class MyCtx implements IContext {}
 
         containers.add('async-binder', MyCtx as any, [],
-            'http://localhost/template.html', mockBinderCreator, () => undefined);
+            '/template.html', mockBinderCreator, () => undefined);
         expect(containers.isReady('async-binder')).toBe(false);
 
         const result = containers.instantiateBinder('async-binder');
@@ -150,7 +150,7 @@ describe('Containers', () => {
 
             class MyCtx implements IContext {}
             containers.add('remote-c', MyCtx as any, [],
-                'http://localhost/container.html', mockBinderCreator, () => undefined);
+                '/container.html', mockBinderCreator, () => undefined);
             expect(containers.isReady('remote-c')).toBe(false);
 
             const cb = jest.fn();
@@ -173,7 +173,7 @@ describe('Containers', () => {
 
             class MyCtx implements IContext {}
             containers.add('err-c', MyCtx as any, [],
-                'http://localhost/missing.html', mockBinderCreator, () => undefined);
+                '/missing.html', mockBinderCreator, () => undefined);
 
             const cb = jest.fn();
             containers.tryPrepare('err-c', cb);
@@ -193,7 +193,7 @@ describe('Containers', () => {
 
             class MyCtx implements IContext {}
             containers.add('empty-c', MyCtx as any, [],
-                'http://localhost/empty.html', mockBinderCreator, () => undefined);
+                '/empty.html', mockBinderCreator, () => undefined);
 
             const cb = jest.fn();
             containers.tryPrepare('empty-c', cb);
@@ -273,7 +273,7 @@ describe('Containers', () => {
 
             class MyCtx implements IContext {}
             containers.add('max-c', MyCtx as any, [],
-                'http://localhost/fail.html', mockBinderCreator, () => undefined);
+                '/fail.html', mockBinderCreator, () => undefined);
 
             for (let i = 0; i < 4; i++) {
                 const cb = jest.fn();
@@ -296,7 +296,7 @@ describe('Containers', () => {
 
             class MyCtx implements IContext {}
             containers.add('queued-c', MyCtx as any, [],
-                'http://localhost/queued.html', mockBinderCreator, () => undefined);
+                '/queued.html', mockBinderCreator, () => undefined);
 
             const cb1 = jest.fn();
             const cb2 = jest.fn();
@@ -318,7 +318,7 @@ describe('Containers', () => {
 
             class MyCtx implements IContext {}
             containers.add('iso-c', MyCtx as any, [],
-                'http://localhost/iso.html', mockBinderCreator, () => undefined);
+                '/iso.html', mockBinderCreator, () => undefined);
 
             const cb1 = jest.fn(() => { throw new Error('cb1 failed'); });
             const cb2 = jest.fn();
@@ -352,7 +352,7 @@ describe('Containers', () => {
         it('should log error for instantiateContext when not ready', () => {
             class MyCtx implements IContext {}
             containers.add('not-ready-ctx', MyCtx as any, [],
-                'http://localhost/template.html', mockBinderCreator, () => undefined);
+                '/template.html', mockBinderCreator, () => undefined);
 
             const result = containers.instantiateContext('not-ready-ctx');
             expect(result).toBeUndefined();

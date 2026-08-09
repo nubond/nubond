@@ -151,7 +151,9 @@ export class NElement extends NTreeElement implements INElement {
     public readonly template: Template;
 
     public get isSubTreeHandled(): boolean {
-        return this.container.hasNExpression || this.template.hasNExpression;
+        return this.template.hasNExpression ||
+               this.container.hasNExpression || this.component.hasNExpression || 
+               this.value.hasNExpression || this.html.hasNExpression;
     }
 
     constructor (contextBinder: ContextBinder, parent: INElement | INTreeElement | null, nativeElement: Element, cloneOf: INElement | undefined,
@@ -175,7 +177,8 @@ export class NElement extends NTreeElement implements INElement {
 
         this.events = new Events(this.nativeElement, this.attributes,
                                  () => this.getManipulationProxy(), 
-                                 () => contextBinder.detectChanges());
+                                 () => contextBinder.detectChanges(),
+                                 () => contextBinder.getShowDebugInfo());
         this.exec = new Exec(this.attributes);
 
         this.if = new If(this.attributes, this.classes);
@@ -215,9 +218,6 @@ export class NElement extends NTreeElement implements INElement {
                                                 ? nativeElement.cloneNode(true) 
                                                 : cloneOf!.nativeElementForClone;
         }
-
-        //validate
-        this.validate();
         
         //regular sequences
         //bind sequence
@@ -297,6 +297,9 @@ export class NElement extends NTreeElement implements INElement {
 
         //should be last due to usage by other handlers
         this._commitSequenceInvisibleParentHandled.push(this.classes);
+
+        //validate
+        this.validate();
     }
 
     public detectChanges(context: object, executionParams?: ExecutionParams): void {
@@ -379,16 +382,16 @@ export class NElement extends NTreeElement implements INElement {
 
     private clone(): void {
         if (!this._removed) {
-            if (this._parent !== null) {
+            if ((this._parent !== null) && (this.nativeElement.parentElement !== null)) {
                 this._clone(<INElement>this._parent, this);
             } else {
-                Console.error(this.nativeElement, 'attempt to clone without parent');
+                Console.error(this.nativeElement, 'attempt to clone orphaned element');
             }
         }
     }
 
     private validate(): void {
-        //element content conflicts
+        //handler content conflicts
         const contentChangers = [
             { handler: this.value, name: 'value' }, 
             { handler: this.html, name: 'html' },
@@ -423,6 +426,21 @@ export class NElement extends NTreeElement implements INElement {
             this.removeFromProcessingSequences(functionChangers.map(el => el.handler));
             Console.error(this.nativeElement, `element can't have ${functionChangers.map(el => `${Constants.DEFAULT_PREFIX}-${el.name}`).join(' and ')} bindings at the same time.`);
         }
+
+        //child elements changers conflict
+        if (this._contextBinder.getShowDebugInfo()) {
+            const childElementsChangers = [
+                { handler: this.value, name: 'value' }, 
+                { handler: this.html, name: 'value' },
+            ].filter(el => el.handler.hasNExpression);
+            if ((childElementsChangers.length > 0) && 
+                 Array.from(this.nativeElement.childNodes).some(el => (el.nodeType == Node.ELEMENT_NODE) || 
+                                                                      ((el.nodeType == Node.TEXT_NODE) &&
+                                                                       Helpers.isNotEmptyString(el.textContent) &&
+                                                                       (el.textContent!.trim().length > 0)))) {
+                Console.warn(this.nativeElement, `element original children will replaced by ${Constants.DEFAULT_PREFIX}-${childElementsChangers[0].name}}`);
+            }
+        }
     }
 
     private removeFromProcessingSequences(handlers: Array<IBindable | ICommittable | IDisposable>): void {
@@ -432,9 +450,19 @@ export class NElement extends NTreeElement implements INElement {
                 this._bindSequence.splice(bindSequenceIndex, 1);
             }
 
+            const bindSequenceInvisibleParentHandledIndex = this._bindSequenceInvisibleParentHandled.indexOf(<IBindable>handler);
+            if (bindSequenceInvisibleParentHandledIndex >= 0) {
+                this._bindSequenceInvisibleParentHandled.splice(bindSequenceInvisibleParentHandledIndex, 1);
+            }
+
             const commitSequenceIndex = this._commitSequence.indexOf(<ICommittable>handler);
             if (commitSequenceIndex >= 0) {
                 this._commitSequence.splice(commitSequenceIndex, 1);
+            }
+
+            const commitSequenceInvisibleParentHandledIndex = this._commitSequenceInvisibleParentHandled.indexOf(<ICommittable>handler);
+            if (commitSequenceInvisibleParentHandledIndex >= 0) {
+                this._commitSequenceInvisibleParentHandled.splice(commitSequenceInvisibleParentHandledIndex, 1);
             }
 
             const disposeSequenceIndex = this._disposeSequence.indexOf(<IDisposable>handler);
@@ -453,9 +481,7 @@ export class NElement extends NTreeElement implements INElement {
     }
     private getSubscriptionsProxy(): ElementSubscriptions {
         if (Helpers.isUndefined(this._elementSubscriptions)) {
-            this._elementSubscriptions = new ElementSubscriptions(eventName => this.events.isSubscribed(eventName),
-                                                                  eventName => this.events.isUnSubscribed(eventName),
-                                                                  (eventName, callBack, optionsOrDebounce, debounce) => Helpers.isNumber(optionsOrDebounce) && !isNaN(<number>optionsOrDebounce)
+            this._elementSubscriptions = new ElementSubscriptions((eventName, callBack, optionsOrDebounce, debounce) => Helpers.isNumber(optionsOrDebounce) && !isNaN(<number>optionsOrDebounce)
                                                                                                                                     ? this.events.subscribe(eventName, callBack, undefined, <number>optionsOrDebounce)
                                                                                                                                     : this.events.subscribe(eventName, callBack, <boolean | AddEventListenerOptions | undefined>optionsOrDebounce, debounce));
         }

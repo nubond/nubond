@@ -120,8 +120,9 @@ describe('Case handler', () => {
         caseHandler.bind(undefined, () => 'home');
         const result = caseHandler.commit();
 
-        // isDirty was true (isVisible setter), but previousIsVisible === isVisible
-        expect(result).toBe(true); // was dirty
+        // isDirty was set (isVisible setter), but previousIsVisible === isVisible,
+        // so no class change is flushed and commit reports no change.
+        expect(result).toBe(false);
     });
 
     it('should dispose without error when no removeFromParentSwitch', () => {

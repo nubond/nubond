@@ -48,7 +48,7 @@ export abstract class BaseTemplateEntityMetaData {
                     } else {
                         errorCallBack(null);
                     }
-                });
+                }).catch(error => errorCallBack(error));
             } else {
                 errorCallBack(null);
             }
@@ -60,6 +60,20 @@ export abstract class BaseTemplateEntityMetaData {
     public tryPrepare(readyCallBack: (asyncCallBack: boolean) => void): boolean {
         readyCallBack(false);
         return true;
+    }
+
+    public isUrlLikeAndNotContent(value: string): boolean {
+        if (Helpers.isNotEmptyString(value)) {
+            const trimmedValue = value.trim();
+            if (trimmedValue.length > 0) {
+                return trimmedValue.startsWith('/') && (trimmedValue.indexOf(' ') < 0) &&
+                       (trimmedValue.indexOf('{') < 0) && (trimmedValue.indexOf('<') < 0);
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
     }
 }
 
@@ -89,7 +103,7 @@ export class TemplateEntityMetaData extends BaseTemplateEntityMetaData {
             this.htmlTemplateProvider = <ITemplateProvider>htmlTemplateOrPathOrProvider;
         } else {
             const htmlTemplateOrPath = <string>htmlTemplateOrPathOrProvider;
-            if (URL.canParse(htmlTemplateOrPath)) {
+            if (this.isUrlLikeAndNotContent(htmlTemplateOrPath)) {
                 this.htmlTemplatePath = htmlTemplateOrPath;
             } else {
                 this.setHtmlTemplate(htmlTemplateOrPath);

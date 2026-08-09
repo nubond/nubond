@@ -67,7 +67,7 @@ export class If extends Base implements IHandler<IExpressionDetails>, IVisible {
     }
     
     public commit(): boolean {
-        const wasDirty = this._isDirty;
+        let wasDirty = false;
 
         if (this._isDirty) {
             if (this._isFirstCommit) {
@@ -83,6 +83,7 @@ export class If extends Base implements IHandler<IExpressionDetails>, IVisible {
                 }
 
                 this._previousIsVisible = this._isVisible;
+                wasDirty = true;
             }
 
             this._isDirty = false;

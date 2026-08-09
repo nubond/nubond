@@ -217,4 +217,59 @@ describe('Styles handler', () => {
             expect(handler.has('color')).toBe(false);
         });
     });
+
+    describe('literal ";" handling and escaping', () => {
+        let errorSpy: jest.SpyInstance;
+
+        beforeEach(() => {
+            errorSpy = jest.spyOn(console, 'error').mockImplementation();
+        });
+
+        afterEach(() => {
+            errorSpy.mockRestore();
+        });
+
+        it('should keep an escaped ";" inside a value as a single style entry', () => {
+            // `content: '\;'` must not split on the inner semicolon. The backslash is the
+            // escape marker; it is stripped, leaving the literal ";" in the value.
+            const el = createElementWithAttr("content: '\\;'");
+            const attrs = new Attributes(el);
+            const handler = new Styles(el, attrs);
+
+            expect(handler.hasNExpression).toBe(true);
+            expect(handler.nExpression!.size).toBe(1);
+            expect(handler.nExpression!.get('content')!.expression).toBe("';'");
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should split on a real ";" while preserving an escaped ";" in an earlier value', () => {
+            const el = createElementWithAttr("content: '\\;'; color: ctx.c");
+            const attrs = new Attributes(el);
+            const handler = new Styles(el, attrs);
+
+            expect(handler.nExpression!.size).toBe(2);
+            expect(handler.nExpression!.get('content')!.expression).toBe("';'");
+            expect(handler.nExpression!.has('color')).toBe(true);
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should not register an expression for an empty nb-style value', () => {
+            // An empty/whitespace nb-style is rejected up-front by the Attributes layer
+            // ("incorrect binding found ..."), so the value never reaches the Styles
+            // tokenizer and no style expression is produced.
+            const el = createElementWithAttr('');
+            const attrs = new Attributes(el);
+            const handler = new Styles(el, attrs);
+
+            expect(handler.hasNExpression).toBe(false);
+        });
+
+        it('should not register an expression for a whitespace-only nb-style value', () => {
+            const el = createElementWithAttr('   ');
+            const attrs = new Attributes(el);
+            const handler = new Styles(el, attrs);
+
+            expect(handler.hasNExpression).toBe(false);
+        });
+    });
 });

@@ -27,7 +27,7 @@ nuBond is a lightweight UI framework for building reactive progressive web appli
 
 ## Why nuBond?
 - **Simple** — 15 minutes and you know all the basics, 15 minutes more and you know everything
-- **No dependencies** — the framework has no release dependencies and only one dev dependency — `tslib`
+- **No dependencies** — the framework has no runtime dependencies; `tslib` is the only build dependency (everything else is test tooling)
 - **Lightweight** — as lightweight as possible without compromising functionality
 - **Fast** — blazingly fast performance at any application size
 - **Feature rich** — powerful and feature rich, no compromises and no limitations

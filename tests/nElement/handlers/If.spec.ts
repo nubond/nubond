@@ -116,9 +116,11 @@ describe('If handler', () => {
         const { el, attrs, classes } = createElements('ctx.show');
         const handler = new If(attrs, classes);
 
+        const markAsReadySpy = jest.spyOn(attrs, 'markAsReady');
+
         handler.bind(undefined, () => true);
-        const result = handler.commit();
-        expect(result).toBe(true);
+        handler.commit();
+        expect(markAsReadySpy).toHaveBeenCalledWith(Constants.IF_HANDLER_ATTRIBUTE_NAME);
     });
 
     it('should pass through executionParams unchanged when no expression', () => {

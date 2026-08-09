@@ -125,9 +125,14 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
                         const propertyName = key.replace(handlerName + Constants.META_VALUE_SEPARATOR, '');
                         if (propertyName.length > 0) {
                             if (!Helpers.isUndefined(value)) {
-                                nInExpression.set(Helpers.fromKebabToCamelCase(propertyName),
-                                                  new ContextInExpressionDetails(new ExpressionDetails(value!), 
-                                                                                 handlerName == Constants.IN_REF_HANDLER_ATTRIBUTE_NAME));  
+                                const normalizedHandlerName = Helpers.fromKebabToCamelCase(propertyName);
+                                if (!nInExpression.has(normalizedHandlerName)) {
+                                    nInExpression.set(normalizedHandlerName,
+                                                      new ContextInExpressionDetails(new ExpressionDetails(value!), 
+                                                                                     handlerName == Constants.IN_REF_HANDLER_ATTRIBUTE_NAME));  
+                                } else {
+                                    Console.error(nativeElement, `multiple handlers for one in (${normalizedHandlerName}) are not supported`);
+                                }
                             } else {
                                 Console.error(nativeElement, `${handlerName} handler can't be empty`);
                             }  
@@ -170,7 +175,7 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
     }
 
     public commit(): boolean {
-        const wasDirty = this.isDirty;
+        let wasDirty = false;
 
         if (this._isEntityDataDirty) {
             this._currentEntityData = this.onCommit(this._currentEntityData);
@@ -198,10 +203,12 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
                         }
 
                         this._previousEntityData = this._currentEntityData;
+                        wasDirty = true;
                     }
                 }
             } else {
                 this.disposeProtected(true);
+                wasDirty = true;
             }
             
             this._isEntityDataDirty = false;
@@ -218,6 +225,7 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
                 }
 
                 this._previousIsVisible = this._isVisible;
+                wasDirty = true;
             }
 
             this._isVisibleDirty = false;
@@ -246,9 +254,12 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
 
                 this.contextBinder!.inputsRefreshIsDone();
                 this.contextBinder!.detectChanges();
+
+                wasDirty = true;
             } else {
                 if (!Helpers.isUndefined(this.contextInputsWithChangedValue)) {
                     this.contextInputsWithChangedValue!.clear();
+                    wasDirty = true;
                 }
             }
 

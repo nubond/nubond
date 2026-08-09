@@ -147,7 +147,7 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
     }
     
     public commit(): boolean {
-        const wasDirty = this._isDirty;
+        let wasDirty = false;
 
         if (this._isDirty) {
             if (this._isFirstCommit) {
@@ -163,6 +163,7 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
                 }
 
                 this._previousIsVisible = this._isVisible;
+                wasDirty = true;
             }
 
             this._isDirty = false;
@@ -190,7 +191,7 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
                 if (Helpers.isNumber(rawData)) {
                     if (rawData > 0) {
                         dataType = 'number';
-                        totalCount = rawData;
+                        totalCount = Math.floor(rawData);
                     }
                 } else {
                     if (this._showDebugInfo!()) {

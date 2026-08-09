@@ -70,7 +70,7 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
             this.styleTemplateProvider = <ITemplateProvider>styleTemplateOrPathOrProvider;
         } else {
             const stylesTemplateOrPath = <string>styleTemplateOrPathOrProvider;
-            if (URL.canParse(stylesTemplateOrPath)) {
+            if (this.isUrlLikeAndNotContent(stylesTemplateOrPath)) {
                 this.styleTemplatePath = stylesTemplateOrPath;
             } else {
                 this.setStyleTemplate(stylesTemplateOrPath);
@@ -100,6 +100,7 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
             if (!this._fetchInProgress) {
                 this._fetchInProgress = true;
                 this._prepareAttempts++;
+
                 const triggerReadyCallBacks = () => {
                     //to unwrap error if any
                     setTimeout(() => {
@@ -116,68 +117,79 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
                     });
                 };
 
-                if (!this.isHTMLTemplateReady) {
-                    this.fetchData(this.htmlTemplatePath, this.htmlTemplateProvider, template => {
-                        this.setHtmlTemplate(template); 
-
-                        if (this.isReady) {
-                            triggerReadyCallBacks();
-                        }
-                    }, error => {
-                        let errorMessage = `Invalid component '${this.name}': `;
-
-                        if (Helpers.isNotEmptyString(error)) {
-                            errorMessage += `html response does not indicate success: ${error}.`;
-                        } else if (error === null) {
-                            errorMessage += 'provided html template data is not a string or this string is empty.';
-                        } else {
-                            errorMessage += 'nor html template, nor html template url, nor html template provider has been found.';
-                        }
-
-                        Console.error(errorMessage);
-                        
-                        if (this._getShowDebugInfo()) {
-                            this.setHtmlTemplate(errorMessage);
-                        }
-                        
-                        if (this.isReady) {
-                            triggerReadyCallBacks();
-                        }
-                    });
-                } else if (this.isReady) {
+                if (this.isHTMLTemplateReady && this.isStyleTemplateReady) {
                     triggerReadyCallBacks();
-                }
+                } else {
+                    let htmlFetchIsCompleted = this.isHTMLTemplateReady;
+                    let stylesFetchIsCompleted = this.isStyleTemplateReady;
 
-                if (!this.isStyleTemplateReady) {
-                    this.fetchData(this.styleTemplatePath, this.styleTemplateProvider, template => {
-                        this.setStyleTemplate(template!);
+                    if (!this.isHTMLTemplateReady) {
+                        this.fetchData(this.htmlTemplatePath, this.htmlTemplateProvider, template => {
+                            htmlFetchIsCompleted = true;
 
-                        if (this.isReady) {
-                            triggerReadyCallBacks();
-                        }
-                    }, error => {
-                        let errorMessage = `Invalid component ${this.name}: `;
+                            this.setHtmlTemplate(template); 
 
-                        if (Helpers.isNotEmptyString(error)) {
-                            errorMessage += `style response does not indicate success: ${error}.`;
-                        } else if (error === null) {
-                            errorMessage += 'provided style template data is not a string or this string is empty.';
-                        } else {
-                            errorMessage += 'nor style template, nor style template url, nor style template provider has been found.';
-                        }
+                            if (stylesFetchIsCompleted) {
+                                triggerReadyCallBacks();
+                            }
+                        }, error => {
+                            htmlFetchIsCompleted = true;
 
-                        Console.error(errorMessage);
-                        
-                        if (this._getShowDebugInfo()) {
-                            this.setStyleTemplate(errorMessage);
-                        }
+                            let errorMessage = `Invalid component '${this.name}': `;
 
-                        if (this.isReady) {
-                            triggerReadyCallBacks();
-                        }
-                    });
-                } else if (this.isReady) {
-                    triggerReadyCallBacks();
+                            if (Helpers.isNotEmptyString(error)) {
+                                errorMessage += `html response does not indicate success: ${error}.`;
+                            } else if (error === null) {
+                                errorMessage += 'provided html template data is not a string or this string is empty.';
+                            } else {
+                                errorMessage += 'nor html template, nor html template url, nor html template provider has been found.';
+                            }
+
+                            Console.error(errorMessage);
+                            
+                            if (this._getShowDebugInfo()) {
+                                this.setHtmlTemplate(errorMessage);
+                            }
+                            
+                            if (stylesFetchIsCompleted) {
+                                triggerReadyCallBacks();
+                            }
+                        });
+                    }
+
+                    if (!this.isStyleTemplateReady) {
+                        this.fetchData(this.styleTemplatePath, this.styleTemplateProvider, template => {
+                            stylesFetchIsCompleted = true;
+
+                            this.setStyleTemplate(template!);
+
+                            if (htmlFetchIsCompleted) {
+                                triggerReadyCallBacks();
+                            }
+                        }, error => {
+                            stylesFetchIsCompleted = true;
+
+                            let errorMessage = `Invalid component ${this.name}: `;
+
+                            if (Helpers.isNotEmptyString(error)) {
+                                errorMessage += `style response does not indicate success: ${error}.`;
+                            } else if (error === null) {
+                                errorMessage += 'provided style template data is not a string or this string is empty.';
+                            } else {
+                                errorMessage += 'nor style template, nor style template url, nor style template provider has been found.';
+                            }
+
+                            Console.error(errorMessage);
+                            
+                            if (this._getShowDebugInfo()) {
+                                this.setStyleTemplate(errorMessage);
+                            }
+
+                            if (htmlFetchIsCompleted) {
+                                triggerReadyCallBacks();
+                            }
+                        });
+                    }
                 }
             }
         } else {
@@ -233,27 +245,24 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
             return;
         }
 
+        const adoptedStyles = this._adoptedStyles;
+        const componentShadowRootConfig = shadowRootConfigCreator();
         const componentMetaData = new FullEntityWithComponentContextMetaData(lowerCasedName, context,
                                                                              binderCreator,
                                                                              stylesTemplateOrPathOrProvider, htmlTemplateOrPathOrProvider,
                                                                              htmlSanitizerCreator, styleSanitizerCreator,
                                                                              this._getShowDebugInfo);
-        this.data.set(lowerCasedName, componentMetaData);
-        this._injectables.register(context, dependencies);
-
-        const adoptedStyles = this._adoptedStyles;
-        const componentShadowRootConfig = shadowRootConfigCreator();
-
+                                                                             
         try {
             customElements.define(lowerCasedName, class extends (Helpers.isUndefined(elementContext) ? HTMLElement : elementContext!) {
                 constructor() {
                     super();
-
-                    this.setAttribute(Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR + Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, '');
                     
                     Object.defineProperty(this, '$bind', {
                         value: (contextBinder: ContextBinder, context: IComponentContext, hasInputs: boolean = true) => {
                             delete (<any>this).$bind;
+                            
+                            this.setAttribute(Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR + Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, '');
                             
                             componentMetaData.tryPrepare(() => {
                                 const shadowRootConfig: ShadowRootInit = { mode: 'closed' };
@@ -312,6 +321,9 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
                     });
                 }
             });
+
+            this.data.set(lowerCasedName, componentMetaData);
+            this._injectables.register(context, dependencies);
         } catch (ex) {
             Console.error(`Component '${name}' registration error: ${ex}`);
         }

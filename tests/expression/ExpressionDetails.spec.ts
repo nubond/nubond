@@ -141,6 +141,55 @@ describe('ExpressionDetails', () => {
         });
     });
 
+    describe('M-5: @-literal backslash and control-character escaping', () => {
+        // These assert the ROUND-TRIPPED VALUE, not the generated source. Asserting the source text
+        // alone is not enough: an escape chain that escapes control chars before backslashes emits
+        // perfectly valid JS that silently evaluates to the wrong string (a real newline came back as
+        // the two characters '\' + 'n'). Compile the way ExpressionExecutor does and check the value.
+        function valueOf(raw: string): any {
+            return new Function(`return (${new ExpressionDetails(raw).expression});`)();
+        }
+
+        it('should round-trip a windows path with backslashes', () => {
+            expect(valueOf('@C:\\temp\\new')).toBe('C:\\temp\\new');
+        });
+
+        it('should round-trip a trailing backslash', () => {
+            expect(valueOf('@C:\\temp\\')).toBe('C:\\temp\\');
+        });
+
+        it('should round-trip a backslash immediately before a double quote', () => {
+            expect(valueOf('@back\\"slash')).toBe('back\\"slash');
+        });
+
+        it('should round-trip an embedded newline as a real newline', () => {
+            const value = valueOf('@line1\nline2');
+
+            expect(value).toBe('line1\nline2');
+            expect(value).not.toContain('\\');
+        });
+
+        it('should round-trip an embedded carriage return as a real CR', () => {
+            expect(valueOf('@line1\rline2')).toBe('line1\rline2');
+        });
+
+        it('should round-trip an embedded tab as a real tab', () => {
+            expect(valueOf('@a\tb')).toBe('a\tb');
+        });
+
+        it('should round-trip a backslash sitting next to a real newline', () => {
+            // the case that pins the escape ORDER: backslashes must be escaped before the
+            // control characters, otherwise the backslash step re-escapes what they emitted
+            expect(valueOf('@a\\\nb')).toBe('a\\\nb');
+        });
+
+        it('should compile cleanly for every escaped form', () => {
+            for (const raw of ['@C:\\temp\\', '@a\tb', '@line1\nline2', '@say "hi"', '@a\\\nb']) {
+                expect(() => new Function(`return (${new ExpressionDetails(raw).expression});`)).not.toThrow();
+            }
+        });
+    });
+
     describe('M-8: strict numeric detection for @-literal', () => {
         // isNaN(+'  ')  is false in plain JS (coerces to 0).
         // isNaN(+'1e10') is false but 1e10 is far from the user-typed intent.

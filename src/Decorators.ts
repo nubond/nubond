@@ -35,13 +35,13 @@ const GLOBAL_CONFIG_TEMPLATE: IGlobalConfig = {
 }
 
 const CONTEXT_CONFIG_TEMPLATE: IContextConfig = {
-    htmlSanitizer: html => html,
+    htmlSanitizer: (html: string) => html,
     pessimisticChangeDetectionStrategy: false,
 };
 
 const COMPONENT_CONTEXT_CONFIG_TEMPLATE: IComponentContextConfig = {
-    htmlSanitizer: html => html,
-    styleSanitizer: style => style,
+    htmlSanitizer: (html: string) => html,
+    styleSanitizer: (style: string) => style,
     pessimisticChangeDetectionStrategy: false,
     shadowRootConfig: {
         delegatesFocus: false,
@@ -60,17 +60,15 @@ const TEMPLATE_PROVIDER_TEMPLATE: ITemplateProvider = {
  * @param appBootstrapMetaData bootstrap metadata:
  * * string: if it starts with '/' - the app route template; otherwise the app root element selector
  * * Element: app root element
- * * IContextConfig: root context (decorated class) configuration
  * * IGlobalConfig: global configuration
  * * Array<string>: $Template or $AdoptedStyle registration
  * * IEntityDependencyConstructor: dependencies (containers, components, aspects, transformers or injectables) used globally or in the application root
  */
-export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: Array<string | Element | IContextConfig | IGlobalConfig | 
+export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: Array<string | Element | IGlobalConfig | 
                                                                                 Array<string> | IEntityDependencyConstructor>): (target: T) => T {
     return (target: T) => {
         let selectorOrElement: string | Element | undefined;
         let routeConfig: string | undefined;
-        let contextConfig: IContextConfig | undefined;
         let globalConfig: IGlobalConfig | undefined;
 
         for (const el of appBootstrapMetaData) {
@@ -110,12 +108,6 @@ export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: 
                     } else {
                         throw new Error(`${Constants.DISPLAY_NAME}: wrong app initialization meta data detected: multiple app global configs found.`);
                     }
-                } else if (isOfType(<object>el, CONTEXT_CONFIG_TEMPLATE)) {
-                    if (Helpers.isUndefined(contextConfig)) {
-                        contextConfig = <IContextConfig>el;
-                    } else {
-                        throw new Error(`${Constants.DISPLAY_NAME}: wrong app initialization meta data detected: multiple app context configs found.`);
-                    }
                 }
             }
         }
@@ -125,7 +117,7 @@ export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: 
         }
 
         Environment.setupRouter(routeConfig);
-        Environment.addApp(selectorOrElement, target, getConstructorInjections(target), contextConfig);
+        Environment.addApp(selectorOrElement, target, getConstructorInjections(target));
         
         return target;
     };
@@ -477,6 +469,7 @@ export function Injectable<T extends IInjectableConstructor>(singleton: boolean 
 /**
  * Mark a property as a change-detector property.
  * Only a simple, configurable property can be marked as a detector.
+ * Should be used only within a class that serves as a context and is intentionally designed without inheritance support.
  * Changes to the property value trigger change detection.
  */
 export function Detector<T extends IContext | IComponentContext>(): (targetPrototype: T, propName: string) => void {
@@ -488,6 +481,7 @@ export function Detector<T extends IContext | IComponentContext>(): (targetProto
 /**
  * Mark a property as an eventer property.
  * Only a simple, configurable property can be marked as an eventer.
+ * Should be used only within a class that serves as a context and is intentionally designed without inheritance support.
  * Changes to the property value dispatch a CustomEvent carrying the property value as `data`.
  *
  * @param name optional event name

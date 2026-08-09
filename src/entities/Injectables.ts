@@ -72,23 +72,35 @@ export class Injectables {
         };
     }
 
-    private resolveInternal(injectableMetaData: InjectableMetaData, contextDependantInjections?: Array<object>): IInjectable | IContext | IComponentContext| IAspectContext | ITransformerContext | undefined {
+    private resolveInternal(injectableMetaData: InjectableMetaData, contextDependantInjections: Array<object> | undefined,
+                            currentlyBeingResolved?: Set<IInjectableConstructor | IContextConstructor | IComponentContextConstructor | IAspectContextConstructor> | undefined): IInjectable | IContext | IComponentContext| IAspectContext | ITransformerContext | undefined {
         let instance: IInjectable | IContext | IComponentContext| IAspectContext | ITransformerContext | undefined = injectableMetaData.instance;
 
         if (Helpers.isUndefined(instance)) {
             const injections: Array<IInjectable | IContext | IComponentContext | IAspectContext | ITransformerContext | undefined> = [];
+            const injectionsCurrentlyBeingResolved = Helpers.isUndefined(currentlyBeingResolved) 
+                                                                ? new Set<IInjectableConstructor | IContextConstructor | IComponentContextConstructor | IAspectContextConstructor>()
+                                                                : currentlyBeingResolved!;
+            injectionsCurrentlyBeingResolved.add(injectableMetaData.injectable);
 
             for (const dependency of injectableMetaData.dependencies) {
                 const dependencyMetaData = this._data.get(dependency);
                 if (!Helpers.isUndefined(dependencyMetaData)) { //regular injection
-                    const resolvedDependency = this.resolveInternal(dependencyMetaData!);
+                    let resolvedDependency: IInjectable | IContext | IComponentContext| IAspectContext | ITransformerContext | undefined = undefined;
 
-                    if (Helpers.isUndefined(resolvedDependency)) {
-                        Console.error(`Injection '${dependency.name}' cannot be resolve.`);
+                    if (!injectionsCurrentlyBeingResolved.has(dependencyMetaData!.injectable)) {
+                        resolvedDependency = this.resolveInternal(dependencyMetaData!, undefined, injectionsCurrentlyBeingResolved);
+
+                        if (Helpers.isUndefined(resolvedDependency)) {
+                            Console.error(`Injection '${dependency.name}' cannot be resolve.`);
+                        }
+                    } else {
+                        Console.error(`Injection '${dependency.name}' cannot be resolve as it is a circular reference: `, 
+                                      [...injectionsCurrentlyBeingResolved.keys(), dependency].map(el => el.name).join('->'));
                     }
 
                     injections.push(resolvedDependency);
-                } else if (Helpers.isArray(contextDependantInjections) && contextDependantInjections!.length > 0) { //context-dependant injection
+                } else if (Helpers.isArray(contextDependantInjections) && (contextDependantInjections!.length > 0)) { //context-dependant injection
                     let contextDependency = contextDependantInjections!.find(el => el instanceof dependency);
 
                     //when custom element has custom defined class and it is requested to be injected
@@ -110,6 +122,8 @@ export class Injectables {
 
                             //TODO: Check typings?
             instance = new (<ObjectConstructor>injectableMetaData.injectable)(...injections);
+
+            injectionsCurrentlyBeingResolved.delete(injectableMetaData.injectable);
 
             if (injectableMetaData.singleton) {
                 injectableMetaData.instance = instance;

@@ -29,7 +29,7 @@
 
 | Decorator | Purpose |
 |-----------|---------|
-| `@AppRoot(...metadata)` | Bootstraps the application. Accepts (in any order) an element selector string or `Element`, a route template string starting with `/`, an `IGlobalConfig`, an `IContextConfig`, `$Template`/`$AdoptedStyle` registration arrays, and any Container/Component/Aspect/Transformer/Injectable dependencies used by the app. |
+| `@AppRoot(...metadata)` | Bootstraps the application. Accepts (in any order) an element selector string or `Element` (defaults to `document.body` when omitted), a route template string starting with `/`, an `IGlobalConfig`, `$Template`/`$AdoptedStyle` registration arrays, and any Container/Component/Aspect/Transformer/Injectable dependencies used by the app. Unlike the soft-failing entity decorators, `@AppRoot` **throws** on conflicting metadata (multiple selectors, route templates, or global configs). |
 | `@Container(templateOrTuple, ...metadata)` | Registers a container — a context-bound HTML template region without Shadow DOM isolation. `templateOrTuple` is either an HTML template / `ITemplateProvider`, or a `[name, templateOrProvider]` tuple. Additional metadata can include `IContextConfig`, `$Template`/`$AdoptedStyle` arrays, and entity dependencies. |
 | `@Component(templateOrTuple, ...metadata)` | Registers a web component with Shadow DOM. `templateOrTuple` is the HTML template (string / `ITemplateProvider`) or a `[name, templateOrProvider]` tuple. Additional metadata can include a style template, a `CustomElementConstructor`, an `IComponentContextConfig`, an `Array<string>` of adopted-style names, and entity dependencies. |
 | `@Aspect(styleOrTuple?, ...metadata)` | Registers an aspect — a reusable, element-level behavior/mixin attached via `nb-aspect`. Optional first argument is a style template (string / `ITemplateProvider`) or a `[name, styleOrProvider]` tuple. Additional metadata can include an `Array<string>` of adopted-style names and a `(style: string) => string` sanitizer. |
@@ -40,8 +40,10 @@
 
 | Decorator | Purpose |
 |-----------|---------|
-| `@Detector()` | Marks a property for automatic change detection — any mutation triggers a change detection cycle. |
-| `@Eventer(eventName?)` | Marks a property as a custom event emitter — changes dispatch a `CustomEvent`. |
+| `@Detector()` | Marks a property for automatic change detection — **assigning** a new value triggers a change detection cycle (gated by deep-equal comparison; in-place mutation of a nested object is not detected). |
+| `@Eventer(eventName?)` | Marks a property as a custom event emitter — assignments dispatch a `CustomEvent` with the value in `event.detail`. The event name defaults to the kebab-cased property name. A non-`undefined` initial value also fires the event once after the first change-detection cycle. |
+
+Both are implemented via `Object.defineProperty` and can only be applied to simple, configurable properties — properties with an existing getter/setter (or non-configurable ones) are rejected with a logged error.
 
 ### Pseudo-Decorators (Function-Based Registration)
 
@@ -49,7 +51,7 @@
 |----------|---------|
 | `$Template(name, html \| provider, sanitizer?)` | Registers a global reusable HTML template by name. |
 | `$AdoptedStyle(name, css \| provider, sanitizer?)` | Registers a global adopted stylesheet by name. |
-| `$Injectable(target, singleton?, ...dependencies)` | Programmatic injectable registration. |
+| `$Injectable(target, singleton?, ...dependencies)` | Programmatic injectable registration. Also accepts an existing object instance — `$Injectable(instance)` registers it as a singleton under its constructor. |
 | `$Config(globalConfig)` | Applies global framework configuration. |
 | `$Route(routeConfig)` | Configures routing programmatically. |
 
@@ -64,7 +66,7 @@ All binding attributes use the `nb-` prefix by default (or `data-nb-` in W3C com
 | Attribute | Description | Example |
 |-----------|-------------|---------|
 | `nb-value` | Binds an expression result to the element's `textContent`. | `<p nb-value="this.name"></p>` |
-| `nb-html` | Binds an expression result to the element's `innerHTML`. Supports sanitization. | `<p nb-html="this.richContent"></p>` |
+| `nb-html` | Binds an expression result to the element's `innerHTML`. Sanitization is **opt-in**: by default the value is written raw (an XSS sink for untrusted content) — register an `htmlSanitizer` in the global config or context config to sanitize. | `<p nb-html="this.richContent"></p>` |
 
 ### CSS Bindings
 
@@ -72,6 +74,8 @@ All binding attributes use the `nb-` prefix by default (or `data-nb-` in W3C com
 |-----------|-------------|---------|
 | `nb-class` | Dynamic class binding. Supports three formats: simple string, array, and conditional object. Entries in array/object form are separated by `;`. | `<p nb-class="{active: this.isActive; hidden: this.isHidden}">` |
 | `nb-style` | Dynamic inline style binding. Multiple properties separated by `;`. | `<p nb-style="opacity: this.fade; color: this.textColor">` |
+
+A literal `;` inside an `nb-class` (array/object form) or `nb-style` entry can be escaped as `\;` — e.g. `nb-style="background: url('a\;b.png')"`.
 
 **`nb-class` Formats:**
 
@@ -99,6 +103,9 @@ Multiple attribute/property bindings can be applied to the same element:
 <input nb-attr:disabled="this.isDisabled" nb-attr:required="this.isRequired" />
 ```
 
+- `nb-prop` names are converted from kebab-case to camelCase: `nb-prop:read-only` → `readOnly`.
+- Guard rails: `nb-attr:class` / `nb-attr:style` and `nb-prop:className` / `nb-prop:classList` / `nb-prop:style` / `nb-prop:textContent` / `nb-prop:innerText` / `nb-prop:innerHTML` are rejected with an error pointing to the dedicated handler (`nb-class`, `nb-style`, `nb-value`, `nb-html`).
+
 ### Conditional Rendering
 
 | Attribute | Description | Example |
@@ -116,6 +123,8 @@ Multiple attribute/property bindings can be applied to the same element:
 </div>
 ```
 
+> **Note:** `nb-if` (and `nb-switch`/`nb-case`/`nb-default`) hide elements by toggling the `nb-hidden` CSS class (`data-nb-hidden` in W3C mode; `display: none !important`) — the element is **not** removed from the DOM.
+
 ### Iteration
 
 | Attribute | Description | Example |
@@ -131,7 +140,9 @@ Multiple attribute/property bindings can be applied to the same element:
 | `index` | Current iteration index (0-based) |
 | `count` | Total number of items |
 
-With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `outerIndex`, `outerCount`.
+**`item` semantics per data type:** for arrays/typed arrays/strings/`Set`, `item` is the element; for `Map`, `item` is a `[key, value]` pair; for objects, iteration goes over enumerable property names and `item` is the property **value**; for a number `N`, the element repeats `⌊N⌋` times with `item` = `index + 1` (1-based) while `index` stays 0-based.
+
+With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `outerIndex`, `outerCount`. A prefix whose generated parameter names (`outerItem`, `outerIndex`, `outerCount`) collide with a registered transformer name is rejected with an error.
 
 ```html
 <!-- Nested repeat -->
@@ -180,6 +191,10 @@ With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `o
 |-----------|-------------|---------|
 | `nb-var:name` | Defines a local variable available in child element expressions. | `<div nb-var:label="this.getLabel()">` |
 
+- Kebab-case names are converted to camelCase in expressions: `nb-var:my-label` → `myLabel`.
+- Names that match a reserved context name (see [Transformers](#7-transformers)) or collide case-insensitively with a registered transformer are rejected with an error.
+- Multiple `nb-var`s on the same element resolve **left-to-right** — each subsequent variable expression can reference the ones declared before it.
+
 ### Execution
 
 | Attribute | Description | Example |
@@ -192,12 +207,17 @@ With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `o
 | Attribute | Description | Example |
 |-----------|-------------|---------|
 | `nb-container` | Renders a registered container by name. Prefix with `%` for route slot binding. | `<div nb-container="@MyContainer">` |
-| `nb-in:name` | Passes input data to a child container or component. | `<div nb-container="@Child" nb-in:data="this.value">` |
-| `nb-in-ref:name` | Passes input data by reference. | `<div nb-container="@Child" nb-in-ref:items="this.list">` |
+| `nb-in:name` | Passes input data to a child container or component. Objects are **deep-cloned** via `structuredClone` before assignment. | `<div nb-container="@Child" nb-in:data="this.value">` |
+| `nb-in-ref:name` | Passes input data by reference (no clone — use for non-cloneable objects such as class instances with methods, DOM nodes, functions). | `<div nb-container="@Child" nb-in-ref:items="this.list">` |
 | Component tag | Components render via their registered custom element tag name. | `<my-component nb-in:title="this.title">` |
 | `nb-aspect:name` | Attaches an aspect to an element, optionally with data. | `<div nb-aspect:tooltip="this.tooltipConfig">` |
 | `nb-template` | Injects a registered global template by name. | `<span nb-template="@info-icon"></span>` |
 | `nb-projection` | Marks content for projection into a container or component slot. | `<em nb-projection="@header">Title</em>` |
+
+**`nb-in` / `nb-in-ref` notes:**
+- Kebab-case input names map to camelCase properties on the child: `nb-in:some-name` sets `someName`.
+- Input updates are gated by **deep-equal comparison** (`Helpers.equals`) of the bound value — a new object with identical contents will **not** trigger an update (or `onInputsRefreshDone`).
+- If an `nb-in` value cannot be `structuredClone`d, an error is logged suggesting `nb-in-ref` instead.
 
 ---
 
@@ -210,7 +230,7 @@ Expressions are JavaScript/TypeScript code snippets evaluated against the curren
 | Prefix | Name | Behavior |
 |--------|------|----------|
 | *(none)* | Continuous binding | Re-evaluated on every change detection cycle. |
-| `#` | Single/one-time binding | Evaluated once, then frozen. |
+| `#` | Single/one-time binding | Re-evaluated each cycle **until the first non-`undefined` result**, then frozen. (An expression that initially returns `undefined` — e.g. data still loading — keeps evaluating until it produces a value.) |
 | `@` | Constant binding | Treated as a literal constant value (no evaluation). |
 | `%` | Route slot | Binds a container to a named route slot. |
 
@@ -218,7 +238,7 @@ Expressions are JavaScript/TypeScript code snippets evaluated against the curren
 <!-- Continuous binding — updates on every cycle -->
 <p nb-value="this.dynamicText"></p>
 
-<!-- One-time binding — evaluated once -->
+<!-- One-time binding — frozen after first non-undefined result -->
 <p nb-value="#this.initialText"></p>
 
 <!-- Constant — literal string 'Hello' -->
@@ -274,7 +294,15 @@ export class FunctionContainer { }
 // From an async provider (Promise)
 @Container({ get: () => fetch('/template.html').then(r => r.text()) })
 export class AsyncContainer { }
+
+// From a URL — a string that looks like a root-relative path
+// (starts with '/' and contains no spaces, '{' or '<') is fetched
+// at runtime instead of being treated as inline HTML
+@Container('/templates/my-container.html')
+export class RemoteContainer { }
 ```
+
+The same string/provider/URL sources apply to `@Component` templates and styles, `@Aspect` styles, `$Template`, and `$AdoptedStyle`.
 
 ### Input / Output
 
@@ -349,6 +377,8 @@ Components are used via their tag name (converted from PascalCase to kebab-case)
 </my-component>
 ```
 
+The registered name must be a valid custom element name — it must contain a hyphen. A single-word class name (e.g. `Button` → `button`) fails registration with a logged error; provide an explicit name via the `['my-button', html]` tuple instead. Names that already contain `-` are registered verbatim.
+
 ### Shadow DOM Configuration
 
 Metadata args (style, adopted-styles array, context config, custom element class) are resolved by **type**, not position — pass only what you need:
@@ -359,6 +389,8 @@ Metadata args (style, adopted-styles array, context config, custom element class
 })
 export class ConfiguredComponent { }
 ```
+
+The shadow root mode defaults to **`closed`** (unless overridden by a per-component `shadowRootConfig` or the global config).
 
 ---
 
@@ -426,7 +458,9 @@ The class name (camelCase) becomes the function name in expressions:
 <p nb-value="dateFormat({date: this.createdAt, format: 'DateString'})"></p>
 ```
 
-Transformers are singletons. Reserved names — compared case-insensitively — cannot be used as transformer names: `item`, `index`, `count`, `element`, `nativeElement`, `event`, `data`, `unSubscribe`, `router`.
+Transformers are singletons. `transform()` calls are wrapped in try/catch — an exception is logged as `Transformer '<name>' failed with exception: …` and the call returns `undefined`; exceptions never propagate to the calling expression.
+
+Reserved names — compared case-insensitively — cannot be used as transformer names: `item`, `index`, `count`, `element`, `nativeElement`, `event`, `data`, `unSubscribe`, `router`. The same reserved list also applies to `nb-var` names and to `nb-repeat` prefix-generated names, since all of them become expression parameters.
 
 ---
 
@@ -453,7 +487,7 @@ $Template('dynamic-template', { get: () => '<em>Dynamic</em>' });
 <div nb-template="@page-header"></div>
 ```
 
-Templates are looked up case-insensitively and compiled into DOM nodes on first access.
+Templates are looked up case-insensitively. Inline string templates are compiled into a `<template>` element at registration time; URL- and provider-based templates are fetched/resolved lazily on first use.
 
 ---
 
@@ -511,6 +545,10 @@ export class ApiService { }
 
 // Programmatic registration (singleton = true)
 $Injectable(ApiService, true);
+
+// Register an existing instance (always a singleton) — useful for
+// pre-configured objects or classes from external libraries
+$Injectable(new ExternalClient({ baseUrl: '/api' }));
 ```
 
 ### Injecting Dependencies
@@ -575,13 +613,23 @@ export class MyContainer {
 @Container(html)
 export class MyContainer {
     @Detector()
-    public importantData: any; // Mutations trigger change detection
+    public importantData: any; // Assignments trigger change detection
 }
 ```
+
+Assignments are gated by deep-equal comparison (`Helpers.equals`) — assigning an equal value does not trigger a cycle, and in-place mutation of a nested object is not detected (reassign or call `detect()` manually).
 
 ### Cycle Limits
 
 Only the Pessimistic strategy can re-run a pass within a single trigger. Its stabilization loop is capped at 10 consecutive re-runs — if the tree still has not stabilized at that point, the framework logs an error and stops, preventing an infinite update loop.
+
+### Scheduling
+
+Change-detection passes are **debounced and asynchronous**: each trigger schedules the pass via `setTimeout`, and multiple triggers within the same task coalesce into a single pass. The DOM is therefore not updated synchronously after mutating state — `ChangeDetector.detect()` is safe to call repeatedly in a row.
+
+Root contexts whose bound element (other than `document.body`) has been detached from the DOM are automatically disposed on the next change-detection request.
+
+Child containers/components hidden via `nb-if` / `nb-switch` have their change detection **disabled** while hidden and re-enabled when they become visible again.
 
 ---
 
@@ -635,12 +683,18 @@ export class App {
 | `router.path` | Current path string. |
 | `router.hashBased` | Whether routing is hash-based. |
 | `router.isConfigured` | Whether the router has been set up. |
-| `router.go(stateOrSlotValue, partialState?, removeHistory?)` | Navigate to a new state. Pass a slot-value string or a `{slotName: value}` state object. `partialState` (default `true`) merges with the current state; `removeHistory` (default `false`) replaces the current history entry instead of pushing a new one. |
+| `router.go(stateOrSlotValue, partialState?, removeHistory?)` | Navigate to a new state. Pass a slot-value string (only allowed when the route template has exactly **one** named slot — otherwise a logged error) or a `{slotName: value}` state object. `partialState` (default `true`) merges with the current state; `removeHistory` (default `false`) replaces the current history entry instead of pushing a new one. |
 | `router.goBack()` | Navigate back in history. |
 | `router.goForward()` | Navigate forward in history. |
 | `router.goTo(offset)` | Navigate to a specific history offset. |
 | `router.onBeforeStateChange(callback)` | Hook before navigation. Callback receives `(preventChange, oldState, newState, oldPath, newPath)`; call `preventChange()` to cancel. Returns an unsubscribe function. |
 | `router.onAfterStateChange(callback)` | Hook after navigation. Callback receives `(oldState, newState, oldPath, newPath)`. Returns an unsubscribe function. |
+
+### Behavior Notes
+
+- **All Router methods throw** an `Error` when the router is not configured (no route template provided) — unlike the rest of the framework, which soft-fails via `Console.error`. Check `router.isConfigured` before use when routing is optional.
+- Setting a **container slot** (`[NAME]`) to a name that does not match a registered container is rejected with a logged error; the slot keeps its previous value.
+- When an earlier slot in the route template has no value, subsequent slot values are serialized as **query parameters** (`/?name=value`) instead of path segments. On startup, query parameters are matched to slot names case-insensitively.
 
 ---
 
@@ -773,10 +827,24 @@ Built-in services available for constructor injection:
 | Service | Description |
 |---------|-------------|
 | `ChangeDetector` | Triggers manual change detection via `detect()`. |
-| `EventDispatcher` | Dispatches custom DOM events via `dispatch(name, data?)`. Returns `boolean`. |
+| `EventDispatcher` | Dispatches events on the entity's root element: `dispatch(name, data?)` creates a `CustomEvent` with `data` as `detail`; `dispatch(event)` dispatches a pre-built `Event`. Returns `boolean` (`false` if a handler called `preventDefault()`). |
 | `ElementManipulations` | Facade for element DOM manipulation: properties (`get`/`set`), attributes (`has`/`get`/`getAll`/`set`/`remove`), styles (`has`/`get`/`getAll`/`set`/`remove`), classes (`has`/`getAll`/`add`/`remove`/`toggle`). |
-| `ElementSubscriptions` | Manages event subscriptions with `subscribe(eventName, callback, options?, debounce?)`. Supports `isSubscribed()`/`isUnSubscribed()` checks. |
+| `ElementSubscriptions` | Manages event subscriptions with `subscribe(eventName, callback, options?, debounce?)`. Each call registers its own listener and returns the unsubscribe function for that subscription only. |
 | `Router` | Route navigation and state management (see [Routing](#12-routing)). |
+
+### Availability per Entity Type
+
+Built-in services are **not** universally injectable — each entity type receives only the services that make sense for it. Requesting an unavailable service logs an injection error and yields `undefined`:
+
+| Service | AppRoot | Container | Component | Aspect |
+|---------|:-------:|:---------:|:---------:|:------:|
+| `ChangeDetector` | ✓ | ✓ | ✓ | ✓ |
+| `EventDispatcher` | ✓ | ✓ | ✓ | ✓ |
+| `ElementManipulations` | — | — | ✓ | ✓ |
+| `ElementSubscriptions` | — | — | ✓ | ✓ |
+| `Router` | ✓ | ✓ | ✓ | ✓ |
+
+`ElementManipulations` and `ElementSubscriptions` operate on the entity's root element and are only provided to components and aspects. `Router` is registered as a global injectable and resolves anywhere (its methods throw on use if routing is not configured — see [Routing](#12-routing)). User-defined `@Injectable` classes resolve in every entity type, including transformers.
 
 ---
 
@@ -788,12 +856,12 @@ The `Helpers` module provides type checking and conversion utilities:
 |--------|---------|
 | `isUndefined(value)` | Undefined type check |
 | `isString(value)` | String type check |
-| `isNotEmptyString(value)` | String that is non-empty after trim |
+| `isNotEmptyString(value)` | String with `length > 0` (**no trim** — whitespace-only strings pass) |
 | `isNumber(value)` | Number type check |
 | `isBoolean(value)` | Boolean type check |
 | `isObject(value)` | Object type check (non-null) |
 | `isArray(value)` | Array type check |
-| `isIterableCollection(value)` | Iterable collection (e.g. `Map`, `Set`) check |
+| `isIterableCollection(value)` | `Map` or `Set` instance check (strictly these two — not a general iterable check) |
 | `isTypedArray(value)` | Typed-array (`Int8Array`, `Uint8Array`, …) check |
 | `isFunction(value)` | Function type check |
 | `isSymbol(value)` | Symbol type check |
@@ -804,9 +872,12 @@ The `Helpers` module provides type checking and conversion utilities:
 | `equals(a, b)` | Deep equality comparison |
 | `fromKebabToCamelCase(value)` | `my-name` → `myName` |
 | `fromCamelToKebabCase(value)` | `myName` → `my-name` |
-| `toCamelCase(value)` | Normalizes a name to `camelCase` |
-| `toPascalCase(value)` | Normalizes a name to `PascalCase` |
-| `format(template, ...args)` | `{0}/{1}`-style string interpolation |
+| `toCamelCase(value)` | Lowercases the **first character** only (`MyName` → `myName`; does not handle separators) |
+| `toPascalCase(value)` | Uppercases the **first character** only (`myName` → `MyName`; does not handle separators) |
+| `format(template, ...args)` | `{0}/{1}`-style string interpolation (`null` → empty string, `undefined` leaves the placeholder) |
+| `split(value, separatorChar, escapeChar)` | Splits by a separator that can be escaped (e.g. `\;`); entries are trimmed and empty entries dropped — used by `nb-class`/`nb-style` parsing |
+
+The package also exports `CallBackEvent<T>` — a typed callback-list event with `subscribe(callBack)` (returns an unsubscribe function; duplicate callbacks are ignored) and `raise(...data)` (invokes every callback; if any throw, the rest still run and a combined `Error` is thrown afterwards).
 
 ---
 

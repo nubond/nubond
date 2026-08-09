@@ -97,7 +97,7 @@ describe('Aspects', () => {
     it('should still instantiate when aspect is registered but not ready', () => {
         class MyAspect implements IAspectContext {}
 
-        aspects.add('not-ready', MyAspect as any, [], 'http://localhost/styles.css', undefined, () => undefined);
+        aspects.add('not-ready', MyAspect as any, [], '/styles.css', undefined, () => undefined);
         expect(aspects.isReady('not-ready')).toBe(false);
 
         const result = aspects.instantiate('not-ready');
@@ -108,7 +108,7 @@ describe('Aspects', () => {
     it('should log error and return undefined for getStyles when aspect is not ready', () => {
         class MyAspect implements IAspectContext {}
 
-        aspects.add('not-ready-style', MyAspect as any, [], 'http://localhost/styles.css', undefined, () => undefined);
+        aspects.add('not-ready-style', MyAspect as any, [], '/styles.css', undefined, () => undefined);
         expect(aspects.isReady('not-ready-style')).toBe(false);
 
         const result = aspects.getStyles('not-ready-style');
@@ -142,7 +142,7 @@ describe('Aspects', () => {
 
     it('should add aspect with .css path', () => {
         class MyAspect implements IAspectContext {}
-        aspects.add('css-path', MyAspect as any, [], 'http://localhost/styles.css', undefined, () => undefined);
+        aspects.add('css-path', MyAspect as any, [], '/styles.css', undefined, () => undefined);
         expect(aspects.has('css-path')).toBe(true);
         expect(aspects.isReady('css-path')).toBe(false);
     });
@@ -194,7 +194,7 @@ describe('Aspects', () => {
             });
 
             class MyAspect implements IAspectContext {}
-            aspects.add('remote-a', MyAspect as any, [], 'http://localhost/aspect.css', undefined, () => undefined);
+            aspects.add('remote-a', MyAspect as any, [], '/aspect.css', undefined, () => undefined);
             expect(aspects.isReady('remote-a')).toBe(false);
 
             const cb = jest.fn();
@@ -207,7 +207,7 @@ describe('Aspects', () => {
             expect(aspects.isReady('remote-a')).toBe(true);
         });
 
-        it('should handle fetch returning error status (non-debug: cb not fired)', async () => {
+        it('should handle fetch returning error status (cb fired even though not ready)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: false,
                 status: 404,
@@ -216,7 +216,7 @@ describe('Aspects', () => {
             });
 
             class MyAspect implements IAspectContext {}
-            aspects.add('err-a', MyAspect as any, [], 'http://localhost/missing.css', undefined, () => undefined);
+            aspects.add('err-a', MyAspect as any, [], '/missing.css', undefined, () => undefined);
 
             const cb = jest.fn();
             aspects.tryPrepare('err-a', cb);
@@ -226,17 +226,17 @@ describe('Aspects', () => {
 
             expect(console.error).toHaveBeenCalled();
             expect(aspects.isReady('err-a')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
-        it('should handle fetch returning empty body (non-debug: cb not fired)', async () => {
+        it('should handle fetch returning empty body (cb fired even though not ready)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: true,
                 text: () => Promise.resolve('')
             });
 
             class MyAspect implements IAspectContext {}
-            aspects.add('empty-a', MyAspect as any, [], 'http://localhost/empty.css', undefined, () => undefined);
+            aspects.add('empty-a', MyAspect as any, [], '/empty.css', undefined, () => undefined);
 
             const cb = jest.fn();
             aspects.tryPrepare('empty-a', cb);
@@ -246,7 +246,7 @@ describe('Aspects', () => {
 
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('not a string or this string is empty'));
             expect(aspects.isReady('empty-a')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
         it('should use ITemplateProvider returning string synchronously', () => {
@@ -277,7 +277,7 @@ describe('Aspects', () => {
             expect(aspects.isReady('async-prov-a')).toBe(true);
         });
 
-        it('should handle ITemplateProvider returning empty value (non-debug: cb not fired)', () => {
+        it('should handle ITemplateProvider returning empty value (cb fired even though not ready)', () => {
             class MyAspect implements IAspectContext {}
             const provider = { get: () => '' };
             aspects.add('empty-prov-a', MyAspect as any, [], provider as any, undefined, () => undefined);
@@ -288,7 +288,7 @@ describe('Aspects', () => {
 
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('not a string or this string is empty'));
             expect(aspects.isReady('empty-prov-a')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
         it('should log error when no style source found', () => {
@@ -302,7 +302,7 @@ describe('Aspects', () => {
             expect(cb).toHaveBeenCalledWith(false);
         });
 
-        it('should leave fetchInProgress stuck after error in non-debug mode', async () => {
+        it('should release fetchInProgress after error in non-debug mode (callbacks always fire)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: false,
                 status: 500,
@@ -311,7 +311,7 @@ describe('Aspects', () => {
             });
 
             class MyAspect implements IAspectContext {}
-            aspects.add('stuck-a', MyAspect as any, [], 'http://localhost/fail.css', undefined, () => undefined);
+            aspects.add('stuck-a', MyAspect as any, [], '/fail.css', undefined, () => undefined);
 
             const cb1 = jest.fn();
             aspects.tryPrepare('stuck-a', cb1);
@@ -320,14 +320,14 @@ describe('Aspects', () => {
 
             expect(console.error).toHaveBeenCalled();
             expect(aspects.isReady('stuck-a')).toBe(false);
-            expect(cb1).not.toHaveBeenCalled();
+            expect(cb1).toHaveBeenCalledWith(true);
 
-            // Second attempt just queues
+            // Second attempt is able to retry (fetchInProgress was released) and its callback fires too
             const cb2 = jest.fn();
             aspects.tryPrepare('stuck-a', cb2);
             await flushPromises();
             jest.runAllTimers();
-            expect(cb2).not.toHaveBeenCalled();
+            expect(cb2).toHaveBeenCalledWith(true);
         });
 
         it('should queue multiple callbacks when fetch is in progress', async () => {
@@ -337,7 +337,7 @@ describe('Aspects', () => {
             });
 
             class MyAspect implements IAspectContext {}
-            aspects.add('queued-a', MyAspect as any, [], 'http://localhost/queued.css', undefined, () => undefined);
+            aspects.add('queued-a', MyAspect as any, [], '/queued.css', undefined, () => undefined);
 
             const cb1 = jest.fn();
             const cb2 = jest.fn();
@@ -364,7 +364,7 @@ describe('Aspects', () => {
             });
 
             class MyAspect implements IAspectContext {}
-            aspects.add('debug-a', MyAspect as any, [], 'http://localhost/debug.css', undefined, () => undefined);
+            aspects.add('debug-a', MyAspect as any, [], '/debug.css', undefined, () => undefined);
 
             const cb = jest.fn();
             aspects.tryPrepare('debug-a', cb);
@@ -384,7 +384,7 @@ describe('Aspects', () => {
 
             class MyAspect implements IAspectContext {}
             const sanitizer = jest.fn((css: string) => css.replace('red', 'blue'));
-            aspects.add('san-a', MyAspect as any, [], 'http://localhost/sanitized.css', undefined, () => sanitizer);
+            aspects.add('san-a', MyAspect as any, [], '/sanitized.css', undefined, () => sanitizer);
 
             const cb = jest.fn();
             aspects.tryPrepare('san-a', cb);

@@ -1,5 +1,3 @@
-import { Helpers } from "./Helpers";
-
 export class Constants {
     public static readonly DISPLAY_NAME = 'nuBond';
     public static readonly DEFAULT_SEPARATOR = '-'; 
@@ -23,7 +21,7 @@ export class Constants {
     }
 
     private static readonly _defaultNHideClassTemplate = `
-.{0} { 
+.nb-hidden, .data-nb-hidden { 
     display: none !important;
 }`;
     private static _defaultHideStyle = this.getDefaultNHideStyle();
@@ -132,12 +130,12 @@ export class Constants {
     }
 
     private static _knownHandlerExtensions = this.getKnownHandlerExtensions();
-    public static get KNOW_HANDLER_EXTENSIONS() : Readonly<Set<string>> {
+    public static get KNOWN_HANDLER_EXTENSIONS() : Readonly<Set<string>> {
         return this._knownHandlerExtensions;
     }
 
     private static _knownHandlerExtensionsWithoutValues = this.getKnownHandlerExtensionsWithoutValues();
-    public static get KNOW_HANDLER_EXTENSIONS_WITHOUT_VALUES() : Readonly<Set<string>> {
+    public static get KNOWN_HANDLER_EXTENSIONS_WITHOUT_VALUES() : Readonly<Set<string>> {
         return this._knownHandlerExtensionsWithoutValues;
     }
 
@@ -155,6 +153,7 @@ export class Constants {
             this._defaultPrefix = this.getDefaultPrefix();
             this._metaValueSeparator = this.getMetaValueSeparator();
 
+            this._defaultProcessingHideStyle = this.getDefaultProcessingHideStyle();
             this._defaultHideClassName = this.getDefaultNHideClassName();
             this._defaultHideStyle = this.getDefaultNHideStyle();
 
@@ -181,7 +180,7 @@ export class Constants {
     }
 
     private static getDefaultNHideStyle(): string {
-        return Helpers.format(this._defaultNHideClassTemplate, this.DEFAULT_HIDE_CLASS_NAME);
+        return this._defaultNHideClassTemplate;
     }
 
     private static getDefaultProcessingHideStyle(): string {

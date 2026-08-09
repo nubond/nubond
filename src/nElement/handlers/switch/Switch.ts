@@ -84,7 +84,7 @@ export class Switch extends Base implements IHandler<IExpressionDetails>, IVisib
     }
     
     public commit(): boolean {
-        const wasDirty = this.isDirty;
+        let wasDirty = false;
 
             //  \/ public isDirty used due to nb-case`s
         if (this.isDirty) {
@@ -119,6 +119,7 @@ export class Switch extends Base implements IHandler<IExpressionDetails>, IVisib
                 }
 
                 this._previousIsVisible = this._isVisible;
+                wasDirty = true;
             }
 
             this._isDirty = false;

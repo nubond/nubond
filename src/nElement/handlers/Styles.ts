@@ -19,7 +19,7 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
     private _previousStyles: Map<string, string>;
     private _styles: Map<string, string>;
 
-    public readonly nExpression: Map<string, IExpressionDetails>| undefined;;
+    public readonly nExpression: Map<string, IExpressionDetails> | undefined;;
     public readonly hasNExpression: boolean;
 
     private _isDirty = false;
@@ -39,21 +39,18 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
             
             this.nExpression = new Map<string, IExpressionDetails>();
             
-            for (const el of expression!.trim().split(';')) {
-                const trimmedEL = el.trim();
-                if (Helpers.isNotEmptyString(trimmedEL)) {
-                    const firstSeparatorIndex = trimmedEL.indexOf(':');
-                    if (firstSeparatorIndex > 0) {
-                        const stylePropertyName = trimmedEL.substring(0, firstSeparatorIndex).trim();
-                        if (stylePropertyName.length > 0) {
-                            this.nExpression.set(stylePropertyName, new ExpressionDetails(trimmedEL.substring(firstSeparatorIndex + 1)));
-                            this._previousStyles.set(stylePropertyName, this._nativeElement.style.getPropertyValue(stylePropertyName));   
-                        } else {
-                            Console.error(nativeElement, `style property name can't be empty`);
-                        }
+            for (const el of Helpers.split(expression!, ';', '\\')) {
+                const firstSeparatorIndex = el.indexOf(':');
+                if (firstSeparatorIndex > 0) {
+                    const stylePropertyName = el.substring(0, firstSeparatorIndex).trim();
+                    if (stylePropertyName.length > 0) {
+                        this.nExpression.set(stylePropertyName, new ExpressionDetails(el.substring(firstSeparatorIndex + 1)));
+                        this._previousStyles.set(stylePropertyName, this._nativeElement.style.getPropertyValue(stylePropertyName));   
                     } else {
-                        Console.error(nativeElement, `has incorrect style expression '${expression}', expected: style-property1: value1; style-property2: value2`);
+                        Console.error(nativeElement, `style property name can't be empty`);
                     }
+                } else {
+                    Console.error(nativeElement, `has incorrect style expression '${expression}', expected: style-property1: value1; style-property2: value2. To escape ';' character use '\\;'`);
                 }
             }
         } else {
@@ -109,7 +106,7 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
     }
     
     public commit(): boolean {
-        const wasDirty = this._isDirty;
+        let wasDirty = false;
 
         if (this._isDirty) {
             let attrsObjectsSyncRequired = false;
@@ -131,6 +128,7 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
 
             if (attrsObjectsSyncRequired) {
                 this._previousStyles = new Map<string, string>(this._styles); //TODO: Optimize
+                wasDirty = true;
             }
 
             this._isDirty = false;

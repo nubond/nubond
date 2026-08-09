@@ -88,7 +88,7 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
     }
     
     public commit(): boolean {
-        const wasDirty = this._isDirty;
+        let wasDirty = false;
 
         if (this._isDirty) {
             if (this._previousIsVisible !== this._isVisible) {
@@ -99,6 +99,7 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
                 }
 
                 this._previousIsVisible = this._isVisible;
+                wasDirty = true;
             }
 
             this._isDirty = false;

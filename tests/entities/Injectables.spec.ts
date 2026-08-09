@@ -70,6 +70,73 @@ describe('Injectables', () => {
             expect(instance.b.c).toBeInstanceOf(ServiceC);
         });
 
+        it('should guard against direct circular dependencies without overflowing the stack', () => {
+            class ServiceA {
+                constructor(public b?: any) {}
+            }
+            class ServiceB {
+                constructor(public a?: any) {}
+            }
+
+            injectables.register(ServiceA as any, [ServiceB as any]);
+            injectables.register(ServiceB as any, [ServiceA as any]);
+
+            let instance: ServiceA | undefined;
+            expect(() => { instance = injectables.resolve(ServiceA as any) as ServiceA; }).not.toThrow();
+
+            // A resolves; the inner B is built but its circular A dependency is soft-failed to undefined.
+            expect(instance).toBeInstanceOf(ServiceA);
+            expect(instance!.b).toBeInstanceOf(ServiceB);
+            expect(instance!.b.a).toBeUndefined();
+
+            expect(console.error).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining('circular reference'),
+                expect.stringContaining('ServiceA->ServiceB->ServiceA'),
+            );
+        });
+
+        it('should guard against indirect (multi-hop) circular dependencies', () => {
+            class ServiceX { constructor(public y?: any) {} }
+            class ServiceY { constructor(public z?: any) {} }
+            class ServiceZ { constructor(public x?: any) {} }
+
+            injectables.register(ServiceX as any, [ServiceY as any]);
+            injectables.register(ServiceY as any, [ServiceZ as any]);
+            injectables.register(ServiceZ as any, [ServiceX as any]);
+
+            let instance: ServiceX | undefined;
+            expect(() => { instance = injectables.resolve(ServiceX as any) as ServiceX; }).not.toThrow();
+
+            expect(instance).toBeInstanceOf(ServiceX);
+            expect(instance!.y).toBeInstanceOf(ServiceY);
+            expect(instance!.y.z).toBeInstanceOf(ServiceZ);
+            // The hop that closes the cycle back to X is soft-failed.
+            expect(instance!.y.z.x).toBeUndefined();
+            expect(console.error).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining('circular reference'),
+                expect.stringContaining('ServiceX->ServiceY->ServiceZ->ServiceX'),
+            );
+        });
+
+        it('should still resolve a diamond (shared, non-circular) dependency', () => {
+            class Shared {}
+            class Left { constructor(public shared: Shared) {} }
+            class Right { constructor(public shared: Shared) {} }
+            class Root { constructor(public left: Left, public right: Right) {} }
+
+            injectables.register(Shared as any, []);
+            injectables.register(Left as any, [Shared as any]);
+            injectables.register(Right as any, [Shared as any]);
+            injectables.register(Root as any, [Left as any, Right as any]);
+
+            const instance = injectables.resolve(Root as any) as Root;
+            expect(instance).toBeInstanceOf(Root);
+            expect(instance.left.shared).toBeInstanceOf(Shared);
+            expect(instance.right.shared).toBeInstanceOf(Shared);
+        });
+
         it('should log error for unknown injectable', () => {
             class Unknown {}
             const result = injectables.resolve(Unknown as any);

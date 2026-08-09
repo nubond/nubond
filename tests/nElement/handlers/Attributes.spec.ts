@@ -111,12 +111,23 @@ describe('Attributes handler', () => {
             expect(handler.has('data-x')).toBe(false);
         });
 
-        it('should throw when setting a system attribute', () => {
+        it('should allow setting a plain attribute that collides with a system handler name', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}value`, 'ctx.x');
             const handler = new Attributes(el);
 
-            expect(() => handler.set('value', 'newVal')).toThrow(/system/);
+            //a plain HTML attribute literally named 'value' must be settable even when nb-value is bound
+            expect(() => handler.set('value', 'newVal')).not.toThrow();
+            handler.commit();
+            expect(el.getAttribute('value')).toBe('newVal');
+        });
+
+        it('should still throw when setting the fully-prefixed system attribute name', () => {
+            const el = document.createElement('div');
+            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}value`, 'ctx.x');
+            const handler = new Attributes(el);
+
+            expect(() => handler.set(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}value`, 'newVal')).toThrow(/system/);
         });
     });
 
@@ -195,12 +206,23 @@ describe('Attributes handler', () => {
     });
 
     describe('remove system attribute', () => {
-        it('should throw when attempting to remove a system attribute', () => {
+        it('should allow removing a plain attribute that collides with a system handler name', () => {
+            const el = document.createElement('div');
+            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
+            el.setAttribute(Constants.VALUE_HANDLER_ATTRIBUTE_NAME, 'plain');
+            const handler = new Attributes(el);
+
+            //removing the plain 'value' attribute must not throw even though nb-value is bound
+            expect(() => handler.remove(Constants.VALUE_HANDLER_ATTRIBUTE_NAME)).not.toThrow();
+            expect(handler.has(Constants.VALUE_HANDLER_ATTRIBUTE_NAME)).toBe(false);
+        });
+
+        it('should still throw when removing the fully-prefixed system attribute name', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
             const handler = new Attributes(el);
 
-            expect(() => handler.remove(Constants.VALUE_HANDLER_ATTRIBUTE_NAME)).toThrow(/system/);
+            expect(() => handler.remove(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`)).toThrow(/system/);
         });
     });
 

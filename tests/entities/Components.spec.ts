@@ -127,7 +127,7 @@ describe('Components', () => {
         class MyCtx implements IComponentContext {}
 
         components.add('css-path-comp', MyCtx as any, [], undefined,
-            '<div>template</div>', 'http://localhost/component.css', undefined,
+            '<div>template</div>', '/component.css', undefined,
             mockBinderCreator, () => undefined, () => undefined, () => undefined);
         expect(components.has('css-path-comp')).toBe(true);
         expect(components.isReady('css-path-comp')).toBe(false);
@@ -148,7 +148,7 @@ describe('Components', () => {
         class MyCtx implements IComponentContext {}
 
         components.add('html-path-comp', MyCtx as any, [], undefined,
-            'http://localhost/template.html', undefined, undefined,
+            '/template.html', undefined, undefined,
             mockBinderCreator, () => undefined, () => undefined, () => undefined);
         expect(components.has('html-path-comp')).toBe(true);
         expect(components.isReady('html-path-comp')).toBe(false);
@@ -186,7 +186,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('fetch-html-comp', MyCtx as any, [], undefined,
-                'http://localhost/component.html', undefined, undefined,
+                '/component.html', undefined, undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
             expect(components.isReady('fetch-html-comp')).toBe(false);
 
@@ -208,7 +208,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('fetch-css-comp', MyCtx as any, [], undefined,
-                '<div>html ready</div>', 'http://localhost/styles.css', undefined,
+                '<div>html ready</div>', '/styles.css', undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
             expect(components.isReady('fetch-css-comp')).toBe(false);
 
@@ -241,7 +241,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('both-fetch-comp', MyCtx as any, [], undefined,
-                'http://localhost/template.html', 'http://localhost/styles.css', undefined,
+                '/template.html', '/styles.css', undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
 
             const cb = jest.fn();
@@ -255,7 +255,7 @@ describe('Components', () => {
             expect(components.isReady('both-fetch-comp')).toBe(true);
         });
 
-        it('should handle HTML fetch error (non-debug: cb not fired)', async () => {
+        it('should handle HTML fetch error (cb fired even though not ready)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: false,
                 status: 404,
@@ -265,7 +265,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('html-err-comp', MyCtx as any, [], undefined,
-                'http://localhost/missing.html', undefined, undefined,
+                '/missing.html', undefined, undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
 
             const cb = jest.fn();
@@ -276,10 +276,10 @@ describe('Components', () => {
 
             expect(console.error).toHaveBeenCalled();
             expect(components.isReady('html-err-comp')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
-        it('should handle CSS fetch error (non-debug: cb not fired)', async () => {
+        it('should handle CSS fetch error (cb fired even though not ready)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: false,
                 status: 500,
@@ -289,7 +289,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('css-err-comp', MyCtx as any, [], undefined,
-                '<div>html ready</div>', 'http://localhost/styles.css', undefined,
+                '<div>html ready</div>', '/styles.css', undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
 
             const cb = jest.fn();
@@ -300,10 +300,10 @@ describe('Components', () => {
 
             expect(console.error).toHaveBeenCalled();
             expect(components.isReady('css-err-comp')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
-        it('should handle HTML fetch returning empty body (non-debug: cb not fired)', async () => {
+        it('should handle HTML fetch returning empty body (cb fired even though not ready)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: true,
                 text: () => Promise.resolve('')
@@ -311,7 +311,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('html-empty-comp', MyCtx as any, [], undefined,
-                'http://localhost/empty.html', undefined, undefined,
+                '/empty.html', undefined, undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
 
             const cb = jest.fn();
@@ -322,10 +322,10 @@ describe('Components', () => {
 
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('not a string or this string is empty'));
             expect(components.isReady('html-empty-comp')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
-        it('should handle no HTML template source (non-debug: cb not fired)', () => {
+        it('should handle no HTML template source (cb fired even though not ready)', () => {
             class MyCtx implements IComponentContext {}
             const invalidProvider = { noGet: true };
             components.add('no-html-comp', MyCtx as any, [], undefined,
@@ -338,10 +338,10 @@ describe('Components', () => {
 
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('nor html template'));
             expect(components.isReady('no-html-comp')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
-        it('should handle no style template source (non-debug: cb not fired)', () => {
+        it('should handle no style template source (cb fired even though not ready)', () => {
             class MyCtx implements IComponentContext {}
             const invalidStyleProvider = { noGet: true };
             components.add('no-style-comp', MyCtx as any, [], undefined,
@@ -354,7 +354,7 @@ describe('Components', () => {
 
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('nor style template'));
             expect(components.isReady('no-style-comp')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
         it('should use ITemplateProvider for HTML returning string synchronously', () => {
@@ -387,7 +387,7 @@ describe('Components', () => {
             expect(components.isReady('style-prov-sync-comp')).toBe(true);
         });
 
-        it('should leave fetchInProgress stuck after error in non-debug mode', async () => {
+        it('should release fetchInProgress after error in non-debug mode (callbacks always fire)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: false,
                 status: 500,
@@ -397,7 +397,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('stuck-comp', MyCtx as any, [], undefined,
-                'http://localhost/fail.html', undefined, undefined,
+                '/fail.html', undefined, undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
 
             const cb1 = jest.fn();
@@ -407,14 +407,14 @@ describe('Components', () => {
 
             expect(console.error).toHaveBeenCalled();
             expect(components.isReady('stuck-comp')).toBe(false);
-            expect(cb1).not.toHaveBeenCalled();
+            expect(cb1).toHaveBeenCalledWith(true);
 
-            // Second attempt just queues
+            // Second attempt is able to retry (fetchInProgress was released) and its callback fires too
             const cb2 = jest.fn();
             components.tryPrepare('stuck-comp', cb2);
             await flushPromises();
             jest.runAllTimers();
-            expect(cb2).not.toHaveBeenCalled();
+            expect(cb2).toHaveBeenCalledWith(true);
         });
 
         it('should queue multiple callbacks when fetch is in progress', async () => {
@@ -425,7 +425,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('queued-comp', MyCtx as any, [], undefined,
-                'http://localhost/queued.html', undefined, undefined,
+                '/queued.html', undefined, undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
 
             const cb1 = jest.fn();
@@ -448,7 +448,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('iso-comp', MyCtx as any, [], undefined,
-                'http://localhost/iso.html', undefined, undefined,
+                '/iso.html', undefined, undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
 
             const cb1 = jest.fn(() => { throw new Error('cb1 failed'); });
@@ -494,7 +494,7 @@ describe('Components', () => {
 
             class MyCtx implements IComponentContext {}
             components.add('debug-style-comp', MyCtx as any, [], undefined,
-                '<div>html ready</div>', 'http://localhost/styles.css', undefined,
+                '<div>html ready</div>', '/styles.css', undefined,
                 mockBinderCreator, () => undefined, () => undefined, () => undefined);
 
             const cb = jest.fn();

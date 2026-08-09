@@ -17,9 +17,13 @@ export class ExpressionDetails implements IExpressionDetails {
                 this.expression = cleanExpression.length > 0
                                             ? (((cleanExpression === 'true') || (cleanExpression === 'false'))
                                                         ? cleanExpression
-                                                        : (isNaN(<any>cleanExpression) && isNaN(parseFloat(cleanExpression))
-                                                                ? `"${cleanExpression.replaceAll('"', '\\"')}"`
-                                                                : cleanExpression))
+                                                        : (!isNaN(Number(cleanExpression))
+                                                                ? cleanExpression
+                                                                : `"${cleanExpression.replaceAll('\\', '\\\\')
+                                                                                     .replaceAll('"', '\\"')
+                                                                                     .replaceAll('\n', '\\n')
+                                                                                     .replaceAll('\r', '\\r')
+                                                                                     .replaceAll('\t', '\\t')}"`))
                                             : '""';
             } else {
                 this.expression = cleanExpression;

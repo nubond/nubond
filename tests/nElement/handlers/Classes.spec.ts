@@ -278,14 +278,15 @@ describe('Classes handler', () => {
             expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, expect.stringContaining('has empty value'));
         });
 
-        it('should silently skip a fully whitespace condition expression set', () => {
-            // After the L-1 trailing-semicolon fix, fully whitespace entries are filtered out
-            // before reaching the per-entry error branches, so an all-whitespace block
-            // produces no diagnostic and no bindings.
+        it('should log an error for an empty/whitespace condition expression set', () => {
+            // Helpers.split returns [] for a whitespace-only block (the old
+            // String.split(';') always yielded ['']), so the "empty conditions set" branch
+            // is now reachable — symmetric with the array form, where `[   ]` reports
+            // "has empty value". No bindings are produced.
             const el = createElementWithAttr('{   }');
             const attrs = new Attributes(el);
             const handler = new Classes(el, attrs, () => hideClassName);
-            expect(errorSpy).not.toHaveBeenCalled();
+            expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, expect.stringContaining('has empty conditions set'));
             const cond = handler.nExpression as { rawExpression: Map<string, unknown> };
             expect(cond.rawExpression.size).toBe(0);
         });
@@ -304,6 +305,44 @@ describe('Classes handler', () => {
             const attrs = new Attributes(el);
             const handler = new Classes(el, attrs, () => hideClassName);
             expect(handler.hasNExpression).toBe(true);
+        });
+    });
+
+    describe('escaping ";" inside expressions', () => {
+        let errorSpy: jest.SpyInstance;
+
+        beforeEach(() => {
+            errorSpy = jest.spyOn(console, 'error').mockImplementation();
+        });
+
+        afterEach(() => {
+            errorSpy.mockRestore();
+        });
+
+        it('should keep an escaped ";" inside a condition value as a single entry', () => {
+            // `{label: this.fn('a\;b')}` must not split on the semicolon inside the string
+            // literal. The backslash is the escape marker and is stripped from the value.
+            const el = createElementWithAttr("{label: this.fn('a\\;b')}");
+            const attrs = new Attributes(el);
+            const handler = new Classes(el, attrs, () => hideClassName);
+
+            expect(handler.nExpression!.type).toBe('condition');
+            const cond = handler.nExpression as unknown as { rawExpression: Map<string, { expression: string }> };
+            expect(cond.rawExpression.size).toBe(1);
+            expect(cond.rawExpression.get('label')!.expression).toBe("this.fn('a;b')");
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should keep an escaped ";" inside an array entry as a single entry', () => {
+            const el = createElementWithAttr("[this.fn('a\\;b')]");
+            const attrs = new Attributes(el);
+            const handler = new Classes(el, attrs, () => hideClassName);
+
+            expect(handler.nExpression!.type).toBe('array');
+            const arr = handler.nExpression as unknown as { rawExpression: Array<{ expression: string }> };
+            expect(arr.rawExpression.length).toBe(1);
+            expect(arr.rawExpression[0].expression).toBe("this.fn('a;b')");
+            expect(errorSpy).not.toHaveBeenCalled();
         });
     });
 
@@ -368,6 +407,94 @@ describe('Classes handler', () => {
 
             expect(svg.getAttribute('class')).toContain('alpha');
             expect(svg.getAttribute('class')).toContain('beta');
+        });
+    });
+
+    describe('#6: SVG elements keep their pre-existing classes', () => {
+        // `className` on an SVGElement is an SVGAnimatedString, so the read path must go through
+        // getAttribute('class') — reading `.className.length` initialized the model as empty and
+        // the first write wiped the authored classes.
+        function createSvg(existingClasses?: string, expression?: string): SVGElement {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            if (existingClasses !== undefined) {
+                svg.setAttribute('class', existingClasses);
+            }
+            if (expression !== undefined) {
+                svg.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CLASS_HANDLER_ATTRIBUTE_NAME}`, expression);
+            }
+            return svg;
+        }
+
+        it('should seed the model with the authored SVG classes', () => {
+            const svg = createSvg('icon icon-large');
+            const handler = new Classes(svg, new Attributes(svg), () => hideClassName);
+
+            expect(handler.getAll()).toEqual(['icon', 'icon-large']);
+            expect(handler.has('icon')).toBe(true);
+            expect(handler.has('icon-large')).toBe(true);
+        });
+
+        it('should keep the authored SVG classes when hide() writes the class attribute', () => {
+            const svg = createSvg('icon icon-large');
+            const handler = new Classes(svg, new Attributes(svg), () => hideClassName);
+
+            handler.hide();
+            handler.commit();
+
+            expect(svg.getAttribute('class')).toBe(`icon icon-large ${hideClassName}`);
+        });
+
+        it('should restore the authored SVG classes after hide() then show()', () => {
+            const svg = createSvg('icon icon-large');
+            const handler = new Classes(svg, new Attributes(svg), () => hideClassName);
+
+            handler.hide();
+            handler.commit();
+            handler.show();
+            handler.commit();
+
+            expect(svg.getAttribute('class')).toBe('icon icon-large');
+        });
+
+        it('should append a bound class to the authored SVG classes', () => {
+            const svg = createSvg('icon', 'ctx.cls');
+            const handler = new Classes(svg, new Attributes(svg), () => hideClassName);
+
+            handler.add('active');
+            handler.commit();
+
+            expect(svg.getAttribute('class')).toBe('icon active');
+        });
+
+        it('should remove an authored SVG class on request', () => {
+            const svg = createSvg('icon icon-large');
+            const handler = new Classes(svg, new Attributes(svg), () => hideClassName);
+
+            handler.remove('icon');
+            handler.commit();
+
+            expect(svg.getAttribute('class')).toBe('icon-large');
+        });
+
+        it('should treat a missing class attribute on SVG as no classes', () => {
+            const svg = createSvg();
+            const handler = new Classes(svg, new Attributes(svg), () => hideClassName);
+
+            expect(handler.getAll()).toEqual([]);
+        });
+
+        it('should ignore a whitespace-only class attribute on SVG', () => {
+            const svg = createSvg('   ');
+            const handler = new Classes(svg, new Attributes(svg), () => hideClassName);
+
+            expect(handler.getAll()).toEqual([]);
+        });
+
+        it('should still seed the model from a plain HTML element className', () => {
+            const el = createElementWithAttr(undefined, 'alpha beta');
+            const handler = new Classes(el, new Attributes(el), () => hideClassName);
+
+            expect(handler.getAll()).toEqual(['alpha', 'beta']);
         });
     });
 });

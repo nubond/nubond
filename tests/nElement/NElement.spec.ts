@@ -4,6 +4,7 @@ import { INTreeElement } from '../../src/interfaces/nElement/INElement';
 import { ContextBinder } from '../../src/ContextBinder';
 import { INElement } from '../../src/interfaces/nElement/INElement';
 import { Router } from '../../src/Router';
+import { Constants } from '../../src/Constants';
 
 // polyfill CSSStyleSheet.replaceSync for jsdom
 if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
@@ -359,49 +360,59 @@ describe('NElement lifecycle via ContextBinder', () => {
     });
 
     describe('validate() conflicts', () => {
-        it('should throw for conflicting value and html bindings (content changers)', () => {
-            jest.spyOn(console, 'error').mockImplementation();
-            expect(() => createBoundElement('<span nb-value="this.a" nb-html="this.b"></span>')).toThrow();
+        const conflictMessage = expect.stringContaining('bindings at the same time');
+
+        it('should report conflicting value and html bindings (content changers)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            expect(() => createBoundElement('<span nb-value="this.a" nb-html="this.b"></span>')).not.toThrow();
+            expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
         });
 
-        it('should throw for conflicting value and switch bindings (content changers)', () => {
-            jest.spyOn(console, 'error').mockImplementation();
-            expect(() => createBoundElement('<span nb-value="this.a" nb-switch="this.b"></span>')).toThrow();
+        it('should report conflicting value and switch bindings (content changers)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            expect(() => createBoundElement('<span nb-value="this.a" nb-switch="this.b"></span>')).not.toThrow();
+            expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
         });
 
-        it('should throw for conflicting value and container bindings (content changers)', () => {
-            jest.spyOn(console, 'error').mockImplementation();
-            expect(() => createBoundElement('<span nb-value="this.a" nb-container="myContainer"></span>')).toThrow();
+        it('should report conflicting value and container bindings (content changers)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            expect(() => createBoundElement('<span nb-value="this.a" nb-container="myContainer"></span>')).not.toThrow();
+            expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
         });
 
-        it('should throw for conflicting html and container bindings (content changers)', () => {
-            jest.spyOn(console, 'error').mockImplementation();
-            expect(() => createBoundElement('<span nb-html="this.a" nb-container="myContainer"></span>')).toThrow();
+        it('should report conflicting html and container bindings (content changers)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            expect(() => createBoundElement('<span nb-html="this.a" nb-container="myContainer"></span>')).not.toThrow();
+            expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
         });
 
-        it('should throw for conflicting value and component bindings (content changers)', () => {
-            jest.spyOn(console, 'error').mockImplementation();
+        it('should report conflicting value and component bindings (content changers)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
             jest.spyOn(Environment.components, 'has').mockReturnValue(true);
             try {
-                expect(() => createBoundElement('<my-comp nb-value="this.a" nb-component="comp1"></my-comp>')).toThrow();
+                expect(() => createBoundElement('<my-comp nb-value="this.a" nb-component="comp1"></my-comp>')).not.toThrow();
+                expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
             } finally {
                 (Environment.components.has as jest.Mock).mockRestore();
             }
         });
 
-        it('should throw for structure changers conflict (case + repeat)', () => {
-            jest.spyOn(console, 'error').mockImplementation();
-            expect(() => createBoundElement('<div nb-switch="this.mode"><span nb-case="this.c" nb-repeat="this.items"></span></div>', { mode: 'x', c: 'x', items: [] })).toThrow();
+        it('should report structure changers conflict (case + repeat)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            expect(() => createBoundElement('<div nb-switch="this.mode"><span nb-case="this.c" nb-repeat="this.items"></span></div>', { mode: 'x', c: 'x', items: [] })).not.toThrow();
+            expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
         });
 
-        it('should throw for function changers conflict (case + if)', () => {
-            jest.spyOn(console, 'error').mockImplementation();
-            expect(() => createBoundElement('<div nb-switch="this.mode"><span nb-case="this.c" nb-if="this.visible"></span></div>', { mode: 'x', c: 'x', visible: true })).toThrow();
+        it('should report function changers conflict (case + if)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            expect(() => createBoundElement('<div nb-switch="this.mode"><span nb-case="this.c" nb-if="this.visible"></span></div>', { mode: 'x', c: 'x', visible: true })).not.toThrow();
+            expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
         });
 
-        it('should throw for function changers conflict (default + if)', () => {
-            jest.spyOn(console, 'error').mockImplementation();
-            expect(() => createBoundElement('<div nb-switch="this.mode"><span nb-default nb-if="this.visible"></span></div>', { mode: 'x', visible: true })).toThrow();
+        it('should report function changers conflict (default + if)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            expect(() => createBoundElement('<div nb-switch="this.mode"><span nb-default nb-if="this.visible"></span></div>', { mode: 'x', visible: true })).not.toThrow();
+            expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
         });
     });
 
@@ -577,11 +588,11 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(child.isSubTreeHandled).toBe(false);
         });
 
-        it('should be false for element with only nb-value', () => {
+        it('should be true for element with nb-value (its textContent owns the subtree)', () => {
             const { binder } = createBoundElement('<span nb-value="this.x"></span>', { x: '' });
             const rootNElement = binder.rootNElement as INTreeElement;
             const child = (rootNElement as any)._children[0] as INElement;
-            expect(child.isSubTreeHandled).toBe(false);
+            expect(child.isSubTreeHandled).toBe(true);
         });
     });
 
@@ -1381,7 +1392,7 @@ describe('NElement lifecycle via ContextBinder', () => {
 
     describe('getManipulationProxy lambdas', () => {
         it('should construct bound handler that exercises style/class/prop manipulation proxies', () => {
-            const ctx = { onChange(el: any) { 
+            const ctx = { onChange(el: any) {
                 if (el && el.styles) {
                     el.styles.set('color', 'red');
                     el.classes.add('extra');
@@ -1392,6 +1403,74 @@ describe('NElement lifecycle via ContextBinder', () => {
                 { val: 'hello' }
             );
             expect(el.querySelector('input')).toBeDefined();
+        });
+    });
+
+    describe('#9: handler conflicts clear the invisible-parent-handled sequences too', () => {
+        // An element whose visibility is owned by a parent (nb-case / nb-default) runs the
+        // *InvisibleParentHandled sequences instead of the regular ones (NElement.detectChanges).
+        // Those sequences hold `container` and `component`, so a conflict that removes those
+        // handlers has to clear all five sequences — otherwise the conflicting handler keeps
+        // binding and committing whenever the case is not the matching one.
+        function buildNonMatchingCase(caseAttributes: string) {
+            const { binder } = createBoundElement(
+                `<div nb-switch="'a'"><span nb-case="'b'" ${caseAttributes}></span></div>`
+            );
+            const caseNElement: any = (binder.rootNElement as any)._children[0]._children[0];
+            // membership is checked as a boolean so a failure prints `true`/`false` rather than
+            // dumping the whole handler graph
+            const isInSequence = (sequenceName: string) => caseNElement[sequenceName].indexOf(caseNElement.container) >= 0;
+            return { binder, caseNElement, isInSequence };
+        }
+
+        it('should drop a conflicting nb-container from every processing sequence', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            const { caseNElement, isInSequence } = buildNonMatchingCase(`nb-container="@Foo" nb-value="'v'"`);
+
+            // precondition: the parent switch does not match, so the parent owns visibility
+            expect(caseNElement.case.hasNExpression).toBe(true);
+            expect(caseNElement.case.isVisible).toBe(false);
+            expect(consoleSpy).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                caseNElement.nativeElement,
+                expect.stringContaining("can't have nb-value and nb-container bindings at the same time")
+            );
+
+            expect(isInSequence('_bindSequence')).toBe(false);
+            expect(isInSequence('_commitSequence')).toBe(false);
+            expect(isInSequence('_disposeSequence')).toBe(false);
+            // the two that used to be missed
+            expect(isInSequence('_bindSequenceInvisibleParentHandled')).toBe(false);
+            expect(isInSequence('_commitSequenceInvisibleParentHandled')).toBe(false);
+
+            consoleSpy.mockRestore();
+        });
+
+        it('should not bind or commit the conflicting handler while the parent keeps it invisible', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            const { caseNElement } = buildNonMatchingCase(`nb-container="@Foo" nb-value="'v'"`);
+
+            const bindSpy = jest.spyOn(caseNElement.container, 'bind');
+            const commitSpy = jest.spyOn(caseNElement.container, 'commit');
+
+            caseNElement.detectChanges({});
+
+            expect(bindSpy).not.toHaveBeenCalled();
+            expect(commitSpy).not.toHaveBeenCalled();
+
+            consoleSpy.mockRestore();
+        });
+
+        it('should keep a non-conflicting nb-container in the invisible-parent-handled sequences', () => {
+            // Control: the removal must be driven by the conflict, not by the invisibility.
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            const { caseNElement, isInSequence } = buildNonMatchingCase(`nb-container="@Foo"`);
+
+            expect(caseNElement.case.isVisible).toBe(false);
+            expect(isInSequence('_bindSequenceInvisibleParentHandled')).toBe(true);
+            expect(isInSequence('_commitSequenceInvisibleParentHandled')).toBe(true);
+
+            consoleSpy.mockRestore();
         });
     });
 });

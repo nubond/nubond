@@ -35,6 +35,8 @@ import { Helpers } from './Helpers';
 import { Console } from './Console';
 
 export class Environment {
+    private static readonly MIN_CLASS_NAME_LENGTH = 2;
+
     private static _showDebugInfo: boolean = false;
     private static _pessimisticChangeDetectionStrategy: boolean = false;
     private static _shadowRootConfig: IShadowRootConfig | undefined;
@@ -99,8 +101,7 @@ export class Environment {
 
     private constructor() { }
     
-    public static addApp(selectorOrElement: string | Element | null | undefined, context: IContextConstructor, dependencies: Array<IInjectableConstructor>,
-                          contextConfig: IContextConfig | undefined): void {
+    public static addApp(selectorOrElement: string | Element | null | undefined, context: IContextConstructor, dependencies: Array<IInjectableConstructor>): void {
         //bootstrap preparation
         let element: Element;
         
@@ -125,15 +126,13 @@ export class Environment {
         }
 
         //root bootstrap
-        const rootContextBinder = new RootContextBinder(contextConfig, this._pessimisticChangeDetectionStrategy,
+        const rootContextBinder = new RootContextBinder(undefined, this._pessimisticChangeDetectionStrategy,
                                                         () => Constants.DEFAULT_HIDE_CLASS_NAME, this._htmlSanitizer,
                                                         () => this._showDebugInfo!,
                                                         (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
                                                         (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor));
 
-        this._elementsToContextsMapping.set(element, rootContextBinder);
-        const unRegister = this._injectables.register(context, dependencies, true);
-
+        const unRegister = this._injectables.register(context, dependencies);
         rootContextBinder.onDispose(() => {
             this._elementsToContextsMapping.delete(element);
             unRegister();
@@ -141,11 +140,16 @@ export class Environment {
 
         rootContextBinder.bind(element, <IContext>this._injectables.resolve(context, new ChangeDetector(() => rootContextBinder!.detectChanges()),
                                                                             new EventDispatcher(element)), true);
+        this._elementsToContextsMapping.set(element, rootContextBinder);
     }
 
     public static addContainer(name: string | undefined, context: IContextConstructor, dependencies: Array<IInjectableConstructor>,
                                htmlTemplateOrPathOrProvider: string | ITemplateProvider,
                                contextConfig: IContextConfig | undefined): void {
+        if (!Helpers.isNotEmptyString(name) && (context.name.length <= this.MIN_CLASS_NAME_LENGTH)) {
+            Console.warn(`Container has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+        }
+
         this._containers.add(Helpers.isNotEmptyString(name) ? name! : context.name,
                              context, dependencies,
                              htmlTemplateOrPathOrProvider,
@@ -167,6 +171,10 @@ export class Environment {
                                styleTemplateOrPathOrProvider: string | ITemplateProvider | undefined,
                                adoptedStyleNames: Array<string> | undefined,
                                contextConfig: IComponentContextConfig | undefined): void {
+        if (!Helpers.isNotEmptyString(name) && (context.name.length <= this.MIN_CLASS_NAME_LENGTH)) {
+            Console.warn(`Component has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+        }
+
         this._components.add(Helpers.isNotEmptyString(name)
                                     ? (name!.indexOf('-') > 0
                                                 ? name!
@@ -198,6 +206,10 @@ export class Environment {
     public static addAspect(name: string | undefined, context: IAspectContextConstructor, dependencies: Array<IInjectableConstructor>, 
                             styleTemplateOrPathOrProvider: string | ITemplateProvider | undefined, adoptedStyleNames: Array<string> | undefined,
                             styleSanitizer: ((style: string) => string) | undefined): void {
+        if (!Helpers.isNotEmptyString(name) && (context.name.length <= this.MIN_CLASS_NAME_LENGTH)) {
+            Console.warn(`Aspect  has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+        }
+
         this._aspects.add(Helpers.isNotEmptyString(name)
                                 ? (name!.indexOf('-') > 0
                                             ? name!
@@ -213,11 +225,19 @@ export class Environment {
     }
 
     public static addTransformer(name: string | undefined, context: ITransformerContextConstructor, dependencies: Array<IInjectableConstructor>): void {
+        if (!Helpers.isNotEmptyString(name) && (context.name.length <= this.MIN_CLASS_NAME_LENGTH)) {
+            Console.warn(`Transformer  has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+        }
+
         this._transformers.add(Helpers.toCamelCase(Helpers.isNotEmptyString(name) ? name! : context.name), context, dependencies);
     }
 
     public static registerInjectable(injectable: IInjectableConstructor, dependencies: Array<IInjectableConstructor>,
                                      singleton: boolean): void {
+        if (injectable.name.length <= this.MIN_CLASS_NAME_LENGTH) {
+            Console.warn(`Injectable class name (${injectable.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+        }
+
         this._injectables.register(injectable, dependencies, singleton);
     }
 

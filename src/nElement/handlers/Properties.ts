@@ -15,8 +15,6 @@ import { Constants } from '../../Constants';
 import { Console } from '../../Console';
 
 export class Properties extends Base implements IHandler<Map<string, IExpressionDetails>> {
-    private readonly DEFAULT_PREFIX_AND_SEPARATOR = Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR;
-
     private readonly _nativeElement: HTMLElement;
     private readonly _elementValues: Map<string, any>;
 
@@ -38,21 +36,31 @@ export class Properties extends Base implements IHandler<Map<string, IExpression
             this.hasNExpression = true;
             this.nExpression = new Map<string, IExpressionDetails>();
 
+            const defaultPrefixAndSeparator = Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR;
+
             for (const [key, value] of attributes.getAll(Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME, true)) {
                 const rawPropertyName = key.replace(Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME + Constants.META_VALUE_SEPARATOR, '');
                 if (rawPropertyName.length > 0) {
                     if (!Helpers.isUndefined(value)) {
                         const propertyName = Helpers.fromKebabToCamelCase(rawPropertyName);
-                        if ((propertyName == 'classList') || (propertyName == 'className')) {
-                            Console.error(nativeElement, `classes should be changed via ${this.DEFAULT_PREFIX_AND_SEPARATOR}class`);
-                        } else if (propertyName == 'style') {
-                            Console.error(nativeElement, `styles should be changed via ${this.DEFAULT_PREFIX_AND_SEPARATOR}style`);
-                        } else if ((propertyName == 'textContent') || (propertyName == 'innerText')) {
-                            Console.error(nativeElement, `text content should be changed via ${this.DEFAULT_PREFIX_AND_SEPARATOR}value`);
-                        } else if (propertyName == 'innerHTML') {
-                            Console.error(nativeElement, `html content should be changed via ${this.DEFAULT_PREFIX_AND_SEPARATOR}html`);
+                        const propertyNameLower = propertyName.toLowerCase();
+
+                        if ((propertyNameLower == 'classlist') || (propertyNameLower == 'classname')) {
+                            Console.error(nativeElement, `classes should be changed via ${defaultPrefixAndSeparator}class`);
+                        } else if (propertyNameLower == 'style') {
+                            Console.error(nativeElement, `styles should be changed via ${defaultPrefixAndSeparator}style`);
+                        } else if ((propertyNameLower == 'textcontent') || (propertyNameLower == 'innertext')) {
+                            Console.error(nativeElement, `text content should be changed via ${defaultPrefixAndSeparator}value`);
+                        } else if (propertyNameLower == 'innerhtml') {
+                            Console.error(nativeElement, `html content should be changed via ${defaultPrefixAndSeparator}html`);
+                        } else if (propertyNameLower == 'outerhtml') {
+                            Console.error(nativeElement, `outerHTML cannot be changed`);
                         } else {
-                            this.nExpression.set(propertyName, new ExpressionDetails(value!));    
+                            if (!this.nExpression.has(propertyName)) {
+                                this.nExpression.set(propertyName, new ExpressionDetails(value!));   
+                            } else {
+                                Console.error(nativeElement, `multiple handlers for one property (${propertyName}) are not supported`);
+                            }
                         }
                     } else {
                         Console.error(nativeElement, `property handler can't be empty`);
@@ -92,12 +100,13 @@ export class Properties extends Base implements IHandler<Map<string, IExpression
     }
 
     public commit(): boolean {
-        const wasDirty = this.isDirty;
+        let wasDirty = false;
 
         if (this._isDirty) {
             for (const [key, value] of this._elementValues) {
                 if (!Helpers.equals(value, (<{[key: string]: any}>this._nativeElement)[key])) {
                     (<{[key: string]: any}>this._nativeElement)[key] = value;
+                    wasDirty = true;
                 }
             }
 

@@ -248,7 +248,7 @@ describe('Container handler', () => {
             expect(consoleSpy).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
                 el,
-                expect.stringContaining("Container with name 'missing-container' not found"),
+                expect.stringContaining("invalid operation: Container with name 'missing-container' not found"),
             );
             consoleSpy.mockRestore();
         });

@@ -1,6 +1,7 @@
 import { ContextBinder, RootContextBinder } from '../src/ContextBinder';
 import { ExpressionExecutor } from '../src/expression/ExpressionExecutor';
 import { Console } from '../src/Console';
+import { Constants } from '../src/Constants';
 
 // polyfill CSSStyleSheet.replaceSync for jsdom
 if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
@@ -832,6 +833,62 @@ describe('ContextBinder', () => {
             expect(binder.htmlSanitizer).toBeDefined();
             const result = binder.htmlSanitizer!('<div>test</div>');
             expect(result).toBe('<safe><div>test</div></safe>');
+        });
+
+        it('should fall back to global htmlSanitizer when contextConfig is undefined', () => {
+            const globalSanitizer = jest.fn((html: string) => `<safe>${html}</safe>`);
+            const binder = new ContextBinder(
+                undefined,
+                false,
+                () => 'nb-hidden',
+                globalSanitizer,
+                () => false,
+                () => undefined,
+                () => undefined
+            );
+
+            expect(binder.htmlSanitizer).toBeDefined();
+            expect(binder.htmlSanitizer!('<div>test</div>')).toBe('<safe><div>test</div></safe>');
+        });
+
+        it('should fall back to global htmlSanitizer in a root binder with no contextConfig', () => {
+            const globalSanitizer = jest.fn((html: string) => `<safe>${html}</safe>`);
+            const binder = new RootContextBinder(
+                undefined,
+                false,
+                () => 'nb-hidden',
+                globalSanitizer,
+                () => false,
+                () => undefined,
+                () => undefined
+            );
+
+            expect(binder.htmlSanitizer).toBeDefined();
+            expect(binder.htmlSanitizer!('<div>test</div>')).toBe('<safe><div>test</div></safe>');
+        });
+
+        it('should sanitize nb-html through the global sanitizer when contextConfig is undefined', () => {
+            const globalSanitizer = jest.fn((html: string) => html.replace(/<img[^>]*>/g, ''));
+            const binder = new ContextBinder(
+                undefined,
+                false,
+                () => 'nb-hidden',
+                globalSanitizer,
+                () => false,
+                () => undefined,
+                () => undefined
+            );
+
+            const root = document.createElement('div');
+            const target = document.createElement('span');
+            target.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.HTML_HANDLER_ATTRIBUTE_NAME}`,
+                                'this.html');
+            root.appendChild(target);
+
+            binder.bind(root, { html: '<b>hi</b><img src="x" onerror="alert(1)">' } as any, false, false);
+
+            expect(globalSanitizer).toHaveBeenCalled();
+            expect(target.innerHTML).toBe('<b>hi</b>');
         });
 
         it('should be undefined when neither config nor global has sanitizer', () => {

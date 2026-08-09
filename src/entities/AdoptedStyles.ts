@@ -50,7 +50,7 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
             this.styleTemplateProvider = <ITemplateProvider>styleTemplateOrPathOrProvider;
         } else {
             const stylesTemplateOrPath = <string>styleTemplateOrPathOrProvider;
-            if (URL.canParse(stylesTemplateOrPath)) {
+            if (this.isUrlLikeAndNotContent(stylesTemplateOrPath)) {
                 this.styleTemplatePath = stylesTemplateOrPath;
             } else {
                 this.setStyleTemplate(stylesTemplateOrPath);
@@ -87,7 +87,7 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
                         for (const el of this._readyCallBacks) {
                             try {
                                 el(true);
-                            } catch (ex) {
+                            } catch(ex) {
                                 Console.error(el, `AdoptedStyle readyCallBack failed with exception: ${ex}`);
                             }
                         }
@@ -100,10 +100,7 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
                 if (!this.isStyleTemplateReady) {
                     this.fetchData(this.styleTemplatePath, this.styleTemplateProvider, template => {
                         this.setStyleTemplate(template!);
-
-                        if (this.isReady) {
-                            triggerReadyCallBacks();
-                        }
+                        triggerReadyCallBacks();
                     }, error => {
                         let errorMessage = `Invalid adopted style ${this.name}: `;
 
@@ -121,9 +118,7 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
                             this.setStyleTemplate(errorMessage);
                         }
 
-                        if (this.isReady) {
-                            triggerReadyCallBacks();
-                        }
+                        triggerReadyCallBacks();
                     });
                 } else {
                     triggerReadyCallBacks();

@@ -209,12 +209,48 @@ describe('Constants', () => {
     });
 
     describe('DEFAULT_HIDE_STYLE', () => {
+        // the hide stylesheet is built once during Environment static init - necessarily before
+        // config({complyWithW3C: true}) can run - so its rule must target the hide class in BOTH modes
+        function hideStyleSelectors(): Array<string> {
+            return Constants.DEFAULT_HIDE_STYLE
+                            .slice(0, Constants.DEFAULT_HIDE_STYLE.indexOf('{'))
+                            .split(',')
+                            .map(selector => selector.trim())
+                            .filter(selector => selector.length > 0);
+        }
+
         it('should contain the hide class name', () => {
             expect(Constants.DEFAULT_HIDE_STYLE).toContain('nb-hidden');
         });
 
         it('should contain display: none', () => {
             expect(Constants.DEFAULT_HIDE_STYLE).toContain('display: none !important');
+        });
+
+        it('should target the hide class name in default mode', () => {
+            expect(hideStyleSelectors()).toContain(`.${Constants.DEFAULT_HIDE_CLASS_NAME}`);
+        });
+
+        it('should target the hide class name in W3C mode', () => {
+            Constants.changeCompliancyWithW3C(true);
+            expect(hideStyleSelectors()).toContain(`.${Constants.DEFAULT_HIDE_CLASS_NAME}`);
+        });
+
+        it('should match an element hidden in W3C mode even though the stylesheet predates the mode switch', () => {
+            // capture the style exactly as it is built at static-init time (default mode), then flip the mode
+            const styleBuiltBeforeModeSwitch = Constants.DEFAULT_HIDE_STYLE;
+            Constants.changeCompliancyWithW3C(true);
+
+            const el = document.createElement('div');
+            el.classList.add(Constants.DEFAULT_HIDE_CLASS_NAME);
+
+            const selectors = styleBuiltBeforeModeSwitch
+                                    .slice(0, styleBuiltBeforeModeSwitch.indexOf('{'))
+                                    .split(',')
+                                    .map(selector => selector.trim())
+                                    .filter(selector => selector.length > 0);
+
+            expect(selectors.some(selector => el.matches(selector))).toBe(true);
         });
     });
 
@@ -278,19 +314,19 @@ describe('Constants', () => {
         });
     });
 
-    describe('KNOW_HANDLER_EXTENSIONS', () => {
+    describe('KNOWN_HANDLER_EXTENSIONS', () => {
         it('should be a non-empty Set', () => {
-            expect(Constants.KNOW_HANDLER_EXTENSIONS).toBeInstanceOf(Set);
-            expect(Constants.KNOW_HANDLER_EXTENSIONS.size).toBeGreaterThan(0);
+            expect(Constants.KNOWN_HANDLER_EXTENSIONS).toBeInstanceOf(Set);
+            expect(Constants.KNOWN_HANDLER_EXTENSIONS.size).toBeGreaterThan(0);
         });
 
         it('should contain nb-projection by default', () => {
-            expect(Constants.KNOW_HANDLER_EXTENSIONS.has('nb-projection')).toBe(true);
+            expect(Constants.KNOWN_HANDLER_EXTENSIONS.has('nb-projection')).toBe(true);
         });
 
         it('should update when W3C mode changes', () => {
             Constants.changeCompliancyWithW3C(true);
-            expect(Constants.KNOW_HANDLER_EXTENSIONS.has('data-nb-projection')).toBe(true);
+            expect(Constants.KNOWN_HANDLER_EXTENSIONS.has('data-nb-projection')).toBe(true);
         });
     });
 
@@ -357,12 +393,12 @@ describe('Constants', () => {
             expect(Object.isFrozen(Constants.KNOWN_HANDLERS_WITHOUT_VALUE)).toBe(true);
         });
 
-        it('KNOW_HANDLER_EXTENSIONS should be frozen', () => {
-            expect(Object.isFrozen(Constants.KNOW_HANDLER_EXTENSIONS)).toBe(true);
+        it('KNOWN_HANDLER_EXTENSIONS should be frozen', () => {
+            expect(Object.isFrozen(Constants.KNOWN_HANDLER_EXTENSIONS)).toBe(true);
         });
 
-        it('KNOW_HANDLER_EXTENSIONS_WITHOUT_VALUES should be frozen', () => {
-            expect(Object.isFrozen(Constants.KNOW_HANDLER_EXTENSIONS_WITHOUT_VALUES)).toBe(true);
+        it('KNOWN_HANDLER_EXTENSIONS_WITHOUT_VALUES should be frozen', () => {
+            expect(Object.isFrozen(Constants.KNOWN_HANDLER_EXTENSIONS_WITHOUT_VALUES)).toBe(true);
         });
     });
 

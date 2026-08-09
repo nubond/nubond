@@ -64,7 +64,7 @@ export class Html extends Base implements IHandler<IExpressionDetails> {
     }
     
     public commit(): boolean {
-        const wasDirty = this._isDirty;
+        let wasDirty = false;
 
         if (this._isDirty) {
             if (this._previousHtml !== this._html) {
@@ -72,6 +72,7 @@ export class Html extends Base implements IHandler<IExpressionDetails> {
                                                             ? this._htmlSanitizer!(this._html)
                                                             : this._html;
                 this._previousHtml = this._html;
+                wasDirty = true;
             }
             
             this._isDirty = false;

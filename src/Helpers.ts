@@ -1,3 +1,5 @@
+import { Console } from './Console';
+
 /**
 * Useful helpers
 */
@@ -153,6 +155,26 @@ export class Helpers {
     }
 
     /**
+     * Check if value is valid identifier.
+     * 
+     * @param value identifier
+     * @returns true - value is valid identifier, false - otherwise
+     */
+    public static isValidIdentifier(value: string): boolean {
+        let result = false;
+
+        if ((typeof(value) === 'string') && (value.length > 0)) {
+            try {
+                result = typeof(new Function(value, `"use strict"\nreturn ${value};`)) === 'function';
+            } catch {
+                //no need to log
+            }
+        }
+
+        return result;
+    }
+
+    /**
      * Stringify data.
      * 
      * @param data data
@@ -186,96 +208,7 @@ export class Helpers {
      * @returns true - values are equal; false - otherwise
      */
     public static equals(a: any, b: any): boolean {
-        if (a !== b) {
-            const aType = typeof(a);
-            const bType = typeof(b);
-
-            if ((aType === bType) && (a?.constructor === b?.constructor)) {
-                if ((a instanceof RegExp) || (a instanceof Date)) {
-                    return false;
-                } else if (Array.isArray(a) ||
-                           ((a instanceof Int8Array) || (a instanceof Uint8Array) || (a instanceof Uint8ClampedArray)) ||
-                           ((a instanceof Int16Array) || (a instanceof Uint16Array)) ||
-                           ((a instanceof Int32Array) || (a instanceof Uint32Array)) ||
-                           ((a instanceof BigInt64Array) || (a instanceof BigUint64Array)) ||
-                           ((a instanceof Float16Array) || (a instanceof Float32Array) || (a instanceof Float64Array))) {               
-                    if (a.length === b.length) {
-                        for (let index = 0; index < a.length; index++) {
-                            if (!Helpers.equals(a[index], b[index])) {
-                                return false;
-                            }
-                        }
-
-                        return true;
-                    } else {
-                        return false;
-                    }
-                } else if (a instanceof Set) {
-                    if (a.size === b.size) {
-                        for (const el of a) {
-                            if (!b.has(el)) {
-                                return false;
-                            }
-                        }
-
-                        return true;
-                    } else {
-                        return false;
-                    }
-                } else if (a instanceof Map) {
-                    if (a.size === b.size) {
-                        for (const [key, value] of a) {
-                            if (!b.has(key) || !Helpers.equals(value, b.get(key))) {
-                                return false;
-                            }
-                        }
-
-                        return true;
-                    } else {
-                        return false;
-                    }
-                } else if (aType === 'object') {
-                    let aPropNames = [];
-                    let bPropNames = [];
-
-                    for (const name in a) {
-                        aPropNames.push(name);
-                    }
-
-                    for (const name in b) {
-                        bPropNames.push(name);
-                    }
-
-                    if (aPropNames.length === bPropNames.length) {
-                        aPropNames = aPropNames.sort();
-                        bPropNames = bPropNames.sort();
-
-                        for (let index = 0; index < aPropNames.length; index++) {
-                            const aPropName = aPropNames[index];
-                            const bPropName = bPropNames[index];
-
-                            if (aPropName === bPropName) {
-                                if (!Helpers.equals(a[aPropName], b[bPropName])) {
-                                    return false;
-                                }
-                            } else {
-                                return false;
-                            }
-                        }
-
-                        return true;
-                    } else {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        } else {
-            return true;
-        }
+        return this.equalsInternal(a, b);
     }
 
     /**
@@ -336,5 +269,204 @@ export class Helpers {
                                                                     : (args[index] === null
                                                                             ? ''
                                                                             : `${args[index]}`));
+    }
+
+    /**
+     * Split a string by separator tha can be escaped
+     * 
+     * @param value value to split
+     * @param separatorChar split by character
+     * @param separatorEscapeChar character to escape split character
+     * @returns array with splitted and trimmed not empty values
+     */
+    public static split(value: string, separatorChar: string, separatorEscapeChar: string): Array<string> {
+        const result: Array<string> = [];
+
+        const trimmedValue = value.trim();
+        if (trimmedValue.length > 0) {
+            let index = 0;
+            let accumulator = '';
+
+            do
+            {
+                const currentChar = trimmedValue[index];
+                if(currentChar === separatorChar) {
+                    if (index > 0) {
+                        if (trimmedValue[index - 1] !== separatorEscapeChar) {
+                            const trimmedAccumulator = accumulator.trim();
+                            if (trimmedAccumulator.length > 0) {
+                                result.push(trimmedAccumulator);
+                            }
+                            accumulator = '';
+                        } else {
+                            accumulator = accumulator.substring(0, accumulator.length - 1) + currentChar;
+                        }
+                    }
+                } else {
+                    accumulator += currentChar;
+                }
+            } while (++index < trimmedValue.length);
+
+            const trimmedAccumulator = accumulator.trim();
+            if (trimmedAccumulator.length > 0) {
+                result.push(trimmedAccumulator);
+            }
+        }
+
+        return result;
+    }
+
+    private static equalsInternal(a: any, b: any, processed?: Set<any>): boolean {
+        if (a !== b) {
+            const aType = typeof(a);
+            const bType = typeof(b);
+
+            if ((aType === bType) && (a?.constructor === b?.constructor)) {
+                if (a instanceof Date) {
+                    return a.getTime() === b.getTime();
+                } else if (a instanceof RegExp) {
+                    return (a.source === b.source) && (a.flags === b.flags);
+                } else if (aType === 'number') {
+                    return isNaN(a) && isNaN(b);
+                } else if (Array.isArray(a) ||
+                           ((a instanceof Int8Array) || (a instanceof Uint8Array) || (a instanceof Uint8ClampedArray)) ||
+                           ((a instanceof Int16Array) || (a instanceof Uint16Array)) ||
+                           ((a instanceof Int32Array) || (a instanceof Uint32Array)) ||
+                           ((a instanceof BigInt64Array) || (a instanceof BigUint64Array)) ||
+                           ((a instanceof Float16Array) || (a instanceof Float32Array) || (a instanceof Float64Array))) {               
+                    if (a.length === b.length) {
+                        const processedArraysIsUndefined = Helpers.isUndefined(processed);
+                        const alreadyProcessedArrays =  processedArraysIsUndefined ? new Set<any>() : processed!;
+
+                        if (!processedArraysIsUndefined && (alreadyProcessedArrays.has(a) || alreadyProcessedArrays.has(b))) {
+                            Console.error(`deep equality comparison detected a circular reference:`, alreadyProcessedArrays.has(a) ? a : b, 
+                                          'when array', a, 'and', b, `are being compared, Array's will be marked as equal to prevent further error propagation`);
+                            return true;
+                        } else {
+                            alreadyProcessedArrays.add(a);
+                            alreadyProcessedArrays.add(b);
+
+                            for (let index = 0; index < a.length; index++) {
+                                if (!Helpers.equalsInternal(a[index], b[index], alreadyProcessedArrays)) {
+                                    alreadyProcessedArrays.delete(a);
+                                    alreadyProcessedArrays.delete(b);
+
+                                    return false;
+                                }
+                            }
+
+                            alreadyProcessedArrays.delete(a);
+                            alreadyProcessedArrays.delete(b);
+
+                            return true;
+                        }
+                    } else {
+                        return false;
+                    }
+                } else if (a instanceof Set) {
+                    if (a.size === b.size) {
+                        for (const el of a) {
+                            if (!b.has(el)) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    } else {
+                        return false;
+                    }
+                } else if (a instanceof Map) {
+                    if (a.size === b.size) {
+                        const processedMapsIsUndefined = Helpers.isUndefined(processed);
+                        const alreadyProcessedMaps =  processedMapsIsUndefined ? new Set<any>() : processed!;
+
+                        if (!processedMapsIsUndefined && (alreadyProcessedMaps.has(a) || alreadyProcessedMaps.has(b))) {
+                            Console.error(`deep equality comparison detected a circular reference:`, alreadyProcessedMaps.has(a) ? a : b, 
+                                          'when Map', a, 'and', b, `are being compared, Map's will be marked as equal to prevent further error propagation`);
+                            return true;
+                        } else {
+                            alreadyProcessedMaps.add(a);
+                            alreadyProcessedMaps.add(b);
+
+                            for (const [key, value] of a) {
+                                if (!b.has(key) || !Helpers.equalsInternal(value, b.get(key), alreadyProcessedMaps)) {
+                                    alreadyProcessedMaps.delete(a);
+                                    alreadyProcessedMaps.delete(b);
+
+                                    return false;
+                                }
+                            }
+
+                            alreadyProcessedMaps.delete(a);
+                            alreadyProcessedMaps.delete(b);
+
+                            return true;
+                        }
+                    } else {
+                        return false;
+                    }
+                } else if (aType === 'object') {
+                    let aPropNames = [];
+                    let bPropNames = [];
+
+                    for (const name in a) {
+                        aPropNames.push(name);
+                    }
+
+                    for (const name in b) {
+                        bPropNames.push(name);
+                    }
+
+                    if (aPropNames.length === bPropNames.length) {
+                        const processedObjectsIsUndefined = Helpers.isUndefined(processed);
+                        const alreadyProcessedObjects =  processedObjectsIsUndefined ? new Set<any>() : processed!;
+
+                        if (!processedObjectsIsUndefined && (alreadyProcessedObjects.has(a) || alreadyProcessedObjects.has(b))) {
+                            Console.error(`deep equality comparison detected a circular reference:`, alreadyProcessedObjects.has(a) ? a : b, 
+                                          'when objects', a, 'and', b, 'are being compared, objects will be marked as equal to prevent further error propagation');
+                            return true;
+                        } else {
+                            alreadyProcessedObjects.add(a);
+                            alreadyProcessedObjects.add(b);
+                            
+                            aPropNames = aPropNames.sort();
+                            bPropNames = bPropNames.sort();
+
+                            for (let index = 0; index < aPropNames.length; index++) {
+                                const aPropName = aPropNames[index];
+                                const bPropName = bPropNames[index];
+
+                                if (aPropName === bPropName) {
+                                    if (!Helpers.equalsInternal(a[aPropName], b[bPropName], alreadyProcessedObjects)) {
+                                        alreadyProcessedObjects.delete(a);
+                                        alreadyProcessedObjects.delete(b);
+
+                                        return false;
+                                    }
+                                } else {
+                                    alreadyProcessedObjects.delete(a);
+                                    alreadyProcessedObjects.delete(b);
+
+                                    return false;
+                                }
+                            }
+
+                            alreadyProcessedObjects.delete(a);
+                            alreadyProcessedObjects.delete(b);
+
+                            return true;
+                        }
+                    } else {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else {
+            return true;
+        }
     }
 }

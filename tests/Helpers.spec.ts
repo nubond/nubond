@@ -505,8 +505,8 @@ describe('Helpers', () => {
         });
 
         describe('Date', () => {
-            it('should return false for two Date instances with same time', () => {
-                expect(Helpers.equals(new Date(2020, 0, 1), new Date(2020, 0, 1))).toBe(false);
+            it('should return true for two Date instances with same time', () => {
+                expect(Helpers.equals(new Date(2020, 0, 1), new Date(2020, 0, 1))).toBe(true);
             });
 
             it('should return false for two Date instances with different times', () => {
@@ -518,6 +518,10 @@ describe('Helpers', () => {
                 expect(Helpers.equals(d, d)).toBe(true);
             });
 
+            it('should return false for two invalid Date instances', () => {
+                expect(Helpers.equals(new Date('invalid'), new Date('invalid'))).toBe(false);
+            });
+
             it('should return false when only one side is Date', () => {
                 expect(Helpers.equals(new Date(), {})).toBe(false);
                 expect(Helpers.equals({}, new Date())).toBe(false);
@@ -525,12 +529,16 @@ describe('Helpers', () => {
         });
 
         describe('RegExp', () => {
-            it('should return false for two RegExp with same pattern', () => {
-                expect(Helpers.equals(/abc/g, /abc/g)).toBe(false);
+            it('should return true for two RegExp with same pattern and flags', () => {
+                expect(Helpers.equals(/abc/g, /abc/g)).toBe(true);
             });
 
             it('should return false for two RegExp with different patterns', () => {
                 expect(Helpers.equals(/abc/, /xyz/)).toBe(false);
+            });
+
+            it('should return false for two RegExp with same pattern but different flags', () => {
+                expect(Helpers.equals(/abc/g, /abc/i)).toBe(false);
             });
 
             it('should return true for same RegExp reference', () => {
@@ -541,6 +549,22 @@ describe('Helpers', () => {
             it('should return false when only one side is RegExp', () => {
                 expect(Helpers.equals(/abc/, {})).toBe(false);
                 expect(Helpers.equals({}, /abc/)).toBe(false);
+            });
+        });
+
+        describe('NaN', () => {
+            it('should return true for NaN compared with NaN', () => {
+                expect(Helpers.equals(NaN, NaN)).toBe(true);
+            });
+
+            it('should return false for NaN compared with a number', () => {
+                expect(Helpers.equals(NaN, 1)).toBe(false);
+                expect(Helpers.equals(1, NaN)).toBe(false);
+            });
+
+            it('should return false for NaN compared with a non-number', () => {
+                expect(Helpers.equals(NaN, 'NaN')).toBe(false);
+                expect(Helpers.equals(NaN, undefined)).toBe(false);
             });
         });
 
@@ -678,6 +702,82 @@ describe('Helpers', () => {
                 expect(Helpers.equals(ws, ws)).toBe(true);
             });
         });
+
+        describe('circular references', () => {
+            let errorSpy: jest.SpyInstance;
+
+            beforeEach(() => {
+                errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            });
+
+            afterEach(() => {
+                errorSpy.mockRestore();
+            });
+
+            it('should treat two self-referencing objects as equal without throwing and log the cycle', () => {
+                const a: any = { v: 1 };
+                a.self = a;
+                const b: any = { v: 1 };
+                b.self = b;
+
+                expect(Helpers.equals(a, b)).toBe(true);
+                expect(errorSpy).toHaveBeenCalled();
+            });
+
+            it('should return false when only one side is cyclic', () => {
+                const a: any = { v: 1 };
+                a.self = a;
+                const b: any = { v: 1 };
+                b.self = { v: 1 };
+
+                expect(Helpers.equals(a, b)).toBe(false);
+            });
+
+            it('should treat two self-referencing arrays as equal without throwing', () => {
+                const a: any[] = [1];
+                a.push(a);
+                const b: any[] = [1];
+                b.push(b);
+
+                expect(Helpers.equals(a, b)).toBe(true);
+            });
+
+            it('should treat two self-referencing Maps as equal without throwing', () => {
+                const a = new Map<string, any>([['v', 1]]);
+                a.set('self', a);
+                const b = new Map<string, any>([['v', 1]]);
+                b.set('self', b);
+
+                expect(Helpers.equals(a, b)).toBe(true);
+            });
+
+            it('should not mistake a repeated (shared) object reference for a cycle when values differ', () => {
+                const shared = { x: 1 };
+                const a = { p: shared, q: shared };
+                const b = { p: { x: 1 }, q: { x: 2 } };
+
+                expect(Helpers.equals(a, b)).toBe(false);
+                expect(errorSpy).not.toHaveBeenCalled();
+            });
+
+            it('should not mistake a repeated (shared) object reference for a cycle when values match', () => {
+                const shared = { x: 1 };
+                const a = { p: shared, q: shared };
+                const b = { p: { x: 1 }, q: { x: 1 } };
+
+                expect(Helpers.equals(a, b)).toBe(true);
+                expect(errorSpy).not.toHaveBeenCalled();
+            });
+
+            it('should not mistake a repeated (shared) array reference for a cycle when values differ', () => {
+                const shared = [1, 2];
+                const a = [shared, shared];
+                const b = [[1, 2], [1, 3]];
+
+                expect(Helpers.equals(a, b)).toBe(false);
+                expect(errorSpy).not.toHaveBeenCalled();
+            });
+        });
     });
 
     describe('format', () => {
@@ -695,6 +795,120 @@ describe('Helpers', () => {
 
         it('should handle numeric args', () => {
             expect(Helpers.format('{0}', 42)).toBe('42');
+        });
+    });
+
+    describe('split', () => {
+        it('should split on the separator and trim each entry', () => {
+            expect(Helpers.split('a; b ; c', ';', '\\')).toEqual(['a', 'b', 'c']);
+        });
+
+        it('should drop empty, leading and trailing entries', () => {
+            expect(Helpers.split('; a ;; b ;', ';', '\\')).toEqual(['a', 'b']);
+        });
+
+        it('should return an empty array for an empty string', () => {
+            expect(Helpers.split('', ';', '\\')).toEqual([]);
+        });
+
+        it('should return an empty array for a whitespace-only string', () => {
+            expect(Helpers.split('   ', ';', '\\')).toEqual([]);
+        });
+
+        it('should return an empty array when the value is only separators', () => {
+            expect(Helpers.split(';;;', ';', '\\')).toEqual([]);
+        });
+
+        it('should keep an escaped separator and strip the escape character', () => {
+            expect(Helpers.split('a\\;b; c', ';', '\\')).toEqual(['a;b', 'c']);
+        });
+
+        it('should keep an escaped separator when it is the only content', () => {
+            expect(Helpers.split('a\\;b', ';', '\\')).toEqual(['a;b']);
+        });
+
+        it('should return the whole value when there is no separator', () => {
+            expect(Helpers.split('abc', ';', '\\')).toEqual(['abc']);
+        });
+
+        it('should keep multiple escaped separators within a single entry', () => {
+            expect(Helpers.split('a\\;b\\;c', ';', '\\')).toEqual(['a;b;c']);
+        });
+
+        it('should handle an escaped separator at the start of the value', () => {
+            expect(Helpers.split('\\;a', ';', '\\')).toEqual([';a']);
+        });
+
+        it('should handle a trailing escaped separator', () => {
+            expect(Helpers.split('a\\;', ';', '\\')).toEqual(['a;']);
+        });
+
+        it('should not support escaping the escape character (doubled escape still escapes the separator)', () => {
+            // `a\\;b` -> the second backslash is treated as the escape for ';', so the
+            // separator is kept and one backslash remains. There is no escape-the-escape.
+            expect(Helpers.split('a\\\\;b', ';', '\\')).toEqual(['a\\;b']);
+        });
+
+        it('should preserve internal whitespace while trimming entry edges', () => {
+            expect(Helpers.split('  a b ; c d  ', ';', '\\')).toEqual(['a b', 'c d']);
+        });
+
+        it('should return an empty array for a lone separator', () => {
+            expect(Helpers.split(';', ';', '\\')).toEqual([]);
+        });
+
+        it('should work with arbitrary separator and escape characters', () => {
+            expect(Helpers.split('a,b,c', ',', '!')).toEqual(['a', 'b', 'c']);
+        });
+
+        it('should honor an arbitrary escape character', () => {
+            expect(Helpers.split('a!,b,c', ',', '!')).toEqual(['a,b', 'c']);
+        });
+    });
+
+    describe('isValidIdentifier', () => {
+        // #8: transformer / nb-var names become formal parameters of every compiled expression, and
+        // ExpressionExecutor compiles the body in strict mode. The probe must therefore mirror the
+        // real compile shape — a sloppy-mode probe accepts names that the real path still rejects.
+        it.each(['a', 'value', 'myVar', '_private', '$dollar', 'x1', 'ü', '日本'])(
+            'should accept %s', (name) => {
+            expect(Helpers.isValidIdentifier(name)).toBe(true);
+        });
+
+        it.each(['await', 'async', 'of', 'get', 'set', 'undefined', 'NaN'])(
+            'should accept the contextual keyword %s', (name) => {
+            expect(Helpers.isValidIdentifier(name)).toBe(true);
+        });
+
+        it.each(['if', 'class', 'return', 'new', 'typeof', 'delete', 'in', 'instanceof', 'this', 'null', 'true'])(
+            'should reject the reserved word %s', (name) => {
+            expect(Helpers.isValidIdentifier(name)).toBe(false);
+        });
+
+        it.each(['let', 'static', 'public', 'private', 'protected', 'implements', 'interface', 'package', 'yield'])(
+            'should reject the strict-mode reserved word %s', (name) => {
+            // Valid in sloppy mode, SyntaxError in the strict-mode body the executor compiles.
+            expect(Helpers.isValidIdentifier(name)).toBe(false);
+        });
+
+        it.each(['eval', 'arguments'])('should reject %s (illegal strict-mode parameter name)', (name) => {
+            expect(Helpers.isValidIdentifier(name)).toBe(false);
+        });
+
+        it.each(['a=1', '{a}', '[a]', '...a'])(
+            'should reject the non-simple parameter form %s', (name) => {
+            expect(Helpers.isValidIdentifier(name)).toBe(false);
+        });
+
+        it.each(['0abc', 'a b', 'a.b', 'my-transformer', 'a,', 'a\tb', 'a\nb', ''])(
+            'should reject %j', (name) => {
+            expect(Helpers.isValidIdentifier(name)).toBe(false);
+        });
+
+        it('should reject a non-string', () => {
+            expect(Helpers.isValidIdentifier(undefined as any)).toBe(false);
+            expect(Helpers.isValidIdentifier(null as any)).toBe(false);
+            expect(Helpers.isValidIdentifier(42 as any)).toBe(false);
         });
     });
 });

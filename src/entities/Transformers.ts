@@ -6,6 +6,7 @@ import { Injectables } from './Injectables';
 
 import { Constants } from '../Constants';
 import { Console } from '../Console';
+import { Helpers } from '../Helpers';
 
 export class Transformers {
     private readonly _namesSet = new Set<string>();
@@ -28,6 +29,11 @@ export class Transformers {
 
         if (Constants.RESERVED_CONTEXT_NAMES.has(lowerCasedName)) {
             Console.error(`Transformers with '${name}' name cannot be created, this name is reserved.`);
+            return;
+        }
+
+        if (!Helpers.isValidIdentifier(name)) {
+            Console.error(`Transformers with '${name}' name cannot be created, '${name}' is not a valid identifier.`);
             return;
         }
 

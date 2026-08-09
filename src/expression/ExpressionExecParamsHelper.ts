@@ -115,7 +115,7 @@ export class ExpressionExecParamsHelper {
         values.push(evt instanceof CustomEvent ? (<CustomEvent>evt).detail : undefined); //TODO: check events
         values.push(unSubscribeFn);
 
-        if (Environment.router!.isConfigured) {
+        if (!Helpers.isUndefined(Environment.router) && Environment.router!.isConfigured) {
             names.push(Constants.ROUTER_EXECUTION_PARAM_NAME);
             values.push(Environment.router);
         }

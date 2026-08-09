@@ -51,4 +51,30 @@ describe('Detectors', () => {
 
         expect(detectors.get(MyClass as any)).toEqual(['a', 'b', 'c']);
     });
+
+    // Documented by-design limitation (see the @Detector() JSDoc): registration keys on the exact
+    // prototype the decorator ran against, and lookup keys on the concrete class's own prototype, so
+    // a base class's detectors are NOT inherited. Pinned here so the behaviour stays deliberate.
+    describe('inheritance is not supported (by design)', () => {
+        it('should not see a base class detector from a derived class', () => {
+            class Base {}
+            class Derived extends Base {}
+
+            detectors.add(Base.prototype, 'baseProp');
+
+            expect(detectors.get(Base as any)).toEqual(['baseProp']);
+            expect(detectors.get(Derived as any)).toBeUndefined();
+            expect(detectors.has(Derived as any)).toBe(false);
+        });
+
+        it('should expose only the derived class own detectors when both are decorated', () => {
+            class Base {}
+            class Derived extends Base {}
+
+            detectors.add(Base.prototype, 'baseProp');
+            detectors.add(Derived.prototype, 'derivedProp');
+
+            expect(detectors.get(Derived as any)).toEqual(['derivedProp']);
+        });
+    });
 });

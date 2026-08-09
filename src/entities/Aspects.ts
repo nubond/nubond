@@ -67,7 +67,7 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
             hasOwnStyles = true;
         } else {
             const stylesTemplateOrPath = <string>styleTemplateOrPathOrProvider;
-            if (URL.canParse(stylesTemplateOrPath)) {
+            if (this.isUrlLikeAndNotContent(stylesTemplateOrPath)) {
                 this.styleTemplatePath = stylesTemplateOrPath;
             } else {
                 this.setStyleTemplate(stylesTemplateOrPath);
@@ -106,7 +106,11 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
                     //to unwrap error if any
                     setTimeout(() => {
                         for (const el of this._readyCallBacks) {
-                            el(true);
+                            try {
+                                el(true);
+                            } catch(ex) {
+                                Console.error(el, `Aspect readyCallBack failed with exception: ${ex}`);
+                            }
                         }
 
                         this._readyCallBacks = [];
@@ -117,10 +121,7 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
                 if (!this.isStyleTemplateReady) {
                     this.fetchData(this.styleTemplatePath, this.styleTemplateProvider, template => {
                         this.setStyleTemplate(template!);
-
-                        if (this.isReady) {
-                            triggerReadyCallBacks();
-                        }
+                        triggerReadyCallBacks();
                     }, error => {
                         let errorMessage = `Invalid aspect ${this.name}: `;
 
@@ -138,9 +139,7 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
                             this.setStyleTemplate(errorMessage);
                         }
 
-                        if (this.isReady) {
-                            triggerReadyCallBacks();
-                        }
+                        triggerReadyCallBacks();
                     });
                 } else {
                     triggerReadyCallBacks();

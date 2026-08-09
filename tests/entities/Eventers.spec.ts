@@ -63,4 +63,31 @@ describe('Eventers', () => {
         const map = eventers.get(MyClass as any);
         expect(map!.get('onClick')).toBe('dblclick');
     });
+
+    // Documented by-design limitation (see the @Eventer() JSDoc): registration keys on the exact
+    // prototype the decorator ran against, and lookup keys on the concrete class's own prototype, so
+    // a base class's eventers are NOT inherited. Pinned here so the behaviour stays deliberate.
+    describe('inheritance is not supported (by design)', () => {
+        it('should not see a base class eventer from a derived class', () => {
+            class Base {}
+            class Derived extends Base {}
+
+            eventers.add(Base.prototype, 'click', 'onClick');
+
+            expect(eventers.get(Base as any)!.get('onClick')).toBe('click');
+            expect(eventers.get(Derived as any)).toBeUndefined();
+            expect(eventers.has(Derived as any)).toBe(false);
+        });
+
+        it('should expose only the derived class own eventers when both are decorated', () => {
+            class Base {}
+            class Derived extends Base {}
+
+            eventers.add(Base.prototype, 'click', 'onBaseClick');
+            eventers.add(Derived.prototype, 'change', 'onDerivedChange');
+
+            const map = eventers.get(Derived as any);
+            expect([...map!.keys()]).toEqual(['onDerivedChange']);
+        });
+    });
 });

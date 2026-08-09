@@ -32,6 +32,59 @@ describe('AdoptedStyles', () => {
         expect(sheet).toBeInstanceOf(CSSStyleSheet);
     });
 
+    describe('hide stylesheet vs W3C mode', () => {
+        afterEach(() => {
+            Constants.changeCompliancyWithW3C(false);
+        });
+
+        function selectorsOf(css: string): Array<string> {
+            return css.slice(0, css.indexOf('{'))
+                      .split(',')
+                      .map(selector => selector.trim())
+                      .filter(selector => selector.length > 0);
+        }
+
+        // the hide sheet is created once, in the AdoptedStyles constructor, which runs during Environment
+        // static init - necessarily before config({complyWithW3C: true}). Nothing regenerates the already
+        // created CSSStyleSheet, so its rule must target the hide class in both modes.
+        it('should keep targeting the hide class after a switch to W3C mode', () => {
+            const cssTexts: Array<string> = [];
+            jest.spyOn(CSSStyleSheet.prototype, 'replaceSync').mockImplementation((text: string) => {
+                cssTexts.push(text);
+            });
+
+            new AdoptedStyles(() => false);             // built in default (non-W3C) mode
+            Constants.changeCompliancyWithW3C(true);    // ... only now does the app opt into W3C
+
+            expect(Constants.DEFAULT_HIDE_CLASS_NAME).toBe('data-nb-hidden');
+
+            const hideCss = cssTexts.find(text => text.trim().startsWith('.'));
+            expect(hideCss).toBeDefined();
+
+            const hiddenElement = document.createElement('div');
+            hiddenElement.classList.add(Constants.DEFAULT_HIDE_CLASS_NAME);
+
+            expect(selectorsOf(hideCss!).some(selector => hiddenElement.matches(selector))).toBe(true);
+        });
+
+        it('should target the hide class in default mode', () => {
+            const cssTexts: Array<string> = [];
+            jest.spyOn(CSSStyleSheet.prototype, 'replaceSync').mockImplementation((text: string) => {
+                cssTexts.push(text);
+            });
+
+            new AdoptedStyles(() => false);
+
+            const hideCss = cssTexts.find(text => text.trim().startsWith('.'));
+            expect(hideCss).toBeDefined();
+
+            const hiddenElement = document.createElement('div');
+            hiddenElement.classList.add(Constants.DEFAULT_HIDE_CLASS_NAME);
+
+            expect(selectorsOf(hideCss!).some(selector => hiddenElement.matches(selector))).toBe(true);
+        });
+    });
+
     it('should be case-insensitive for name lookup', () => {
         adoptedStyles.add('MyStyle', '.my { color: blue; }', () => undefined);
 
@@ -70,7 +123,7 @@ describe('AdoptedStyles', () => {
     });
 
     it('should log error for get() when style is not ready', () => {
-        adoptedStyles.add('not-ready-style', 'http://localhost/styles.css', () => undefined);
+        adoptedStyles.add('not-ready-style', '/styles.css', () => undefined);
         expect(adoptedStyles.isReady('not-ready-style')).toBe(false);
 
         const result = adoptedStyles.get('not-ready-style');
@@ -104,7 +157,7 @@ describe('AdoptedStyles', () => {
                 text: () => Promise.resolve('.fetched { color: blue; }')
             });
 
-            adoptedStyles.add('remote-css', 'http://localhost/styles.css', () => undefined);
+            adoptedStyles.add('remote-css', '/styles.css', () => undefined);
             expect(adoptedStyles.isReady('remote-css')).toBe(false);
 
             const cb = jest.fn();
@@ -118,7 +171,7 @@ describe('AdoptedStyles', () => {
             expect(adoptedStyles.get('remote-css')).toBeInstanceOf(CSSStyleSheet);
         });
 
-        it('should handle fetch returning error status (non-debug: cb not fired)', async () => {
+        it('should handle fetch returning error status (cb fired even though not ready)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: false,
                 status: 404,
@@ -126,7 +179,7 @@ describe('AdoptedStyles', () => {
                 text: () => Promise.resolve('')
             });
 
-            adoptedStyles.add('err-css', 'http://localhost/missing.css', () => undefined);
+            adoptedStyles.add('err-css', '/missing.css', () => undefined);
             const cb = jest.fn();
             adoptedStyles.tryPrepare('err-css', cb);
 
@@ -135,16 +188,16 @@ describe('AdoptedStyles', () => {
 
             expect(console.error).toHaveBeenCalled();
             expect(adoptedStyles.isReady('err-css')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
-        it('should handle fetch returning empty body (non-debug: cb not fired)', async () => {
+        it('should handle fetch returning empty body (cb fired even though not ready)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: true,
                 text: () => Promise.resolve('')
             });
 
-            adoptedStyles.add('empty-css', 'http://localhost/empty.css', () => undefined);
+            adoptedStyles.add('empty-css', '/empty.css', () => undefined);
             const cb = jest.fn();
             adoptedStyles.tryPrepare('empty-css', cb);
 
@@ -153,7 +206,7 @@ describe('AdoptedStyles', () => {
 
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('not a string or this string is empty'));
             expect(adoptedStyles.isReady('empty-css')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
         it('should use ITemplateProvider returning string synchronously', () => {
@@ -182,7 +235,7 @@ describe('AdoptedStyles', () => {
             expect(adoptedStyles.isReady('async-prov-css')).toBe(true);
         });
 
-        it('should handle ITemplateProvider returning empty value (non-debug: cb not fired)', () => {
+        it('should handle ITemplateProvider returning empty value (cb fired even though not ready)', () => {
             const provider = { get: () => '' };
             adoptedStyles.add('empty-prov-css', provider as any, () => undefined);
 
@@ -192,10 +245,10 @@ describe('AdoptedStyles', () => {
 
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('not a string or this string is empty'));
             expect(adoptedStyles.isReady('empty-prov-css')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
-        it('should log error when no style source found (non-debug: cb not fired)', () => {
+        it('should log error when no style source found (cb fired even though not ready)', () => {
             const invalidProvider = { noGet: true };
             adoptedStyles.add('no-src-css', invalidProvider as any, () => undefined);
 
@@ -205,10 +258,10 @@ describe('AdoptedStyles', () => {
 
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('nor style template'));
             expect(adoptedStyles.isReady('no-src-css')).toBe(false);
-            expect(cb).not.toHaveBeenCalled();
+            expect(cb).toHaveBeenCalledWith(true);
         });
 
-        it('should leave fetchInProgress stuck after error in non-debug mode', async () => {
+        it('should release fetchInProgress after error in non-debug mode (callbacks always fire)', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: false,
                 status: 500,
@@ -216,24 +269,24 @@ describe('AdoptedStyles', () => {
                 text: () => Promise.resolve('')
             });
 
-            adoptedStyles.add('stuck-css', 'http://localhost/fail.css', () => undefined);
+            adoptedStyles.add('stuck-css', '/fail.css', () => undefined);
 
             const cb1 = jest.fn();
             adoptedStyles.tryPrepare('stuck-css', cb1);
             await flushPromises();
             jest.runAllTimers();
 
-            // Error logged but not ready, callback not fired
+            // Error logged and not ready, but the callback is now always fired so the fetch lock is released
             expect(console.error).toHaveBeenCalled();
             expect(adoptedStyles.isReady('stuck-css')).toBe(false);
-            expect(cb1).not.toHaveBeenCalled();
+            expect(cb1).toHaveBeenCalledWith(true);
 
-            // Second attempt just queues (fetchInProgress still true)
+            // Second attempt is able to retry (fetchInProgress was released) and its callback fires too
             const cb2 = jest.fn();
             adoptedStyles.tryPrepare('stuck-css', cb2);
             await flushPromises();
             jest.runAllTimers();
-            expect(cb2).not.toHaveBeenCalled();
+            expect(cb2).toHaveBeenCalledWith(true);
         });
 
         it('should isolate exceptions thrown by one readyCallBack from sibling callbacks (M-23)', async () => {
@@ -244,7 +297,7 @@ describe('AdoptedStyles', () => {
                 text: () => Promise.resolve('.ok { color: blue; }')
             });
 
-            adoptedStyles.add('isolated-css', 'http://localhost/ok.css', () => undefined);
+            adoptedStyles.add('isolated-css', '/ok.css', () => undefined);
 
             const cb1 = jest.fn(() => { throw new Error('cb1 failed'); });
             const cb2 = jest.fn();
@@ -264,7 +317,7 @@ describe('AdoptedStyles', () => {
                 text: () => Promise.resolve('.queued { padding: 0; }')
             });
 
-            adoptedStyles.add('queued-css', 'http://localhost/queued.css', () => undefined);
+            adoptedStyles.add('queued-css', '/queued.css', () => undefined);
 
             const cb1 = jest.fn();
             const cb2 = jest.fn();
@@ -300,7 +353,7 @@ describe('AdoptedStyles', () => {
             });
 
             const sanitizer = jest.fn((css: string) => css.replace('red', 'blue'));
-            adoptedStyles.add('san-css', 'http://localhost/sanitized.css', () => sanitizer);
+            adoptedStyles.add('san-css', '/sanitized.css', () => sanitizer);
 
             const cb = jest.fn();
             adoptedStyles.tryPrepare('san-css', cb);
@@ -323,7 +376,7 @@ describe('AdoptedStyles', () => {
                 text: () => Promise.resolve('')
             });
 
-            adoptedStyles.add('debug-err-css', 'http://localhost/debug-err.css', () => undefined);
+            adoptedStyles.add('debug-err-css', '/debug-err.css', () => undefined);
 
             const cb = jest.fn();
             adoptedStyles.tryPrepare('debug-err-css', cb);

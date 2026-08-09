@@ -49,7 +49,9 @@ export class TreeBuilder {
 
         nElementParent.addChild(newNElement);
 
-        this.constructTreePrivate(contextBinder, newNElement, newElement);
+        if (!newNElement.isSubTreeHandled) {
+            this.constructTreePrivate(contextBinder, newNElement, newElement);
+        }
     }
 
     private static createNElement(contextBinder: ContextBinder, nElementParent: INTreeElement | null, nativeElement: Element, 

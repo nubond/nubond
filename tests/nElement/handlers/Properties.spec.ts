@@ -114,6 +114,87 @@ describe('Properties handler', () => {
         });
     });
 
+    // The guard tests above feed a mock Attributes that preserves casing - a shape the real DOM never
+    // produces (browsers lowercase attribute names). These drive real elements instead, so they cover
+    // both how the sinks actually arrive and that non-blocked names keep their camelCase spelling.
+    describe('html sinks and camelCase property names', () => {
+        let errorSpy: jest.SpyInstance;
+
+        beforeEach(() => {
+            errorSpy = jest.spyOn(console, 'error').mockImplementation();
+        });
+
+        afterEach(() => {
+            errorSpy.mockRestore();
+        });
+
+        it.each([
+            ['innerHTML', 'innerHTML'],
+            ['inner-h-t-m-l', 'innerHTML'],
+            ['outerHTML', 'outerHTML'],
+            ['outer-h-t-m-l', 'outerHTML'],
+            ['className', 'className'],
+            ['textContent', 'textContent']
+        ])('should block nb-prop:%s as delivered by the DOM', (attributeSpelling) => {
+            const el = createElementWithProp(attributeSpelling, 'ctx.evil');
+            const handler = new Properties(el, new Attributes(el));
+
+            expect(errorSpy).toHaveBeenCalled();
+            expect(handler.nExpression === undefined || handler.nExpression.size === 0).toBe(true);
+        });
+
+        it('should not write to the DOM for a blocked outerHTML sink', () => {
+            const host = document.createElement('div');
+            const el = createElementWithProp('outerHTML', 'ctx.evil');
+            host.appendChild(el);
+
+            const handler = new Properties(el, new Attributes(el));
+            handler.bind(undefined, () => '<img src="x" onerror="alert(1)">');
+            handler.commit();
+
+            expect(host.querySelector('img')).toBeNull();
+        });
+
+        it('should preserve camelCase when writing a kebab-cased property name', () => {
+            const el = createElementWithProp('tab-index', 'ctx.tab');
+            const handler = new Properties(el, new Attributes(el));
+
+            expect([...handler.nExpression!.keys()]).toEqual(['tabIndex']);
+
+            handler.bind(undefined, () => 5);
+            handler.commit();
+
+            expect((el as HTMLInputElement).tabIndex).toBe(5);
+            expect((el as any).tabindex).toBeUndefined();
+        });
+
+        // Deliberate: nb-prop is a raw-DOM escape hatch, and srcdoc is the only way to set iframe
+        // content through it. It bypasses the htmlSanitizer - an accepted limitation, not an oversight.
+        // Blocking it here would be a behaviour change, so this pins the decision.
+        it('should allow nb-prop:srcdoc (accepted sanitizer-bypass escape hatch)', () => {
+            const el = document.createElement('iframe');
+            el.setAttribute(
+                `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}srcdoc`,
+                'ctx.html'
+            );
+            const handler = new Properties(el, new Attributes(el));
+
+            expect(handler.nExpression!.has('srcdoc')).toBe(true);
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should set the real readOnly property for nb-prop:read-only', () => {
+            const el = createElementWithProp('read-only', 'ctx.ro');
+            const handler = new Properties(el, new Attributes(el));
+
+            handler.bind(undefined, () => true);
+            handler.commit();
+
+            expect((el as HTMLInputElement).readOnly).toBe(true);
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+    });
+
     describe('get/set', () => {
         it('should get a property from native element', () => {
             const el = document.createElement('input') as HTMLInputElement;
@@ -196,9 +277,9 @@ describe('Properties handler', () => {
             handler.set('value', 'same');
             const result = handler.commit();
 
-            // wasDirty was true (set marked it dirty), but the native assignment
-            // is skipped because `Helpers.equals(value, native[key])` is true.
-            expect(result).toBe(true);
+            // set marked it dirty, but the native assignment is skipped because
+            // `Helpers.equals(value, native[key])` is true, so commit reports no change.
+            expect(result).toBe(false);
             expect(el.value).toBe('same');
         });
     });

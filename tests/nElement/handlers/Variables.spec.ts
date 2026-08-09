@@ -2,6 +2,7 @@ import { Variables } from '../../../src/nElement/handlers/Variables';
 import { Attributes } from '../../../src/nElement/handlers/Attributes';
 import { Constants } from '../../../src/Constants';
 import { Environment } from '../../../src/Environment';
+import { ExecutionParams } from '../../../src/expression/ExpressionExecParamsHelper';
 
 describe('Variables handler', () => {
     function createElementWithVars(vars: Record<string, string>): Element {
@@ -60,17 +61,21 @@ describe('Variables handler', () => {
         expect(handler.bind(params, () => {})).toBe(params);
     });
 
-    it('should pass through executionParams unchanged when single-binded expression returns undefined', () => {
-        // `#expr` is single-binded; when the executor returns undefined, the data binder is
-        // never called, so dataMap stays empty and bind returns the original executionParams.
+    it('should extend executionParams with the undefined var when single-binded expression returns undefined', () => {
+        // `#expr` is single-binded; when the executor returns undefined the data binder is
+        // never called, so the var keeps its initial undefined value. bind still rebuilds the
+        // params (left-to-right sibling resolution), extending them with the var set to undefined.
         const el = createElementWithVars({ 'lazy': '#ctx.maybe' });
         const attrs = new Attributes(el);
         const handler = new Variables(el, attrs);
 
-        const params = { existing: true } as any;
-        const result = handler.bind(params, () => undefined);
+        const params = new ExecutionParams(['existing'], [true]);
+        const result = handler.bind(params, () => undefined)!;
 
-        expect(result).toBe(params);
+        expect(result).not.toBe(params);
+        expect(result.names).toContain('existing');
+        expect(result.names).toContain('lazy');
+        expect(result.values[result.names.indexOf('lazy')]).toBeUndefined();
     });
 
     it('isDirty should always be false', () => {
@@ -195,6 +200,73 @@ describe('Variables handler', () => {
                 (Environment.transformers as any)._namesSet.delete('myfn');
                 consoleSpy.mockRestore();
             }
+        });
+
+        describe('#8: variable names must be valid identifiers', () => {
+            // Var names become formal parameters of every compiled expression in scope
+            // (ExpressionExecParamsHelper.createOrExtendVarExecParams), and the expression body is
+            // compiled in strict mode (ExpressionExecutor: '"use strict"'). A name that is not a
+            // valid strict-mode identifier therefore breaks compilation of EVERY expression in scope,
+            // not just its own binding — so it has to be rejected at construction.
+            const invalidNames = [
+                'if', 'class', 'return', 'new', 'typeof', 'this', 'null', 'true',  // reserved words
+                'let', 'static', 'public', 'private', 'protected',                 // strict-mode-only reserved
+                'implements', 'interface', 'package', 'yield',
+                'eval', 'arguments',                                               // illegal strict-mode param names
+                '0abc'                                                             // not an identifier at all
+            ];
+
+            it.each(invalidNames)('should error and skip the variable named %s', (name) => {
+                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const el = createElementWithVars({ [name]: 'ctx.value' });
+                const attrs = new Attributes(el);
+                const handler = new Variables(el, attrs);
+
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    `${Constants.DISPLAY_NAME}: `,
+                    el,
+                    expect.stringContaining('is not a valid identifier')
+                );
+                expect(handler.nExpression!.has(name)).toBe(false);
+                consoleSpy.mockRestore();
+            });
+
+            it('should keep a valid variable that shares an element with a rejected one', () => {
+                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const el = createElementWithVars({ 'let': 'ctx.bad', 'total': 'ctx.count' });
+                const attrs = new Attributes(el);
+                const handler = new Variables(el, attrs);
+
+                expect(handler.nExpression!.has('let')).toBe(false);
+                expect(handler.nExpression!.has('total')).toBe(true);
+                consoleSpy.mockRestore();
+            });
+
+            // Attribute names are lowercased by the DOM, so the camelCase spellings only ever
+            // arrive here via kebab-case ('my-var' -> 'myVar'); '$' is not allowed in an
+            // attribute name at all (InvalidCharacterError), so it cannot be a var name.
+            it.each(['value', 'myvar', '_private', 'await', 'async', 'undefined'])(
+                'should accept the valid identifier %s', (name) => {
+                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const el = createElementWithVars({ [name]: 'ctx.value' });
+                const attrs = new Attributes(el);
+                const handler = new Variables(el, attrs);
+
+                expect(handler.nExpression!.has(name)).toBe(true);
+                consoleSpy.mockRestore();
+            });
+
+            it('should validate the camelCased name, not the lowercased one', () => {
+                // Validation runs on contextValueName ('cLass'), which is a perfectly valid
+                // identifier — lowercasing it first would falsely reject it as the reserved word 'class'.
+                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const el = createElementWithVars({ 'c-lass': 'ctx.value' });
+                const attrs = new Attributes(el);
+                const handler = new Variables(el, attrs);
+
+                expect(handler.nExpression!.has('cLass')).toBe(true);
+                consoleSpy.mockRestore();
+            });
         });
     });
 });

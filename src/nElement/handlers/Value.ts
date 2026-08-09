@@ -61,13 +61,14 @@ export class Value extends Base implements IHandler<IExpressionDetails> {
     }
     
     public commit(): boolean {
-        const wasDirty = this._isDirty;
+        let wasDirty = false;
 
         if (this._isDirty) {
             if (this._previousValue !== this._value) {
                 this._nativeElement!.textContent = this._value;
                 
                 this._previousValue = this._value;
+                wasDirty = true;
             }
             
             this._isDirty = false;

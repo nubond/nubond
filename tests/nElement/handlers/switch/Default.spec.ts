@@ -132,7 +132,8 @@ describe('Default handler', () => {
         defaultHandler.show();
         const result = defaultHandler.commit();
         // isDirty was set, but previousIsVisible === isVisible, so no class change
-        expect(result).toBe(true);
+        // is flushed and commit reports no change.
+        expect(result).toBe(false);
     });
 
     it('dispose without parent switch should not throw', () => {

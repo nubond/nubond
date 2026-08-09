@@ -221,12 +221,18 @@ export class Router {
             }
 
             if (Object.getOwnPropertyNames(routeState).length > 0) {
-                this.handleStateChange(routeState, true, () => this.saveState(true));
+                this.handleStateChange(routeState, true, () => {
+                    this._states = [this.state!];
+                    this.saveState(true);
+                }, true);
             } else {
                 if (this._routeSlots.some(el => Helpers.isString(el.name) && Helpers.isString(el.value))) {
                     this.go(undefined, true, true);
                 } else {
-                    this.handleStateChange(null, false, () => this.saveState(true));
+                    this.handleStateChange(null, false, () => {
+                        this._states = [this.state!];
+                        this.saveState(true);
+                    }, true);
                 }
             }
 
@@ -252,8 +258,9 @@ export class Router {
 
                             if (sameState) {
                                 stateFound = true;
-                                this._stateIndex = index;
-                                this.handleStateChange(newState, false, () => {});
+                                this.handleStateChange(newState, false, () => {
+                                    this._stateIndex = index;
+                                });
                                 break;
                             }
                         }
@@ -389,7 +396,8 @@ export class Router {
         return this._onAfterStateChangeCallBackEvent.subscribe(callBack);
     }
 
-    private handleStateChange(stateData: {[key: string]: any} | string | null | undefined, partialState: boolean, saveState?: () => void): void {
+    private handleStateChange(stateData: {[key: string]: any} | string | null | undefined, partialState: boolean, saveState?: () => void,
+                              preventStateChangeRollback?: boolean): void {
         const previousPath = this.path;
 
         this.setState(stateData, partialState);
@@ -402,9 +410,17 @@ export class Router {
             let isStateChangeAllowed = true;
 
             try {
-                this._onBeforeStateChangeCallBackEvent.raise(() => isStateChangeAllowed = false, 
-                                                             Object.assign(Object.create(null), previousState), Object.assign(Object.create(null), newState),
-                                                             previousPath, newPath);
+                this._onBeforeStateChangeCallBackEvent.raise(() => {
+                    if (Helpers.isBoolean(preventStateChangeRollback) && preventStateChangeRollback) {
+                        if (this._getShowDebugInfo()) {
+                            Console.warn('Router: current stage change is not preventable');
+                        }
+                    } else {
+                        isStateChangeAllowed = false;
+                    }
+                },
+                Object.assign(Object.create(null), previousState), Object.assign(Object.create(null), newState),
+                previousPath, newPath);
             } catch(ex) {
                 Console.error(`Router: onBeforeStateChange call back execution error: ${ex}.`);
             }

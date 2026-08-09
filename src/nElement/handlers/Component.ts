@@ -76,6 +76,7 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
                         result = new ComponentContextEntityData(context!, contextBinder!);                    
                         this._previousComponentName = this._currentComponentName;
                     } else {
+                        this.disposeInternal(true);
                         Console.error(this.nativeElement, `invalid operation: Component '${this.nativeElement!.tagName}' meta data is not found.`);
                     }
                 } else {
@@ -86,6 +87,7 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
                         result = null;
                     } else {
                         this.disposeInternal(true);
+                        Console.error(this.nativeElement, `invalid operation: Component '${this.nativeElement!.tagName}' meta data is not found.`);
                     }
                 }
             } else {

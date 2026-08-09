@@ -358,7 +358,7 @@ describe('Environment', () => {
 
             class SelectorCtx {}
             expect(() => {
-                Environment.addApp('#bind-app-selector-test', SelectorCtx as any, [], undefined);
+                Environment.addApp('#bind-app-selector-test', SelectorCtx as any, []);
             }).not.toThrow();
         });
 
@@ -368,7 +368,7 @@ describe('Environment', () => {
             (console.error as jest.Mock).mockClear();
             class NoMatchCtx {}
             expect(() => {
-                Environment.addApp('#non-existent-element-xyz', NoMatchCtx as any, [], undefined);
+                Environment.addApp('#non-existent-element-xyz', NoMatchCtx as any, []);
             }).not.toThrow();
             expect(console.error as jest.Mock).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
@@ -383,14 +383,14 @@ describe('Environment', () => {
 
             class DirectElementCtx {}
             expect(() => {
-                Environment.addApp(div, DirectElementCtx as any, [], undefined);
+                Environment.addApp(div, DirectElementCtx as any, []);
             }).not.toThrow();
         });
 
         it('should bind to document.body when null is passed', () => {
             class NullCtx {}
             expect(() => {
-                Environment.addApp(null, NullCtx as any, [], undefined);
+                Environment.addApp(null, NullCtx as any, []);
             }).not.toThrow();
         });
 
@@ -398,10 +398,10 @@ describe('Environment', () => {
             // addApp no longer throws on duplicate — it logs and returns.
             (console.error as jest.Mock).mockClear();
             class BodyCtxFirst {}
-            Environment.addApp(undefined, BodyCtxFirst as any, [], undefined);
+            Environment.addApp(undefined, BodyCtxFirst as any, []);
             class UndefCtx {}
             expect(() => {
-                Environment.addApp(undefined, UndefCtx as any, [], undefined);
+                Environment.addApp(undefined, UndefCtx as any, []);
             }).not.toThrow();
             expect(console.error as jest.Mock).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
@@ -417,10 +417,10 @@ describe('Environment', () => {
 
             class DupCtx1 {}
             class DupCtx2 {}
-            Environment.addApp(div, DupCtx1 as any, [], undefined);
+            Environment.addApp(div, DupCtx1 as any, []);
 
             expect(() => {
-                Environment.addApp(div, DupCtx2 as any, [], undefined);
+                Environment.addApp(div, DupCtx2 as any, []);
             }).not.toThrow();
             expect(console.error as jest.Mock).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
@@ -428,15 +428,15 @@ describe('Environment', () => {
             );
         });
 
-        it('should bind with contextConfig', () => {
+        it('should bind without a per-app contextConfig (appRoot no longer accepts IContextConfig)', () => {
             const div = document.createElement('div');
             document.body.appendChild(div);
             testElements.push(div);
 
             class ConfigCtx {}
-            const contextConfig = { htmlSanitizer: (html: string) => html, pessimisticChangeDetectionStrategy: true };
+            // addApp dropped its contextConfig parameter — the root binder is created with undefined config.
             expect(() => {
-                Environment.addApp(div, ConfigCtx as any, [], contextConfig);
+                Environment.addApp(div, ConfigCtx as any, []);
             }).not.toThrow();
         });
 
@@ -446,7 +446,7 @@ describe('Environment', () => {
             testElements.push(div);
 
             class DisposeCtx {}
-            Environment.addApp(div, DisposeCtx as any, [], undefined);
+            Environment.addApp(div, DisposeCtx as any, []);
 
             // Access private map and dispose the binder to test cleanup
             const map = (Environment as any)._elementsToContextsMapping as Map<Element, any>;
@@ -537,7 +537,7 @@ describe('Environment', () => {
             const div = document.createElement('div');
             document.body.appendChild(div);
             class ConfigGuardCtx {}
-            Environment.addApp(div, ConfigGuardCtx as any, [], undefined);
+            Environment.addApp(div, ConfigGuardCtx as any, []);
             expect(() => {
                 Environment.config({ showDebugInfo: false } as any);
             }).not.toThrow();

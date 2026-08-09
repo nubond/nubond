@@ -1,11 +1,10 @@
-import { Helpers } from './Helpers';
 import { Constants } from './Constants';
 
 export class Console {
-    public static readonly isAvailable = Helpers.isObject(console);
-    public static readonly isErrorAvailable = this.isAvailable && Helpers.isFunction(console.error);
-    public static readonly isWarnAvailable = this.isAvailable && Helpers.isFunction(console.warn);
-    public static readonly isInfoAvailable = this.isAvailable && Helpers.isFunction(console.info);
+    public static readonly isAvailable = (typeof(console) === 'object') && (console !== null);
+    public static readonly isErrorAvailable = this.isAvailable && (typeof(console.error) === 'function');
+    public static readonly isWarnAvailable = this.isAvailable && (typeof(console.warn) === 'function');
+    public static readonly isInfoAvailable = this.isAvailable && (typeof(console.info) === 'function');
 
     private constructor() {}
     

@@ -69,7 +69,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
             if (Helpers.isString(associatedRouteSlot)) {
                 this._associatedRouteSlot = associatedRouteSlot;
 
-                if (Environment.router!.isConfigured) {
+                if (!Helpers.isUndefined(Environment.router) && Environment.router!.isConfigured) {
                     this.setContextDataFromRoute();
 
                     this._unSubscribeFromRouteOnStateChanged = Environment.router!.onAfterStateChange(() => {
@@ -128,12 +128,21 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
                         })) {
                             result = null;
                         } else {
+                            const currentContextName = this._currentContextName;
+
                             this._nElementProjection!.cleanUp();
                             this.disposeInternal(true);
+                            
+                            Console.error(this.nativeElement, `invalid operation: Container with name '${currentContextName}' not found.`);
                         }
                     }
                 } else {
-                    Console.error(this.nativeElement, `invalid operation: Container with name '${this._currentContextName}' not found.`);
+                    const currentContextName = this._currentContextName;
+
+                    this._nElementProjection!.cleanUp();
+                    this.disposeInternal(true);
+
+                    Console.error(this.nativeElement, `invalid operation: Container with name '${currentContextName}' not found.`);
                 }
             } else {
                 result = entityData;

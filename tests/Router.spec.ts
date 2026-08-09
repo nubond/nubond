@@ -1723,6 +1723,135 @@ describe('Router', () => {
         });
     });
 
+    describe('constructor records the initial state in history', () => {
+        it('should let goBack reach the URL-parsed initial state', () => {
+            (history.pushState as jest.Mock).mockRestore();
+            realPushState(null, '', '/about');
+            jest.spyOn(history, 'pushState').mockImplementation();
+
+            const router = new Router('/{page=home}', () => false, () => false);
+            router.go({ page: 'contact' });
+
+            (history.back as jest.Mock).mockClear();
+            router.goBack();
+
+            // Before the fix _states was empty after construction, so go() landed at
+            // index 0 and goBack() was a dead no-op (history.back never called).
+            expect(history.back).toHaveBeenCalledTimes(1);
+            expect(router.state!['page']).toBe('about');
+        });
+
+        it('should let goBack reach the initial state for a slot with no default and a blank URL', () => {
+            (history.pushState as jest.Mock).mockRestore();
+            realPushState(null, '', '/');
+            jest.spyOn(history, 'pushState').mockImplementation();
+
+            const router = new Router('/{page}', () => false, () => false);
+            expect(router.state!['page']).toBeUndefined();
+
+            router.go({ page: 'a' });
+            expect(router.state!['page']).toBe('a');
+
+            (history.back as jest.Mock).mockClear();
+            router.goBack();
+
+            expect(history.back).toHaveBeenCalledTimes(1);
+            expect(router.state!['page']).toBeUndefined();
+        });
+
+        it('should match a popstate carrying the initial state instead of appending a phantom entry', () => {
+            (history.pushState as jest.Mock).mockRestore();
+            realPushState(null, '', '/about');
+            jest.spyOn(history, 'pushState').mockImplementation();
+
+            const router = new Router('/{page=home}', () => false, () => false);
+            router.go({ page: 'contact' });
+
+            // Physically going back to the initial entry fires popstate with the initial state.
+            // Because it is now recorded in _states, it is matched (stateIndex reset to 0)
+            // rather than treated as unknown and appended as a new forward entry.
+            const popstateEvent = new PopStateEvent('popstate', { state: { page: 'about' } });
+            window.dispatchEvent(popstateEvent);
+            expect(router.state!['page']).toBe('about');
+
+            // Matched at index 0, so a further goBack is a correctly-guarded no-op.
+            // (Before the fix the popstate would append at index 1, and this goBack would
+            // step back into the phantom 'contact' entry and call history.back.)
+            (history.back as jest.Mock).mockClear();
+            router.goBack();
+            expect(history.back).not.toHaveBeenCalled();
+            expect(router.state!['page']).toBe('about');
+        });
+    });
+
+    describe('#11: a prevented popstate must not move the internal state index', () => {
+        // The popstate "state found in history" branch used to assign _stateIndex before
+        // handleStateChange ran the onBeforeStateChange callbacks. When a callback prevented the
+        // change the internal state rolled back but the index stayed at the new position, so every
+        // later goBack/goForward operated from the wrong slot. The assignment now happens inside
+        // the saveState callback, which handleStateChange only invokes when the change is allowed.
+        function buildThreeEntryHistory() {
+            const router = new Router('/{page=home}', () => false, () => false);
+            router.go({ page: 'about' });
+            router.go({ page: 'contact' });   // states: [home, about, contact], index 2
+            return router;
+        }
+
+        function preventedPopstateToHome(router: Router) {
+            const unsubscribe = router.onBeforeStateChange(preventChange => preventChange());
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { page: 'home' } }));
+            unsubscribe();
+        }
+
+        it('should roll the state back when the popstate is prevented', () => {
+            const router = buildThreeEntryHistory();
+
+            preventedPopstateToHome(router);
+
+            expect(router.state!['page']).toBe('contact');
+        });
+
+        it('should keep goBack stepping back from the state actually in effect', () => {
+            const router = buildThreeEntryHistory();
+            preventedPopstateToHome(router);
+
+            (history.back as jest.Mock).mockClear();
+            router.goBack();
+
+            // index is still 2, so back lands on 'about' — with the stale index 0 this was a no-op
+            expect(history.back).toHaveBeenCalled();
+            expect(router.state!['page']).toBe('about');
+        });
+
+        it('should keep goForward a no-op at the end of history', () => {
+            const router = buildThreeEntryHistory();
+            preventedPopstateToHome(router);
+
+            (history.forward as jest.Mock).mockClear();
+            router.goForward();
+
+            // index is still 2 === last, so there is nothing to go forward to —
+            // with the stale index 0 this walked forward into 'about'
+            expect(history.forward).not.toHaveBeenCalled();
+            expect(router.state!['page']).toBe('contact');
+        });
+
+        it('should still move the index when the popstate is allowed', () => {
+            // Control: the index must follow an unprevented popstate as before.
+            const router = buildThreeEntryHistory();
+
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { page: 'home' } }));
+            expect(router.state!['page']).toBe('home');
+
+            (history.back as jest.Mock).mockClear();
+            router.goBack();
+            expect(history.back).not.toHaveBeenCalled();   // index 0, nothing before it
+
+            router.goForward();
+            expect(router.state!['page']).toBe('about');
+        });
+    });
+
     describe('no closure indirection (cosmetic R18)', () => {
         it('should not call getShowDebugInfo when debug toggle is never read', () => {
             const spy = jest.fn(() => false);

@@ -31,25 +31,22 @@ class ConditionExpressionData implements IClassesBindings<Map<string, IExpressio
     public readonly rawExpression = new Map<string, IExpressionDetails>();
 
     constructor(nativeElement: Element, rawExpression: string) {
-        const splittedExpressions = rawExpression.substring(1, rawExpression.length - 1).trim().split(';');
+        const splittedExpressions = Helpers.split(rawExpression.substring(1, rawExpression.length - 1), ';', '\\');
         if (splittedExpressions.length > 0) {
             for (var el of splittedExpressions) {
-                const trimmedEL = el.trim();
-                if (Helpers.isNotEmptyString(trimmedEL)) { 
-                    const firstSeparatorIndex = trimmedEL.indexOf(':');
+                const firstSeparatorIndex = el.indexOf(':');
 
-                    if (firstSeparatorIndex > 0) {
-                        const rawClassName = trimmedEL.substring(0, firstSeparatorIndex).trim();
-                        const className = rawClassName.trim();
+                if (firstSeparatorIndex > 0) {
+                    const rawClassName = el.substring(0, firstSeparatorIndex).trim();
+                    const className = rawClassName.trim();
 
-                        if (className.length > 0) {
-                            this.rawExpression.set(className, new ExpressionDetails(trimmedEL.substring(firstSeparatorIndex + 1)));   
-                        } else {
-                            Console.error(nativeElement, `class name can't be empty`);
-                        }
+                    if (className.length > 0) {
+                        this.rawExpression.set(className, new ExpressionDetails(el.substring(firstSeparatorIndex + 1)));   
                     } else {
-                        Console.error(nativeElement, 'incorrect conditional class expression, expected: {class-name1: condition1; class-name2: condition2}');
+                        Console.error(nativeElement, `class name can't be empty`);
                     }
+                } else {
+                    Console.error(nativeElement, `incorrect conditional class expression, expected: {class-name1: condition1; class-name2: condition2}. To escape ';' character use '\\;'`);
                 }
             }
         } else {
@@ -68,10 +65,7 @@ class ArrayExpressionData implements IClassesBindings<Array<ArrayExpressionDetai
     public readonly rawExpression: Array<ArrayExpressionDetails>;
 
     constructor(nativeElement: Element, rawExpression: string) {
-        const splittedExpressions = rawExpression.substring(1, rawExpression.length - 1).trim()
-                                                                                        .split(';')
-                                                                                        .map(el => el.trim())
-                                                                                        .filter(el => el.length > 0);
+        const splittedExpressions = Helpers.split(rawExpression.substring(1, rawExpression.length - 1), ';', '\\');
         if (splittedExpressions.length > 0) {
             this.rawExpression = splittedExpressions.map(el => new ArrayExpressionDetails(el));
         } else {
@@ -127,19 +121,28 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
         
         this._getHideClassName = getHideClassName;
 
-        if (nativeElement.tagName.toLowerCase() == 'svg') {
-            //className in svg is a SVGAnimatedString and not class names
+        let className = '';
+
+        if (nativeElement instanceof SVGElement) {
+            //className in SVGElements is not a css class names property as in the rest of html elements
+            const rawClassName = nativeElement.getAttribute('class');
+            if (rawClassName != null) {
+                className = rawClassName;
+            }
+
             this._setClassName = function (className: string) {
                 nativeElement.setAttribute('class', className);
             };
         } else {
+            className = nativeElement.className;
+
             this._setClassName = function (className: string) {
                 nativeElement.className = className;
             };
         }
 
-        if (nativeElement.className.length > 0) {
-            this._previousClassNames = nativeElement.className.split(' ');
+        if (className.length > 0) {
+            this._previousClassNames = className.split(/\s+/).filter(el => el.length > 0);
         } else {
             this._previousClassNames = [];
         }
@@ -250,20 +253,22 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
     }
     
     public commit(): boolean {
-        const wasDirty = this._isDirty;
+        let wasDirty = false;
 
         if (this._isDirty) {
             if (this._previousClassNames.length !== this._classNames.length) {
                                     // \/ className used due to better performance in comparison with classList | TODO: Optimize
                 this._setClassName(this._classNames.join(' '));
                 this._previousClassNames = this._classNames.slice();
+                wasDirty = true;
             } else {   
                 for (let index = 0; index < this._classNames.length; index++) {
                     if (this._classNames[index] != this._previousClassNames[index]) {
                                           // \/ className used due to better performance in comparison with classList | TODO: Optimize
                         this._setClassName(this._classNames.join(' '));
                         this._previousClassNames = this._classNames.slice();
-    
+                        wasDirty = true;
+                        
                         break;
                     }
                 }

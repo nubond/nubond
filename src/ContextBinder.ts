@@ -94,6 +94,9 @@ export class ContextBinder implements IContextBinder {
                 this._pessimisticChangeDetectionStrategy = pessimisticChangeDetectionStrategyDefault;
             }
         } else {
+            this.htmlSanitizer = Helpers.isFunction(htmlSanitizer)
+                                    ? html => htmlSanitizer!(html)
+                                    : undefined;
             this._pessimisticChangeDetectionStrategy = pessimisticChangeDetectionStrategyDefault;
         }
 
@@ -125,7 +128,9 @@ export class ContextBinder implements IContextBinder {
                 delete this._detectChangesTimeout;
             }
 
-            this._rootNElement!.dispose();
+            if (!Helpers.isUndefined(this._rootNElement)) {
+                this._rootNElement!.dispose();
+            }
             
             try {
                 this._onDisposeCallBackEvent.raise();
@@ -196,6 +201,7 @@ export class ContextBinder implements IContextBinder {
         }
     }
 
+    //TODO: implement @Detector() + @Eventer() support
     protected bindInternal(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean, debounced: boolean): void {
         if (Helpers.isUndefined(this._context)) {
             if (Helpers.isUndefined(this._rootNElement)) {
@@ -320,7 +326,10 @@ export class ContextBinder implements IContextBinder {
                 });
 
                 if (autoTrigger && !Helpers.isUndefined(propertyValue)) {
-                    action(propertyValue);
+                    const unSubscribe = this.onDetectChangesDone(() => {
+                        unSubscribe();
+                        action(propertyValue);
+                    });
                 }
             } catch(ex) {
                 Console.error(context, `invalid operation: property '${propertyName}' cannot be decorated. Only a simple configurable property can be decorated. Error: ${ex}.`);
@@ -365,7 +374,10 @@ export class ContextBinder implements IContextBinder {
                 });
 
                 if (autoTrigger && !Helpers.isUndefined(propertyValue)) {
-                    action(metaData, propertyValue);
+                    const unSubscribe = this.onDetectChangesDone(() => {
+                        unSubscribe();
+                        action(metaData, propertyValue);
+                    });
                 }
             } catch(ex) {
                 Console.error(context, `invalid operation: property '${propertyName}' cannot be decorated. Only a simple configurable property can be decorated. Error: ${ex}.`);

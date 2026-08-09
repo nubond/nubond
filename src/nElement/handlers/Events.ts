@@ -48,7 +48,7 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
     public readonly isDirty = false;
 
     constructor(nativeElement: Element, attributes: Attributes, getElementManipulations: () => ElementManipulations,
-                requestDetectChanges: () => void) {
+                requestDetectChanges: () => void, getShowDebugInfo: () => boolean) {
         super();
         
         this._nativeElement = <HTMLElement>nativeElement;
@@ -68,18 +68,25 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
                         
                         const debounceDataStart = rawEventName.indexOf(Constants.META_VALUE_SEPARATOR);
                         if (debounceDataStart > 0) {
+                            eventName = rawEventName.substring(0, debounceDataStart);
+
                             const rawDebounce = parseInt(rawEventName.substring(debounceDataStart + Constants.META_VALUE_SEPARATOR.length), 10);
                             if (Helpers.isNumber(rawDebounce) && !isNaN(rawDebounce)) {
-                                eventName = rawEventName.substring(0, debounceDataStart);
                                 debounce = rawDebounce;
                             } else {
-                                eventName = rawEventName;
+                                if (getShowDebugInfo()) {
+                                    Console.error(nativeElement, `'${eventName}' event has wrong debounce data (${rawDebounce}) and will not be debounced`);
+                                }
                             }
                         } else {
                             eventName = rawEventName;
                         }
 
-                        this.nExpression.set(eventName!, new EventsBindings(new ExpressionDetails(value!), debounce));
+                        if (!this.nExpression.has(eventName)) {
+                            this.nExpression.set(eventName, new EventsBindings(new ExpressionDetails(value!), debounce));
+                        } else {
+                            Console.error(nativeElement, `multiple handlers for one event (${eventName}) are not supported`);
+                        }
                     } else {
                         Console.error(nativeElement, `event handler can't be empty`);
                     }
@@ -91,48 +98,31 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
             this.hasNExpression = false;
         }
     }
-
-    public isSubscribed<K extends keyof HTMLElementEventMap>(eventName: K | string): boolean {
-        return this._subscriptionData.has(eventName);
-    }
-
-    public isUnSubscribed<K extends keyof HTMLElementEventMap>(eventName: K | string): boolean {
-        return this._unSubscribedData.has(eventName);
-    }
     
-    public subscribe<K extends keyof HTMLElementEventMap>(eventName: K | string, callBack: (evt: HTMLElementEventMap[K] | Event) => any, options?: boolean | AddEventListenerOptions, debounce?: number): (permanent?: boolean) => void {
-        if (!this._subscriptionData.has(eventName)) {
-            let debounceTimeout: number | undefined;
-            const listener = !Helpers.isNumber(debounce) 
-                                    ? callBack
-                                    : (evt: Event) => {
-                                        if (Helpers.isNumber(debounceTimeout)) {
-                                            clearTimeout(debounceTimeout);
-                                            debounceTimeout = undefined;
-                                        }
-                                        debounceTimeout = setTimeout(() => callBack(evt), debounce);
-                                    };
+    public subscribe<K extends keyof HTMLElementEventMap>(eventName: K | string, callBack: (evt: HTMLElementEventMap[K] | Event) => any, 
+                                                          options?: boolean | AddEventListenerOptions, debounce?: number): () => void {
+        let debounceTimeout: number | undefined;
+        const listener = !Helpers.isNumber(debounce) 
+                                ? callBack
+                                : (evt: Event) => {
+                                    if (Helpers.isNumber(debounceTimeout)) {
+                                        clearTimeout(debounceTimeout);
+                                        debounceTimeout = undefined;
+                                    }
+                                    debounceTimeout = setTimeout(() => callBack(evt), debounce);
+                                };
 
-            this._nativeElement.addEventListener(eventName, listener, options);
-            
-            const that = this;
-            this._subscriptionData.set(eventName, function (permanent?: boolean): void {
-                if (!that._unSubscribedData.has(eventName)) {
-                    if (Helpers.isNumber(debounceTimeout)) {
-                        clearTimeout(debounceTimeout);
-                        debounceTimeout = undefined;
-                    }
+        this._nativeElement.addEventListener(eventName, listener, options);
+        
+        const that = this;
+        return function (): void {
+            if (Helpers.isNumber(debounceTimeout)) {
+                clearTimeout(debounceTimeout);
+                debounceTimeout = undefined;
+            }
 
-                    that._nativeElement.removeEventListener(eventName, listener);
-
-                    if (Helpers.isBoolean(permanent) && permanent) {
-                        that._unSubscribedData.add(eventName);
-                    }
-                }
-            });
-        }
-
-        return this._subscriptionData.get(eventName)!;
+            that._nativeElement.removeEventListener(eventName, listener, options);
+        };
     }
     
     public bind(executionParams: ExecutionParams | undefined,
@@ -189,27 +179,41 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
     private handleSubscription<K extends keyof HTMLElementEventMap>(key: K | string, data: IEventsBindings, executionParams: ExecutionParams | undefined, 
                                                                     executeExpression: (expression: string | null | undefined,
                                                                     executionParams: ExecutionParams | undefined) => any) {
-        const unSubscribe = this.subscribe(key, (evt: Event) => {
-            const extendedExecParams = ExpressionExecParamsHelper.createOrExtendEventExecParams(this._nativeElement, 
-                                                                                                this._getElementManipulations(), evt,
-                                                                                                () => unSubscribe(true), executionParams);
-            const result = executeExpression(data.nExpression.expression, extendedExecParams);
+        if (!this._subscriptionData.has(key)) { 
+            const nativeUnSubscribe = this.subscribe(key, (evt: Event) => {
+                const unSubscribe = (permanent?: boolean) => {
+                    if (!this._unSubscribedData.has(key)) {
+                        nativeUnSubscribe();
 
-            if (result instanceof Promise) {
-                result.then(() => {
+                        if (Helpers.isBoolean(permanent) && permanent) {
+                            this._unSubscribedData.add(key);
+                        }
+                    }
+                };
+
+                const extendedExecParams = ExpressionExecParamsHelper.createOrExtendEventExecParams(this._nativeElement, 
+                                                                                                    this._getElementManipulations(), evt,
+                                                                                                    () => unSubscribe(true), executionParams);
+                const result = executeExpression(data.nExpression.expression, extendedExecParams);
+
+                if (result instanceof Promise) {
+                    result.then(() => {
+                        if (data.nExpression.isSingleBinded) {
+                            unSubscribe(true);
+                        }                  
+                    }).finally(() => {
+                        this._requestDetectChanges();
+                    });
+                } else {
                     if (data.nExpression.isSingleBinded) {
                         unSubscribe(true);
-                    }                  
-                }).finally(() => {
-                    this._requestDetectChanges();
-                });
-            } else {
-                if (data.nExpression.isSingleBinded) {
-                    unSubscribe(true);
-                }
+                    }
 
-                this._requestDetectChanges();
-            }
-        }, undefined, data.debounce);
+                    this._requestDetectChanges();
+                }
+            }, undefined, data.debounce);
+
+            this._subscriptionData.set(key, nativeUnSubscribe);
+        }
     }
 }

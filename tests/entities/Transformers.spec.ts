@@ -1,6 +1,7 @@
 import { Transformers } from '../../src/entities/Transformers';
 import { Injectables } from '../../src/entities/Injectables';
 import { ITransformerContext } from '../../src/interfaces/contexts/ITransformerContext';
+import { Constants } from '../../src/Constants';
 
 describe('Transformers', () => {
     let injectables: Injectables;
@@ -161,5 +162,55 @@ describe('Transformers', () => {
         const [names, fns] = transformers.instances;
         expect(names.length).toBe(0);
         expect(fns.length).toBe(0);
+    });
+
+    describe('#8: transformer names must be valid identifiers', () => {
+        // Every registered transformer name is appended as a formal parameter to EVERY compiled
+        // expression in the application (ExpressionExecParamsHelper.createOrExtendExecParams), and
+        // the body is compiled in strict mode. One bad name therefore fails compilation of every
+        // expression app-wide, so registration has to be refused.
+        const invalidNames = [
+            'my-transformer',                                                  // the originally reported case
+            'if', 'class', 'return', 'new', 'typeof', 'this', 'null', 'true',  // reserved words
+            'let', 'static', 'public', 'private', 'protected',                 // strict-mode-only reserved
+            'implements', 'interface', 'package', 'yield',
+            'eval', 'arguments',                                               // illegal strict-mode param names
+            '0abc', 'a b', 'a.b', 'a=1', '{a}', '...a'                         // not identifiers at all
+        ];
+
+        it.each(invalidNames)('should reject %s', (name) => {
+            class T implements ITransformerContext { transform() { return null; } }
+
+            transformers.add(name, T as any, []);
+
+            expect(console.error).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining(`'${name}' is not a valid identifier`)
+            );
+            const [names, fns] = transformers.instances;
+            expect(names.length).toBe(0);
+            expect(fns.length).toBe(0);
+        });
+
+        it.each(['upper', 'myTransformer', '_private', '$dollar', 'await', 'async', 'undefined'])(
+            'should accept the valid identifier %s', (name) => {
+            class T implements ITransformerContext { transform() { return null; } }
+
+            transformers.add(name, T as any, []);
+
+            expect(transformers.instances[0]).toContain(name);
+        });
+
+        it('should not disturb an already-registered transformer when a later one is rejected', () => {
+            class Good implements ITransformerContext { transform(v: number) { return v + 1; } }
+            class Bad implements ITransformerContext { transform() { return null; } }
+
+            transformers.add('good', Good as any, []);
+            transformers.add('let', Bad as any, []);
+
+            const [names, fns] = transformers.instances;
+            expect(names).toEqual(['good']);
+            expect(fns.length).toBe(1);
+        });
     });
 });

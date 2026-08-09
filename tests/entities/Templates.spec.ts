@@ -69,7 +69,7 @@ describe('Templates', () => {
     });
 
     it('should log error and return undefined for get() when template is not ready', () => {
-        templates.add('async-tpl', 'http://localhost/template.html', () => undefined);
+        templates.add('async-tpl', '/template.html', () => undefined);
         expect(templates.isReady('async-tpl')).toBe(false);
 
         const node = templates.get('async-tpl');
@@ -121,7 +121,7 @@ describe('Templates', () => {
                 text: () => Promise.resolve('<div>fetched</div>')
             });
 
-            templates.add('remote', 'http://localhost/template.html', () => undefined);
+            templates.add('remote', '/template.html', () => undefined);
             expect(templates.isReady('remote')).toBe(false);
 
             const cb = jest.fn();
@@ -144,7 +144,7 @@ describe('Templates', () => {
                 text: () => Promise.resolve('')
             });
 
-            templates.add('err-fetch', 'http://localhost/missing.html', () => undefined);
+            templates.add('err-fetch', '/missing.html', () => undefined);
             const cb = jest.fn();
             templates.tryPrepare('err-fetch', cb);
 
@@ -161,7 +161,7 @@ describe('Templates', () => {
                 text: () => Promise.resolve('')
             });
 
-            templates.add('empty-fetch', 'http://localhost/empty.html', () => undefined);
+            templates.add('empty-fetch', '/empty.html', () => undefined);
             const cb = jest.fn();
             templates.tryPrepare('empty-fetch', cb);
 
@@ -248,7 +248,7 @@ describe('Templates', () => {
                 text: () => Promise.resolve('')
             });
 
-            templates.add('max-attempts', 'http://localhost/fail.html', () => undefined);
+            templates.add('max-attempts', '/fail.html', () => undefined);
 
             for (let i = 0; i < 4; i++) {
                 const cb = jest.fn();
@@ -269,7 +269,7 @@ describe('Templates', () => {
                 text: () => Promise.resolve('<div>fetched</div>')
             });
 
-            templates.add('queued', 'http://localhost/queued.html', () => undefined);
+            templates.add('queued', '/queued.html', () => undefined);
 
             const cb1 = jest.fn();
             const cb2 = jest.fn();
@@ -288,7 +288,7 @@ describe('Templates', () => {
                 ok: true,
                 text: () => Promise.resolve('<div>shared</div>')
             });
-            templates.add('iso-tpl', 'http://localhost/iso.html', () => undefined);
+            templates.add('iso-tpl', '/iso.html', () => undefined);
 
             const cb1 = jest.fn(() => { throw new Error('cb1 failed'); });
             const cb2 = jest.fn();
@@ -325,7 +325,7 @@ describe('Templates', () => {
         it('should handle fetch network rejection', async () => {
             (globalThis as any).fetch = jest.fn().mockRejectedValue(new Error('Network error'));
 
-            templates.add('net-err', 'http://localhost/network-fail.html', () => undefined);
+            templates.add('net-err', '/network-fail.html', () => undefined);
             const cb = jest.fn();
             templates.tryPrepare('net-err', cb);
 
@@ -345,7 +345,7 @@ describe('Templates', () => {
                 text: () => Promise.reject(new Error('text() failed'))
             });
 
-            templates.add('text-reject', 'http://localhost/text-reject.html', () => undefined);
+            templates.add('text-reject', '/text-reject.html', () => undefined);
             const cb = jest.fn();
             templates.tryPrepare('text-reject', cb);
 

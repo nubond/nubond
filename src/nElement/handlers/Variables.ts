@@ -16,6 +16,8 @@ import { Constants } from '../../Constants';
 import { Console } from '../../Console';
 
 export class Variables extends Base implements IHandler<Map<string, IExpressionDetails>> {
+    private _data: Map<string, any> | undefined;
+
     public readonly nExpression: Map<string, IExpressionDetails> | undefined;
     public readonly hasNExpression: boolean;
     
@@ -25,6 +27,8 @@ export class Variables extends Base implements IHandler<Map<string, IExpressionD
         super();
 
         if (attributes.has(Constants.VARIABLE_HANDLER_PREFIX_NAME, true, true)) {
+            this._data = new Map<string, any>();
+
             this.hasNExpression = true;
             this.nExpression = new Map<string, IExpressionDetails>();
 
@@ -41,9 +45,17 @@ export class Variables extends Base implements IHandler<Map<string, IExpressionD
                         } else if (Environment.transformers.has(lowerCaseContextValueName)) {
                             Console.error(nativeElement,`value with '${contextValueName}' name cannot be created, it is conflicting with case-insensitive transformer name.`);
                             continue;
+                        } else if (!Helpers.isValidIdentifier(contextValueName)) {
+                            Console.error(nativeElement,`value with '${contextValueName}' name cannot be created, '${contextValueName}' is not a valid identifier.`);
+                            continue;
                         }
 
-                        this.nExpression.set(contextValueName, new ExpressionDetails(value!));
+                        if (!this.nExpression.has(contextValueName)) {
+                            this._data!.set(contextValueName, undefined);
+                            this.nExpression.set(contextValueName, new ExpressionDetails(value!));
+                        } else {
+                            Console.error(nativeElement, `multiple handlers for one variable (${contextValueName}) are not supported`);
+                        }
                     } else {
                         Console.error(nativeElement, `value handler can't be empty`);
                     }
@@ -61,16 +73,12 @@ export class Variables extends Base implements IHandler<Map<string, IExpressionD
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
             let currentExecutionParams = executionParams;
-            const dataMap = new Map<string, any>();
 
             for (const [key, value] of this.nExpression!) {
                 this.processExpressionExecution(value, `${Constants.VARIABLE_HANDLER_PREFIX_NAME}:${key}`,
                                                 expression => executeExpression(expression, currentExecutionParams), 
-                                                data => dataMap.set(key, data));
-
-                if (dataMap.size > 0) {
-                    currentExecutionParams = ExpressionExecParamsHelper.createOrExtendVarExecParams(dataMap, executionParams);
-                }
+                                                data => this._data!.set(key, data));
+                currentExecutionParams = ExpressionExecParamsHelper.createOrExtendVarExecParams(this._data!, executionParams);
             }
 
             return currentExecutionParams;

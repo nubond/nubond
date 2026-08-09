@@ -429,11 +429,13 @@ describe('Repeat handler', () => {
             expect(attrs.isDirty).toBe(true);
         });
 
-        it('should return true when dirty', () => {
+        it('should return true when visibility changes on commit', () => {
             const { el, attrs, classes } = createElements('ctx.items');
             const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
 
-            handler.bind(undefined, () => ['a']);
+            // empty data hides the index-0 element (visible -> hidden), so commit
+            // flushes a class change and reports it.
+            handler.bind(undefined, () => []);
             expect(handler.commit()).toBe(true);
         });
 
