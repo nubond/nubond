@@ -382,7 +382,7 @@ export class NElement extends NTreeElement implements INElement {
 
     private clone(): void {
         if (!this._removed) {
-            if ((this._parent !== null) && (this.nativeElement.parentElement !== null)) {
+            if ((this._parent !== null) && (this.nativeElement.parentNode !== null)) {
                 this._clone(<INElement>this._parent, this);
             } else {
                 Console.error(this.nativeElement, 'attempt to clone orphaned element');
