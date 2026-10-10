@@ -31,7 +31,7 @@ export class Template extends Base implements IHandler<IExpressionDetails> {
 
         const expression = <string | undefined>attributes.get(Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
-            if (expression!.startsWith('@')) {
+            if (expression!.startsWith(Constants.CONSTANT_BIND_PREFIX_CHAR)) {
                 const name = expression!.substring(1);
                 if (Environment.templates.has(name)) {
                     this.hasNExpression = true;
@@ -41,26 +41,28 @@ export class Template extends Base implements IHandler<IExpressionDetails> {
                         const nElementProjection = new NElementProjection(nativeElement);
                         const template = Environment.templates.get(name);
                         
-                        nativeElement.replaceChildren(...Array.from(template!.childNodes));
-                        nElementProjection.process();
+                        if (!Helpers.isUndefined(template)) {
+                            nativeElement.replaceChildren(...Array.from(template!.childNodes));
+                            nElementProjection.process();
 
-                        attributes.markAsReady(Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME);
-                        
-                        if (asyncCallBack) {
-                            attributes.commit();
-                        }
+                            attributes.markAsReady(Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME);
+                            
+                            if (asyncCallBack) {
+                                attributes.commit();
+                            }
 
-                        constructSubTree();
+                            constructSubTree();
 
-                        if (asyncCallBack) {
-                            requestDetectChanges();
+                            if (asyncCallBack) {
+                                requestDetectChanges();
+                            }
                         }
                     });
                 } else {
                     Console.error(nativeElement, `invalid operation: template '${expression}' not found`);
                 }
             } else {
-                Console.error(nativeElement, `invalid operation: template name should start with '@'`);
+                Console.error(nativeElement, `invalid operation: template name should start with '${Constants.CONSTANT_BIND_PREFIX_CHAR}'`);
             }
         }
     }

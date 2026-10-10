@@ -14,7 +14,7 @@ describe('Properties handler', () => {
 
     it('should detect property binding', () => {
         const el = createElementWithProp('value', 'ctx.inputValue');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Properties(el, attrs);
 
         expect(handler.hasNExpression).toBe(true);
@@ -24,7 +24,7 @@ describe('Properties handler', () => {
 
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Properties(el, attrs);
 
         expect(handler.hasNExpression).toBe(false);
@@ -61,7 +61,7 @@ describe('Properties handler', () => {
 
         it('should log error when using style', () => {
             const el = createElementWithProp('style', 'ctx.val');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             new Properties(el, attrs);
 
             expect(errorSpy).toHaveBeenCalled();
@@ -137,7 +137,7 @@ describe('Properties handler', () => {
             ['textContent', 'textContent']
         ])('should block nb-prop:%s as delivered by the DOM', (attributeSpelling) => {
             const el = createElementWithProp(attributeSpelling, 'ctx.evil');
-            const handler = new Properties(el, new Attributes(el));
+            const handler = new Properties(el, new Attributes(el, () => false));
 
             expect(errorSpy).toHaveBeenCalled();
             expect(handler.nExpression === undefined || handler.nExpression.size === 0).toBe(true);
@@ -148,7 +148,7 @@ describe('Properties handler', () => {
             const el = createElementWithProp('outerHTML', 'ctx.evil');
             host.appendChild(el);
 
-            const handler = new Properties(el, new Attributes(el));
+            const handler = new Properties(el, new Attributes(el, () => false));
             handler.bind(undefined, () => '<img src="x" onerror="alert(1)">');
             handler.commit();
 
@@ -157,7 +157,7 @@ describe('Properties handler', () => {
 
         it('should preserve camelCase when writing a kebab-cased property name', () => {
             const el = createElementWithProp('tab-index', 'ctx.tab');
-            const handler = new Properties(el, new Attributes(el));
+            const handler = new Properties(el, new Attributes(el, () => false));
 
             expect([...handler.nExpression!.keys()]).toEqual(['tabIndex']);
 
@@ -177,7 +177,7 @@ describe('Properties handler', () => {
                 `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}srcdoc`,
                 'ctx.html'
             );
-            const handler = new Properties(el, new Attributes(el));
+            const handler = new Properties(el, new Attributes(el, () => false));
 
             expect(handler.nExpression!.has('srcdoc')).toBe(true);
             expect(errorSpy).not.toHaveBeenCalled();
@@ -185,7 +185,7 @@ describe('Properties handler', () => {
 
         it('should set the real readOnly property for nb-prop:read-only', () => {
             const el = createElementWithProp('read-only', 'ctx.ro');
-            const handler = new Properties(el, new Attributes(el));
+            const handler = new Properties(el, new Attributes(el, () => false));
 
             handler.bind(undefined, () => true);
             handler.commit();
@@ -199,7 +199,7 @@ describe('Properties handler', () => {
         it('should get a property from native element', () => {
             const el = document.createElement('input') as HTMLInputElement;
             el.value = 'myVal';
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             expect(handler.get('value')).toBe('myVal');
@@ -207,7 +207,7 @@ describe('Properties handler', () => {
 
         it('should set a property value', () => {
             const el = document.createElement('input');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             handler.set('value', 'newVal');
@@ -216,7 +216,7 @@ describe('Properties handler', () => {
 
         it('should not mark dirty when setting same value', () => {
             const el = document.createElement('input');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             handler.set('value', 'test');
@@ -229,7 +229,7 @@ describe('Properties handler', () => {
     describe('bind', () => {
         it('should bind expressions to properties', () => {
             const el = createElementWithProp('disabled', 'ctx.isDisabled');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             handler.bind(undefined, () => true);
@@ -240,7 +240,7 @@ describe('Properties handler', () => {
 
         it('should return executionParams', () => {
             const el = createElementWithProp('value', 'ctx.v');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             const params = {} as any;
@@ -251,7 +251,7 @@ describe('Properties handler', () => {
     describe('commit', () => {
         it('should apply property changes to element', () => {
             const el = document.createElement('input') as HTMLInputElement;
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             handler.set('value', 'committed');
@@ -262,7 +262,7 @@ describe('Properties handler', () => {
 
         it('should return false when not dirty', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             expect(handler.commit()).toBe(false);
@@ -271,7 +271,7 @@ describe('Properties handler', () => {
         it('should skip native assignment when staged value already equals native', () => {
             const el = document.createElement('input') as HTMLInputElement;
             el.value = 'same';
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             handler.set('value', 'same');
@@ -287,7 +287,7 @@ describe('Properties handler', () => {
     describe('bind without expression', () => {
         it('should pass through executionParams unchanged', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Properties(el, attrs);
 
             const params = { x: 1 } as any;

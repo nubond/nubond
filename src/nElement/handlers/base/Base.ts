@@ -3,22 +3,22 @@ import { IExpressionDetails } from '../../../interfaces/expression/IExpressionDe
 import { Helpers } from '../../../Helpers';
 
 export abstract class Base {
-    protected singleDataBindCache: Set<string> | undefined;
+    private _executedSingleBindExpressions: Set<string> | undefined;
 
     protected processExpressionExecution<T>(expressionDetails: IExpressionDetails, expressionKey: string, 
                                             expressionExecutor: (expression: string | null | undefined) => T,
                                             expressionDataBinder: (data: T) => void,
                                             expressionExecutionSkipped?: () => void): void {
         if (expressionDetails.isSingleBinded) {
-            if (Helpers.isUndefined(this.singleDataBindCache)) {
-                this.singleDataBindCache = new Set<string>();
+            if (Helpers.isUndefined(this._executedSingleBindExpressions)) {
+                this._executedSingleBindExpressions = new Set<string>();
             }
 
-            if (!this.singleDataBindCache!.has(expressionKey)) {
+            if (!this._executedSingleBindExpressions!.has(expressionKey)) {
                 const expressionResult = expressionExecutor(expressionDetails.expression);
 
                 if(!Helpers.isUndefined(expressionResult)) {
-                    this.singleDataBindCache!.add(expressionKey);
+                    this._executedSingleBindExpressions!.add(expressionKey);
                     expressionDataBinder(expressionResult);
                 }
             } else {
@@ -28,6 +28,14 @@ export abstract class Base {
             }
         } else {
             expressionDataBinder(expressionExecutor(expressionDetails.expression));
+        }
+    }
+
+    protected resetExpressionExecutionState(expressionDetails: IExpressionDetails, expressionKey: string): void {
+        if (expressionDetails.isSingleBinded) {
+            if (!Helpers.isUndefined(this._executedSingleBindExpressions)) {
+                this._executedSingleBindExpressions!.delete(expressionKey);
+            }
         }
     }
 }

@@ -103,12 +103,13 @@ describe('AdoptedStyles', () => {
         expect(console.error).toHaveBeenCalled();
     });
 
-    it('should apply style sanitizer when provided', () => {
-        const sanitizer = (style: string) => style.replace(/expression\([^)]*\)/gi, '');
+    it('should not apply the style sanitizer to inline content', () => {
+        const sanitizer = jest.fn((style: string) => style.replace(/expression\([^)]*\)/gi, ''));
         adoptedStyles.add('sanitized', '.safe { color: red; }', () => sanitizer);
 
         const sheet = adoptedStyles.get('sanitized');
         expect(sheet).toBeDefined();
+        expect(sanitizer).not.toHaveBeenCalled();
     });
 
     it('should handle empty string CSS (isReady immediately)', () => {

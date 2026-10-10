@@ -1,5 +1,19 @@
 import { Injectables } from '../../src/entities/Injectables';
 import { Constants } from '../../src/Constants';
+import { ReflectInitializer } from '../../src/initializers/ReflectInitializer';
+import { ChangeDetector } from '../../src/models/injections/ChangeDetector';
+import { EventDispatcher } from '../../src/models/injections/EventDispatcher';
+
+//needed so that emitDecoratorMetadata's __metadata helper actually records 'design:paramtypes'
+ReflectInitializer.init();
+
+interface IMyConfig {
+    apiUrl: string;
+}
+
+function Decorated(): (target: any) => any {
+    return (target: any) => target;
+}
 
 describe('Injectables', () => {
     let injectables: Injectables;
@@ -89,8 +103,10 @@ describe('Injectables', () => {
             expect(instance!.b).toBeInstanceOf(ServiceB);
             expect(instance!.b.a).toBeUndefined();
 
+            //the first argument identifies the class whose resolution hit the cycle
             expect(console.error).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
+                ServiceB,
                 expect.stringContaining('circular reference'),
                 expect.stringContaining('ServiceA->ServiceB->ServiceA'),
             );
@@ -115,6 +131,7 @@ describe('Injectables', () => {
             expect(instance!.y.z.x).toBeUndefined();
             expect(console.error).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
+                ServiceZ,
                 expect.stringContaining('circular reference'),
                 expect.stringContaining('ServiceX->ServiceY->ServiceZ->ServiceX'),
             );
@@ -227,7 +244,7 @@ describe('Injectables', () => {
 
             expect(instance).toBeInstanceOf(MyContext);
             expect(instance.dep).toBeUndefined();
-            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('SpecialDep'));
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, MyContext, expect.stringContaining('SpecialDep'));
         });
 
         it('should fallback to HTMLElement.isPrototypeOf when custom element dependency not found directly', () => {
@@ -264,7 +281,93 @@ describe('Injectables', () => {
             const instance = injectables.resolve(MyService as any) as any;
             expect(instance).toBeInstanceOf(MyService);
             expect(instance!.dep).toBeUndefined();
-            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('UnknownDep'));
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, MyService, expect.stringContaining('UnknownDep'));
+        });
+    });
+
+    describe('R3-4: interface-, any- or union-typed constructor params are not injected', () => {
+        it('should emit Object as the paramtype for an interface-typed param', () => {
+            @Decorated()
+            class MyCtx {
+                constructor(public config: IMyConfig) {}
+            }
+
+            expect((Reflect as any).getMetadata('design:paramtypes', MyCtx)).toEqual([Object]);
+        });
+
+        it('should emit Object as the paramtype for an any-typed param', () => {
+            @Decorated()
+            class MyCtx {
+                constructor(public config: any) {}
+            }
+
+            expect((Reflect as any).getMetadata('design:paramtypes', MyCtx)).toEqual([Object]);
+        });
+
+        it('should inject undefined and log an error instead of the first context injection (app/container shape)', () => {
+            @Decorated()
+            class MyCtx {
+                constructor(public config: IMyConfig) {}
+            }
+
+            const changeDetector = new ChangeDetector(() => {});
+            const eventDispatcher = new EventDispatcher(document.createElement('div'));
+
+            injectables.register(MyCtx as any, (Reflect as any).getMetadata('design:paramtypes', MyCtx));
+            const instance = injectables.resolve(MyCtx as any, changeDetector, eventDispatcher) as MyCtx;
+
+            expect(instance).toBeInstanceOf(MyCtx);
+            expect(instance.config).toBeUndefined();
+            expect(instance.config).not.toBeInstanceOf(ChangeDetector);
+            //the message names the emitted paramtype ('Object'), so the consuming class
+            //is only findable through the constructor passed as the first argument
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, MyCtx, expect.stringContaining('Object'));
+        });
+
+        it('should inject undefined and log an error instead of the host element (component shape)', () => {
+            @Decorated()
+            class MyComponentCtx {
+                constructor(public config: IMyConfig) {}
+            }
+
+            const host = document.createElement('div');
+
+            injectables.register(MyComponentCtx as any, (Reflect as any).getMetadata('design:paramtypes', MyComponentCtx));
+            const instance = injectables.resolve(MyComponentCtx as any, host, new ChangeDetector(() => {})) as MyComponentCtx;
+
+            expect(instance).toBeInstanceOf(MyComponentCtx);
+            expect(instance.config).toBeUndefined();
+            expect(instance.config).not.toBeInstanceOf(HTMLElement);
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, MyComponentCtx, expect.stringContaining('Object'));
+        });
+
+        it('should still resolve Object from the registry when it was registered explicitly', () => {
+            class MyCtx {
+                constructor(public dep: any) {}
+            }
+
+            //the guard sits on the context-dependant `else if`, so the registry branch still wins
+            injectables.register(Object as any, []);
+            injectables.register(MyCtx as any, [Object as any]);
+
+            const instance = injectables.resolve(MyCtx as any, new ChangeDetector(() => {})) as MyCtx;
+
+            expect(instance).toBeInstanceOf(MyCtx);
+            expect(instance.dep).toBeInstanceOf(Object);
+            expect(instance.dep).not.toBeInstanceOf(ChangeDetector);
+        });
+
+        it('should keep injecting concretely typed context dependencies', () => {
+            class MyCtx {
+                constructor(public cd: ChangeDetector) {}
+            }
+
+            const changeDetector = new ChangeDetector(() => {});
+            injectables.register(MyCtx as any, [ChangeDetector as any]);
+            const instance = injectables.resolve(MyCtx as any, changeDetector) as MyCtx;
+
+            expect(instance.cd).toBe(changeDetector);
+            expect(console.error).not.toHaveBeenCalled();
         });
     });
 });

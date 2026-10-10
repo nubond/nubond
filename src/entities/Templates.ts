@@ -16,6 +16,8 @@ class TemplateEntityWithNameMetaData extends TemplateEntityMetaData {
     private _fetchInProgress = false;
     private _prepareAttempts = 0;
 
+    private _validated = false;
+
     public readonly name: string;
 
     constructor (name: string,
@@ -32,6 +34,7 @@ class TemplateEntityWithNameMetaData extends TemplateEntityMetaData {
         let result = true;
 
         if (this.isReady) {
+            this.validateHtmlTemplate();
             readyCallBack(false);
         } else if (this._prepareAttempts < this.MAX_PREPARE_ATTEMPTS) {
             this._readyCallBacks.push(readyCallBack);
@@ -59,6 +62,7 @@ class TemplateEntityWithNameMetaData extends TemplateEntityMetaData {
                 if (!this.isHTMLTemplateReady) {
                     this.fetchData(this.htmlTemplatePath, this.htmlTemplateProvider, template => {
                         this.setHtmlTemplate(template!);
+                        this.validateHtmlTemplate();
                         triggerReadyCallBacks();
                     }, error => {
                         let errorMessage = `Invalid template '${this.name}': `;
@@ -85,10 +89,38 @@ class TemplateEntityWithNameMetaData extends TemplateEntityMetaData {
             }
         } else {
             result = false;
-            Console.error(`${Constants.DISPLAY_NAME}: Unable to get template '${this.name}' html template in ${this.MAX_PREPARE_ATTEMPTS} attempts.`);
+            Console.error(`Unable to get template '${this.name}' html template in ${this.MAX_PREPARE_ATTEMPTS} attempts.`);
         }
 
         return result;
+    }
+
+    //TODO: handle references like a -> b -> a ?
+    protected validateHtmlTemplate(): void {
+        if (!this._validated && !Helpers.isUndefined(this.htmlTemplate)) {
+            this._validated = true;
+
+            const lowerName = this.name.toLowerCase();
+            const attributeName = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}`;
+            const templates = this.htmlTemplate!.content.querySelectorAll(`[${attributeName}]`);
+            if (templates.length > 0) {
+                for (const el of Array.from(templates)) {
+                    const templateAttribute = el.attributes.getNamedItem(attributeName);
+                    if (templateAttribute !== null) {
+                        const trimmedAttributeValue = templateAttribute.value.trim();
+                        if (trimmedAttributeValue.startsWith(Constants.CONSTANT_BIND_PREFIX_CHAR) && (trimmedAttributeValue.substring(1).toLowerCase() === lowerName)) {
+                            const errorMessage = `Invalid template '${this.name}': html templates cannot reference themselves.`;
+
+                            this.setHtmlTemplate(this._getShowDebugInfo() ? errorMessage : '', true);
+
+                            Console.error(errorMessage);
+
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -103,7 +135,6 @@ export class Templates extends TemplateEntity<TemplateEntityWithNameMetaData> {
 
         if (!Helpers.isUndefined(templateMetaData)) {
             if (templateMetaData!.isReady) {
-                
                 return templateMetaData!.htmlTemplate!.content.cloneNode(true);
             } else {
                 Console.error(`Template '${name}' is not ready`);  

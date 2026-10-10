@@ -225,8 +225,8 @@ describe('ExpressionExecutor', () => {
             for (let i = 0; i < 5; i++) {
                 executor.executeExpression('this..invalid', ctx, element);
             }
-            // Each invocation also flows past the runtime catch which logs; what we care about
-            // is that the *compile* path doesn't re-fail every cycle. Cached sentinel returns undefined.
+            // What we care about is that the *compile* path doesn't re-fail every cycle.
+            // Cached sentinel returns undefined (the failing call itself is pinned by R6-7 below).
             const callsBeforeMore = (errorSpy.mock.calls as any[]).length;
             for (let i = 0; i < 10; i++) {
                 executor.executeExpression('this..invalid', ctx, element);
@@ -236,6 +236,51 @@ describe('ExpressionExecutor', () => {
             // call count should remain stable after the first failure.
             expect((errorSpy.mock.calls as any[]).length).toBe(callsBeforeMore);
             errorSpy.mockRestore();
+        });
+    });
+
+    describe('R6-7: a compile error is reported once, without a bogus execution error', () => {
+        // The catch used to cache the `() => undefined` stub without assigning it to the local
+        // `compiledFn`, so the failing call fell through to `undefined.apply(...)` and logged a
+        // second, misleading "execution error: TypeError: Cannot read properties of undefined".
+        function messages(): string[] {
+            return (console.error as jest.Mock).mock.calls.map(call => call.map(String).join(' '));
+        }
+
+        it('should log exactly one compilation error and no execution error on the failing call', () => {
+            const result = executor.executeExpression('this..invalid', {}, element);
+
+            expect(result).toBeUndefined();
+            expect(messages()).toHaveLength(1);
+            expect(messages()[0]).toContain('expression "this..invalid" compilation error');
+            expect(messages().some(message => message.includes('execution error'))).toBe(false);
+        });
+
+        it('should stay silent on later calls that hit the cached stub', () => {
+            executor.executeExpression('this..invalid', {}, element);
+            (console.error as jest.Mock).mockClear();
+
+            for (let i = 0; i < 3; i++) {
+                expect(executor.executeExpression('this..invalid', {}, element)).toBeUndefined();
+            }
+
+            expect(console.error).not.toHaveBeenCalled();
+        });
+
+        it('should report the compile failure once per execution-params shape (separate cache keys)', () => {
+            executor.executeExpression('this..invalid', {}, element);
+            executor.executeExpression('this..invalid', {}, element, new ExecutionParams(['item'], [1]));
+
+            expect(messages()).toHaveLength(2);
+            expect(messages().every(message => message.includes('compilation error'))).toBe(true);
+        });
+
+        it('should still report a genuine runtime error as an execution error', () => {
+            executor.executeExpression('this.foo.bar', {}, element);
+
+            expect(messages()).toHaveLength(1);
+            expect(messages()[0]).toContain('expression "this.foo.bar" execution error');
+            expect(messages()[0]).not.toContain('compilation error');
         });
     });
 

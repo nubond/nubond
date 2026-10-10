@@ -95,15 +95,18 @@ export class NElement extends NTreeElement implements INElement {
 
     private readonly _clone: (nElementsParent: INElement, nElement: INElement) => void;
     
-    private readonly _commitSequenceInvisibleParentHandled: Array<ICommittable>;
     private readonly _bindSequenceInvisibleParentHandled: Array<IBindable>;
+    private readonly _commitSequenceInvisibleParentHandled: Array<ICommittable>;
 
-    private readonly _commitSequence: Array<ICommittable>;
+    private readonly _bindSequenceSoftRemovers: Array<IBindable>;
+    private readonly _commitSequenceSoftRemovers: Array<ICommittable>;
+
     private readonly _bindSequence: Array<IBindable>;
+    private readonly _commitSequence: Array<ICommittable>;
     private readonly _disposeSequence: Array<IDisposable>;
 
-    private _isDisposed = false;
     private _removed = false;
+    private _isDisposed = false;
 
     private get _expressionExecutor(): ExpressionExecutor {
         return this._contextBinder.expressionExecutor;
@@ -121,7 +124,6 @@ export class NElement extends NTreeElement implements INElement {
                (!this.repeat.hasNExpression || (this.repeat.hasNExpression && this.repeat.isVisible)) &&
                (!this.switch.hasNExpression || (this.switch.hasNExpression && this.switch.isVisible));
     }
-
 
     private _eventDispatcher: EventDispatcher | undefined;
     private _elementSubscriptions: ElementSubscriptions | undefined;
@@ -165,7 +167,7 @@ export class NElement extends NTreeElement implements INElement {
         this._parent = parent;
         this._clone = clone;
         
-        this.attributes = new Attributes(this.nativeElement);
+        this.attributes = new Attributes(this.nativeElement, () => contextBinder.getShowDebugInfo());
         this.classes = new Classes(this.nativeElement, this.attributes,
                                    () => contextBinder.getHiddenClassName());
         
@@ -177,8 +179,7 @@ export class NElement extends NTreeElement implements INElement {
 
         this.events = new Events(this.nativeElement, this.attributes,
                                  () => this.getManipulationProxy(), 
-                                 () => contextBinder.detectChanges(),
-                                 () => contextBinder.getShowDebugInfo());
+                                 () => contextBinder.detectChanges());
         this.exec = new Exec(this.attributes);
 
         this.if = new If(this.attributes, this.classes);
@@ -219,12 +220,25 @@ export class NElement extends NTreeElement implements INElement {
                                                 : cloneOf!.nativeElementForClone;
         }
         
+        //
+        //soft removers sequences
+        //
+        //bind sequence
+        this._bindSequenceSoftRemovers = [
+            this.repeat
+        ].filter(el => el.hasNExpression);
+
+        //commit sequence
+        this._commitSequenceSoftRemovers = [
+            this.repeat
+        ].filter(el => el.hasNExpression);
+
+        //
         //regular sequences
+        //
         //bind sequence
         this._bindSequence = [
             //should be first due to possibility of context creation
-            this.repeat,
-            //should be second due to possibility of context creation
             this.variables,
             
             //should be second-ish
@@ -250,11 +264,7 @@ export class NElement extends NTreeElement implements INElement {
             
         //commit sequence
         this._commitSequence = [
-            //not impacted by sub-tree change
-            //--
-
-            //sub-tree changers, can request forceUpdateDynamicElements 
-            this.repeat,
+            //sub-tree changers 
             this.if,
             this.switch,
 
@@ -282,7 +292,9 @@ export class NElement extends NTreeElement implements INElement {
             this.events
         ].filter(el => el.hasNExpression);
 
+        //
         //sequences for for invisible nElements for cases when visibility is handled by parent nElement
+        //
         //bind sequence
         this._bindSequenceInvisibleParentHandled = [
             this.container,
@@ -305,10 +317,26 @@ export class NElement extends NTreeElement implements INElement {
     public detectChanges(context: object, executionParams?: ExecutionParams): void {
         this._isStable = true;
 
+        let currentExecutionParams = executionParams;
+
         if (this._isVisibleParentHandled) {
-            this.detectChangesInternal(context, executionParams, this._bindSequence, this._commitSequence);
+            if (this._bindSequenceSoftRemovers.length > 0) {
+                currentExecutionParams = this.detectChangesInternal(context, currentExecutionParams, this._bindSequenceSoftRemovers, this._commitSequenceSoftRemovers);
+            }
+
+            if (!this._removed) {
+                currentExecutionParams = this.detectChangesInternal(context, currentExecutionParams, this._bindSequence, this._commitSequence);
+            }
         } else {
-            this.detectChangesInternal(context, executionParams, this._bindSequenceInvisibleParentHandled, this._commitSequenceInvisibleParentHandled);
+            currentExecutionParams = this.detectChangesInternal(context, currentExecutionParams, this._bindSequenceInvisibleParentHandled, this._commitSequenceInvisibleParentHandled);
+        }
+
+        if (this._isVisible && !this._removed) {
+            for (const el of this._children) {
+                el.detectChanges(context, currentExecutionParams);
+            }
+
+            this.stabilizeChildren();
         }
     }
 
@@ -331,7 +359,7 @@ export class NElement extends NTreeElement implements INElement {
     }
 
     private detectChangesInternal(context: object, executionParams: ExecutionParams | undefined,
-                                  bindSequence: Array<IBindable>, commitSequence: Array<ICommittable>): void {
+                                  bindSequence: Array<IBindable>, commitSequence: Array<ICommittable>): ExecutionParams | undefined {
        let currentExecutionParams = executionParams;
 
         for (const el of bindSequence) {
@@ -344,7 +372,7 @@ export class NElement extends NTreeElement implements INElement {
                 Console.error(this.nativeElement, 'handler', el, `bind error: ${ex}`);
             }
 
-            //braking bind sequence due to optimization
+            //breaking bind sequence due to optimization
             if (this._removed) {
                 break;
             }
@@ -369,15 +397,9 @@ export class NElement extends NTreeElement implements INElement {
                     Console.error(this.nativeElement, 'handler', el ,`commit error: ${ex}`);
                 }
             }
-
-            if (this._isVisible) {
-                for (const el of this._children) {
-                    el.detectChanges(context, currentExecutionParams);
-                }
-
-                this.stabilizeChildren();
-            }
         }
+
+        return currentExecutionParams;
     }
 
     private clone(): void {
@@ -438,13 +460,18 @@ export class NElement extends NTreeElement implements INElement {
                                                                       ((el.nodeType == Node.TEXT_NODE) &&
                                                                        Helpers.isNotEmptyString(el.textContent) &&
                                                                        (el.textContent!.trim().length > 0)))) {
-                Console.warn(this.nativeElement, `element original children will replaced by ${Constants.DEFAULT_PREFIX}-${childElementsChangers[0].name}}`);
+                Console.warn(this.nativeElement, `element original children will replaced by ${Constants.DEFAULT_PREFIX}-${childElementsChangers[0].name}`);
             }
         }
     }
 
     private removeFromProcessingSequences(handlers: Array<IBindable | ICommittable | IDisposable>): void {
         for (const handler of handlers) {
+            const bindSequenceSoftRemoversIndex = this._bindSequenceSoftRemovers.indexOf(<IBindable>handler);
+            if (bindSequenceSoftRemoversIndex >= 0) {
+                this._bindSequenceSoftRemovers.splice(bindSequenceSoftRemoversIndex, 1);
+            }
+
             const bindSequenceIndex = this._bindSequence.indexOf(<IBindable>handler);
             if (bindSequenceIndex >= 0) {
                 this._bindSequence.splice(bindSequenceIndex, 1);
@@ -453,6 +480,11 @@ export class NElement extends NTreeElement implements INElement {
             const bindSequenceInvisibleParentHandledIndex = this._bindSequenceInvisibleParentHandled.indexOf(<IBindable>handler);
             if (bindSequenceInvisibleParentHandledIndex >= 0) {
                 this._bindSequenceInvisibleParentHandled.splice(bindSequenceInvisibleParentHandledIndex, 1);
+            }
+
+            const commitSequenceSoftRemoversIndex = this._commitSequenceSoftRemovers.indexOf(<ICommittable>handler);
+            if (commitSequenceSoftRemoversIndex >= 0) {
+                this._commitSequenceSoftRemovers.splice(commitSequenceSoftRemoversIndex, 1);
             }
 
             const commitSequenceIndex = this._commitSequence.indexOf(<ICommittable>handler);
@@ -489,6 +521,7 @@ export class NElement extends NTreeElement implements INElement {
         return this._elementSubscriptions!;
     }
 
+    //TODO: Think about validation on manipulations on properties, attributes and styles when handler already exists and injection is trying to manipulate the same
     private getManipulationProxy(): ElementManipulations {
         if (Helpers.isUndefined(this._elementManipulations)) {
             this._elementManipulations = new ElementManipulations(new ElementPropertiesManipulations((propertyKey) => this.properties.get(propertyKey),

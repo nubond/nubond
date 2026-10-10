@@ -20,6 +20,7 @@
 16. [Lifecycle Hooks](#16-lifecycle-hooks)
 17. [Injectable Services](#17-injectable-services)
 18. [Utility Helpers](#18-utility-helpers)
+19. [Sanitization & Trusted Content](#19-sanitization--trusted-content)
 
 ---
 
@@ -32,7 +33,7 @@
 | `@AppRoot(...metadata)` | Bootstraps the application. Accepts (in any order) an element selector string or `Element` (defaults to `document.body` when omitted), a route template string starting with `/`, an `IGlobalConfig`, `$Template`/`$AdoptedStyle` registration arrays, and any Container/Component/Aspect/Transformer/Injectable dependencies used by the app. Unlike the soft-failing entity decorators, `@AppRoot` **throws** on conflicting metadata (multiple selectors, route templates, or global configs). |
 | `@Container(templateOrTuple, ...metadata)` | Registers a container — a context-bound HTML template region without Shadow DOM isolation. `templateOrTuple` is either an HTML template / `ITemplateProvider`, or a `[name, templateOrProvider]` tuple. Additional metadata can include `IContextConfig`, `$Template`/`$AdoptedStyle` arrays, and entity dependencies. |
 | `@Component(templateOrTuple, ...metadata)` | Registers a web component with Shadow DOM. `templateOrTuple` is the HTML template (string / `ITemplateProvider`) or a `[name, templateOrProvider]` tuple. Additional metadata can include a style template, a `CustomElementConstructor`, an `IComponentContextConfig`, an `Array<string>` of adopted-style names, and entity dependencies. |
-| `@Aspect(styleOrTuple?, ...metadata)` | Registers an aspect — a reusable, element-level behavior/mixin attached via `nb-aspect`. Optional first argument is a style template (string / `ITemplateProvider`) or a `[name, styleOrProvider]` tuple. Additional metadata can include an `Array<string>` of adopted-style names and a `(style: string) => string` sanitizer. |
+| `@Aspect(styleOrTuple?, ...metadata)` | Registers an aspect — a reusable, element-level behavior/mixin attached via `nb-aspect`. Optional first argument is a style template (string / `ITemplateProvider`) or a `[name, styleOrProvider]` tuple. Additional metadata can include an `Array<string>` of adopted-style names and a `(style: string) => string` sanitizer (applied to URL-/provider-resolved CSS only — inline CSS is trusted; [§19](#19-sanitization--trusted-content)). |
 | `@Transformer(name?)` | Registers a global function transformer callable from any template expression. |
 | `@Injectable(singleton?)` | Registers a class in the DI container. Default is **transient** (`singleton = false`); pass `true` for a singleton. |
 
@@ -49,8 +50,8 @@ Both are implemented via `Object.defineProperty` and can only be applied to simp
 
 | Function | Purpose |
 |----------|---------|
-| `$Template(name, html \| provider, sanitizer?)` | Registers a global reusable HTML template by name. |
-| `$AdoptedStyle(name, css \| provider, sanitizer?)` | Registers a global adopted stylesheet by name. |
+| `$Template(name, html \| provider, sanitizer?)` | Registers a global reusable HTML template by name. The optional sanitizer applies to URL-/provider-resolved content only — inline HTML is trusted ([§19](#19-sanitization--trusted-content)). |
+| `$AdoptedStyle(name, css \| provider, sanitizer?)` | Registers a global adopted stylesheet by name. The optional sanitizer applies to URL-/provider-resolved content only — inline CSS is trusted ([§19](#19-sanitization--trusted-content)). |
 | `$Injectable(target, singleton?, ...dependencies)` | Programmatic injectable registration. Also accepts an existing object instance — `$Injectable(instance)` registers it as a singleton under its constructor. |
 | `$Config(globalConfig)` | Applies global framework configuration. |
 | `$Route(routeConfig)` | Configures routing programmatically. |
@@ -66,7 +67,7 @@ All binding attributes use the `nb-` prefix by default (or `data-nb-` in W3C com
 | Attribute | Description | Example |
 |-----------|-------------|---------|
 | `nb-value` | Binds an expression result to the element's `textContent`. | `<p nb-value="this.name"></p>` |
-| `nb-html` | Binds an expression result to the element's `innerHTML`. Sanitization is **opt-in**: by default the value is written raw (an XSS sink for untrusted content) — register an `htmlSanitizer` in the global config or context config to sanitize. | `<p nb-html="this.richContent"></p>` |
+| `nb-html` | Binds an expression result to the element's `innerHTML`. Sanitization is **opt-in**: by default the value is written raw (an XSS sink for untrusted content) — register an `htmlSanitizer` in the global config or context config to sanitize. See [§19](#19-sanitization--trusted-content). | `<p nb-html="this.richContent"></p>` |
 
 ### CSS Bindings
 
@@ -76,6 +77,8 @@ All binding attributes use the `nb-` prefix by default (or `data-nb-` in W3C com
 | `nb-style` | Dynamic inline style binding. Multiple properties separated by `;`. | `<p nb-style="opacity: this.fade; color: this.textColor">` |
 
 A literal `;` inside an `nb-class` (array/object form) or `nb-style` entry can be escaped as `\;` — e.g. `nb-style="background: url('a\;b.png')"`.
+
+An `nb-style` value ending in `!important` is applied as a CSS priority (`style.setProperty(prop, value, 'important')`), matched case-insensitively — e.g. `nb-style="color: this.warnColor + ' !important'"`. The flag must be a contiguous token and must not be the whole value: `! important` and a bare `!important` are passed through as plain values and dropped by the CSS parser.
 
 **`nb-class` Formats:**
 
@@ -89,6 +92,11 @@ A literal `;` inside an `nb-class` (array/object form) or `nb-style` entry can b
 <!-- Conditional object: class names as keys, boolean expressions as values -->
 <p nb-class="{highlight: this.isHighlighted; 'text-muted': this.isMuted}"></p>
 ```
+
+- **Authored classes are never removed by `nb-class`.** Classes present in the markup when the element is bound stay in place in every form: a simple or array value moving away from `x` does not remove an authored `x`. In the conditional form a key that names an authored class is a template error — `class="highlight" nb-class="{highlight: this.on}"` logs `conditional class expression can't mutate static (highlight) class.` and that key is not bound. Leave a class out of the markup if a binding should be able to switch it off. (The imperative `element.classes.remove()` / `toggle()` can still remove it.)
+- **Array entries share classes.** When two entries yield the same class, it stays as long as at least one of them still yields it — including a one-time (`#`) entry, whose frozen class counts every cycle.
+- **Conditional keys must be unique.** A repeated class name (`{on: a; on: b}`, compared after trimming, case-sensitive) keeps the first entry and logs `duplicated class name (on) found.`.
+- Array entries are separated by `;` — `[this.a, this.b]` is a **single** entry (the comma operator yields `this.b`).
 
 ### Attribute & Property Bindings
 
@@ -122,6 +130,12 @@ Multiple attribute/property bindings can be applied to the same element:
     <span nb-default>Unknown</span>
 </div>
 ```
+
+**How `nb-case` matches** — the switch value and each case value are compared with strict equality (`===`) after one normalization step:
+
+- **Primitives** (`string`, `number`, `boolean`, `bigint`, `symbol`, `null`, `undefined`) are compared as-is, so the **type matters**: `5` does not match `'5'`, `true` does not match `'true'`, and an `undefined`/`null` switch value does not match an empty-string case — it falls through to `nb-default`.
+- **Objects, arrays and functions** — and `NaN` — are compared by their stringified text (JSON for objects and arrays, `''` for functions, `'NaN'` for `NaN`). Two deep-equal objects therefore match, and so does a string case holding the same text (`{a: 1}` matches `'{"a":1}'`, a function matches `''`).
+- `@` constants are typed: `nb-case="@5"` is the **number** `5` and `@true` the boolean `true`. When the switch value is a string — router state, an `<input>` value, a URL parameter — match it with a string literal: `nb-case="'5'"`.
 
 > **Note:** `nb-if` (and `nb-switch`/`nb-case`/`nb-default`) hide elements by toggling the `nb-hidden` CSS class (`data-nb-hidden` in W3C mode; `display: none !important`) — the element is **not** removed from the DOM.
 
@@ -217,7 +231,8 @@ With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `o
 **`nb-in` / `nb-in-ref` notes:**
 - Kebab-case input names map to camelCase properties on the child: `nb-in:some-name` sets `someName`.
 - Input updates are gated by **deep-equal comparison** (`Helpers.equals`) of the bound value — a new object with identical contents will **not** trigger an update (or `onInputsRefreshDone`).
-- If an `nb-in` value cannot be `structuredClone`d, an error is logged suggesting `nb-in-ref` instead.
+- An **in-place mutation** of the bound object *is* delivered for `nb-in`: the comparison baseline is a clone snapshot of the previous value, not the parent's live reference, so the mutated object compares deep-unequal. It is **not** delivered for `nb-in-ref`, where the child shares the parent's object — the child's data is already correct, but no input update is detected, so its change detection is not triggered and its DOM stays stale until some other trigger.
+- If an `nb-in` value cannot be `structuredClone`d, an error is logged suggesting `nb-in-ref` instead, and the value is **not delivered** — `nb-in` never falls back to handing over the live reference. This includes **functions**: every non-primitive goes through the clone, so callbacks must be passed with `nb-in-ref`.
 
 ---
 
@@ -296,13 +311,15 @@ export class FunctionContainer { }
 export class AsyncContainer { }
 
 // From a URL — a string that looks like a root-relative path
-// (starts with '/' and contains no spaces, '{' or '<') is fetched
+// (starts with '/' and contains no newline, '{' or '<') is fetched
 // at runtime instead of being treated as inline HTML
 @Container('/templates/my-container.html')
 export class RemoteContainer { }
 ```
 
 The same string/provider/URL sources apply to `@Component` templates and styles, `@Aspect` styles, `$Template`, and `$AdoptedStyle`.
+
+The inline vs. URL/provider distinction is also the **trust boundary** for sanitization: inline content is treated as authored code and stored as-is, while URL- and provider-resolved content passes through the configured sanitizer. See [§19](#19-sanitization--trusted-content).
 
 ### Input / Output
 
@@ -489,6 +506,8 @@ $Template('dynamic-template', { get: () => '<em>Dynamic</em>' });
 
 Templates are looked up case-insensitively. Inline string templates are compiled into a `<template>` element at registration time; URL- and provider-based templates are fetched/resolved lazily on first use.
 
+The optional third argument of `$Template` is an HTML sanitizer, applied to URL- and provider-resolved content only — inline content is trusted and stored verbatim. See [§19](#19-sanitization--trusted-content).
+
 ---
 
 ## 9. Content Projection
@@ -562,6 +581,32 @@ export class MyContainer {
         private changeDetector: ChangeDetector,
         private apiService: ApiService
     ) { }
+}
+```
+
+Each parameter is resolved by its **declared class**: the injectables registry is consulted first (your `@Injectable`s and `Router`), and only if the type is not registered there is it matched by `instanceof` against the built-in instances for that entity.
+
+**Parameters must be typed with a class.** Resolution relies on the `design:paramtypes` metadata TypeScript emits, and for a parameter typed as an interface, `any`, `unknown`, a union or a generic type parameter, TypeScript emits `Object` — it has no class to resolve. Such a parameter is **not** injected: it receives `undefined` and the framework logs `Injection 'Object' cannot be resolve.`
+
+```typescript
+interface IMyConfig { apiUrl: string; }
+
+@Container(html)
+export class MyContainer {
+    // ✗ not injectable — the emitted paramtype is Object;
+    //   `config` arrives as undefined and an error is logged
+    constructor(private config: IMyConfig) { }
+}
+
+@Injectable(true)
+export class MyConfig implements IMyConfig {
+    public apiUrl = '/api';
+}
+
+@Container(html)
+export class MyContainer {
+    // ✓ injectable — a registered class, so it resolves
+    constructor(private config: MyConfig) { }
 }
 ```
 
@@ -740,6 +785,8 @@ Because aspects attach to existing elements (no Shadow DOM scope of their own), 
 
 Adopted styles are applied via `document.adoptedStyleSheets` or shadow root `adoptedStyleSheets`, and reference-counted for lifecycle management.
 
+The optional third argument of `$AdoptedStyle` is a style sanitizer, applied to URL- and provider-resolved CSS only — inline CSS is trusted and stored verbatim. See [§19](#19-sanitization--trusted-content).
+
 ---
 
 ## 14. W3C Compliance Mode
@@ -799,17 +846,26 @@ Contexts (containers and components) can implement lifecycle callback methods:
 
 | Hook | When Called |
 |------|-----------|
-| `onContainerAttached(context)` | After the container/component is attached to the DOM and bindings are initialized. |
-| `onContainerDetached(context)` | When the container/component is removed from the DOM. |
+| `onContainerAttached(context)` | After a **child container** declared in *this* context's own template is attached and its bindings are initialized. `context` is that child container's context — not this one. |
+| `onContainerDetached(context)` | When such a child container is detached. `context` is the detached child container's context. |
 | `onInputsRefreshDone()` | After all `nb-in` input bindings have been updated. |
 | `onDetectChangesDone()` | After a change detection cycle completes. |
 | `onDispose()` | During cleanup/teardown. |
 
+> **`onContainerAttached` / `onContainerDetached` are about containers only — by design.** They are notifications a context receives *about the `nb-container`s inside its own template*, which is what their names say. Two consequences worth knowing:
+>
+> - **A context is never told about its own attachment.** Implementing `onContainerAttached` on a container does not fire when *that* container attaches — it fires when a container nested in its template does. For "my own bindings are live" work, use the constructor (bindings run immediately after) or `onDetectChangesDone()`.
+> - **Components do not participate at all.** A `<my-component>` attaching inside a template does **not** notify the host context, and a component's own context is never notified of its attachment. Only `nb-container` attachments raise these hooks; the hooks themselves are still available on a component context, where — as above — they report on child containers inside *its* template.
+>
+> Use `onDispose()` for teardown in both containers and components; it is the hook that fires for the context itself.
+
 ```typescript
 @Container(html)
 export class MyContainer implements IContext {
-    onContainerAttached() {
-        console.log('Container attached');
+    // Fires for containers nested inside MyContainer's template,
+    // NOT when MyContainer itself attaches.
+    onContainerAttached(context: IContext) {
+        console.log('A child container attached:', context);
     }
 
     onDispose() {
@@ -878,6 +934,66 @@ The `Helpers` module provides type checking and conversion utilities:
 | `split(value, separatorChar, escapeChar)` | Splits by a separator that can be escaped (e.g. `\;`); entries are trimmed and empty entries dropped — used by `nb-class`/`nb-style` parsing |
 
 The package also exports `CallBackEvent<T>` — a typed callback-list event with `subscribe(callBack)` (returns an unsubscribe function; duplicate callbacks are ignored) and `raise(...data)` (invokes every callback; if any throw, the rest still run and a combined `Error` is thrown afterwards).
+
+---
+
+## 19. Sanitization & Trusted Content
+
+nuBond accepts both an `htmlSanitizer` and a `styleSanitizer`, and applies them **only to content that arrives at runtime from outside the bundle**. Inline templates and inline styles are treated as *trusted authored code* and are stored verbatim — by design, not as an oversight.
+
+### Trusted vs. sanitized sources
+
+| Content source | Sanitizer applied? |
+|----------------|--------------------|
+| **Inline** HTML/CSS string passed to `@Container`, `@Component`, `@Aspect`, `$Template`, `$AdoptedStyle` — including a bundler-imported `.html`/`.css` file, which is an inline string by the time the decorator runs | **No** — trusted, stored as-is |
+| **URL** template/style (a root-relative path string, fetched with `fetch` at runtime) | **Yes** |
+| **`ITemplateProvider`** result — `get()` returning a string or a `Promise<string>` | **Yes** |
+| `nb-html` binding value | **Yes, if one is registered** — otherwise the value is written raw (opt-in; see [§2](#value--html-bindings)) |
+| `nb-attr:*` / `nb-prop:*` values | **No** — these are raw DOM escape hatches and bypass sanitization entirely (`nb-prop:srcdoc`, `nb-attr:href="javascript:…"` etc. are the developer's responsibility) |
+
+### Why inline content is trusted
+
+- An inline template is **source code**, authored and bundled alongside the TypeScript that binds to it. It carries no more risk than the class itself, and running untrusted-content sanitization over it is a liability rather than a safeguard: a sanitizer tuned for hostile input will typically strip the very markup the framework needs — unknown attributes (`nb-value`, `nb-repeat`, `nb-event:*`), custom-element tags, `<template>` elements — leaving a silently broken template with no diagnostic.
+- Inline content is also consumed at **decorator-import time**, which necessarily runs *before* `@AppRoot`'s `Environment.config({ htmlSanitizer })` — the root module imports its dependencies first. A global sanitizer registered there could never have reached inline content in any case.
+- URL- and provider-resolved content is the real boundary: it is fetched or computed *after* configuration, can come from a server or a CMS, and is therefore where the sanitizer runs.
+
+A sanitizer registered globally or per context is consequently **not** a blanket "sanitize everything" switch. It covers the runtime-content paths above; anything inline is the author's responsibility, which is the correct split — the author wrote it.
+
+### Where each sanitizer comes from
+
+Sanitizers are resolved lazily, at the moment the content is stored, and the most specific registration wins:
+
+| Target | Resolution order |
+|--------|------------------|
+| `@Container` template | `IContextConfig.htmlSanitizer` → global `htmlSanitizer` → none |
+| `@Component` template | `IComponentContextConfig.htmlSanitizer` → global `htmlSanitizer` → none |
+| `@Component` style | `IComponentContextConfig.styleSanitizer` → global `styleSanitizer` → none |
+| `@Aspect` style | sanitizer in the `@Aspect` metadata → global `styleSanitizer` → none |
+| `$Template` | the `sanitizer?` argument → global `htmlSanitizer` → none |
+| `$AdoptedStyle` | the `sanitizer?` argument → global `styleSanitizer` → none |
+| `nb-html` | the enclosing context's config `htmlSanitizer` → global `htmlSanitizer` → none (raw). The app root takes no context config, so bindings in the root element's own markup use the global sanitizer. |
+
+```typescript
+@AppRoot('#app',
+    {
+        // Covers nb-html bindings and every URL/provider-resolved
+        // template and style in the app. Inline templates and styles
+        // are trusted and bypass it.
+        htmlSanitizer: (html) => DOMPurify.sanitize(html),
+        styleSanitizer: (css) => css.replace(/@import[^;]*;/gi, '')
+    },
+    MyContainer)
+export class App { }
+```
+
+```typescript
+// Per-context override — wins over the global sanitizer for this
+// component's nb-html bindings. Its own template and style are
+// inline here, so they bypass the sanitizer either way; the override
+// would also cover them had they been given as a URL or provider.
+@Component(html, css, { htmlSanitizer: (html) => myStricterSanitizer(html) })
+export class RichTextComponent { }
+```
 
 ---
 

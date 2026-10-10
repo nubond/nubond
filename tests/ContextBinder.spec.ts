@@ -2,6 +2,7 @@ import { ContextBinder, RootContextBinder } from '../src/ContextBinder';
 import { ExpressionExecutor } from '../src/expression/ExpressionExecutor';
 import { Console } from '../src/Console';
 import { Constants } from '../src/Constants';
+import { Environment } from '../src/Environment';
 
 // polyfill CSSStyleSheet.replaceSync for jsdom
 if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
@@ -38,20 +39,20 @@ describe('ContextBinder', () => {
 
     it('should have change detection enabled by default', () => {
         const binder = createBinder();
-        expect(binder.isChangeDetectionEnabled).toBe(true);
+        expect(binder.changeDetectionEnabled).toBe(true);
     });
 
     it('should disable change detection', () => {
         const binder = createBinder();
         binder.disableChangeDetection();
-        expect(binder.isChangeDetectionEnabled).toBe(false);
+        expect(binder.changeDetectionEnabled).toBe(false);
     });
 
     it('should re-enable change detection', () => {
         const binder = createBinder();
         binder.disableChangeDetection();
         binder.enableChangeDetection();
-        expect(binder.isChangeDetectionEnabled).toBe(true);
+        expect(binder.changeDetectionEnabled).toBe(true);
     });
 
     it('should not be disposed initially', () => {
@@ -321,6 +322,31 @@ describe('ContextBinder', () => {
             jest.useRealTimers();
         });
 
+        // R9-2: a fresh Invalid Date deep-equals the previous Invalid Date, so re-assigning one is not a change
+        it('should NOT trigger detectChanges when assigning a fresh Invalid Date over an Invalid Date (R9-2)', () => {
+            jest.useFakeTimers();
+            try {
+                const binder = createDetectorBinder(['when']);
+                const el = document.createElement('div');
+                const context = { when: new Date('invalid') } as any;
+
+                binder.bind(el, context, false, false);
+
+                const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+                detectSpy.mockClear();
+
+                context.when = new Date('still invalid');
+                jest.runAllTimers();
+                expect(detectSpy).not.toHaveBeenCalled();
+
+                context.when = new Date(0);
+                jest.runAllTimers();
+                expect(detectSpy).toHaveBeenCalledTimes(1);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
         it('should NOT trigger detectChanges when setting same value', () => {
             jest.useFakeTimers();
             const binder = createDetectorBinder(['count']);
@@ -357,6 +383,44 @@ describe('ContextBinder', () => {
                 expect.anything(),
                 expect.stringContaining('has getter or setter')
             );
+            errorSpy.mockRestore();
+        });
+
+        //R6-8 (by-design): decorators are supported only at the top level — on the context class itself,
+        //on plain configurable own properties. Class accessors live on the prototype, where the own-property
+        //guard deliberately does not look, so they are shadowed instead of rejected. Characterization test —
+        //do not "fix" it by walking the prototype chain.
+        it('should shadow a class accessor without an error (prototype accessors are not supported)', () => {
+            const errorSpy = jest.spyOn(Console, 'error').mockImplementation();
+            const setterCalls: Array<number> = [];
+
+            class AccessorContext {
+                private _count = 1;
+
+                public get count(): number {
+                    return this._count;
+                }
+                public set count(newValue: number) {
+                    setterCalls.push(newValue);
+                    this._count = newValue;
+                }
+            }
+
+            const binder = createDetectorBinder(['count']);
+            const el = document.createElement('div');
+            const context = new AccessorContext() as any;
+
+            binder.bind(el, context, false, false);
+
+            expect(errorSpy).not.toHaveBeenCalled();
+
+            context.count = 42;
+
+            //the instance-level interceptor shadows the class accessor: its setter never runs again
+            expect(setterCalls).toEqual([]);
+            expect(context.count).toBe(42);
+            expect(Object.getPrototypeOf(context).constructor).toBe(AccessorContext);
+
             errorSpy.mockRestore();
         });
 
@@ -447,6 +511,100 @@ describe('ContextBinder', () => {
             expect(dispatchSpy).toHaveBeenCalledWith(
                 expect.objectContaining({ type: 'my-event', detail: 'initial' })
             );
+        });
+
+        describe('R8-2: the auto-trigger announces the initial value only while it is still current', () => {
+            // A debounced bind (a component with inputs) leaves a window before the first cycle in
+            // which an assignment - typically nb-in delivery from the parent - dispatches through the
+            // setter. The auto-trigger fires on the first onDetectChangesDone, after that dispatch, and
+            // is skipped when the value no longer equals the initial one.
+            function dispatchedDuringFirstCycle(initial: any, beforeFirstCycle: (context: any) => void): any[] {
+                jest.useFakeTimers();
+                try {
+                    const binder = createEventerBinder(new Map([['myProp', 'my-event']]));
+                    const el = document.createElement('div');
+                    const details: any[] = [];
+                    el.addEventListener('my-event', event => details.push((event as CustomEvent).detail));
+
+                    const context = { myProp: initial } as any;
+                    binder.bind(el, context, false, true);
+                    beforeFirstCycle(context);
+                    jest.runAllTimers();
+
+                    return details;
+                } finally {
+                    jest.useRealTimers();
+                }
+            }
+
+            it('should end with the value assigned before the first cycle, not the stale initial value', () => {
+                const details = dispatchedDuringFirstCycle('init', context => context.myProp = 'fromParent');
+
+                expect(details[details.length - 1]).toBe('fromParent');
+                expect(details).not.toContain('init');
+            });
+
+            it('should end with "no detail" when the value was cleared before the first cycle', () => {
+                const details = dispatchedDuringFirstCycle('init', context => context.myProp = undefined);
+
+                expect(details[details.length - 1]).toBeNull();
+                expect(details).not.toContain('init');
+            });
+
+            it('should dispatch the initial value exactly once when nothing changed before the first cycle', () => {
+                expect(dispatchedDuringFirstCycle('init', () => {})).toEqual(['init']);
+            });
+
+            it('should not auto-trigger when the initial value was undefined', () => {
+                expect(dispatchedDuringFirstCycle(undefined, context => context.myProp = 'v')).toEqual(['v']);
+            });
+
+            it('should dispatch a value changed before the first cycle exactly once', () => {
+                expect(dispatchedDuringFirstCycle('init', context => context.myProp = 'fromParent'))
+                    .toEqual(['fromParent']);
+            });
+
+            it('should dispatch a value cleared before the first cycle exactly once', () => {
+                expect(dispatchedDuringFirstCycle('init', context => context.myProp = undefined))
+                    .toEqual([null]);
+            });
+
+            it('should announce an initial object that was mutated in place with its current contents', () => {
+                expect(dispatchedDuringFirstCycle({ a: 1 }, context => context.myProp.a = 2))
+                    .toEqual([{ a: 2 }]);
+            });
+
+            it.each([
+                ['NaN', NaN],
+                ['an Invalid Date', new Date('invalid')],
+                ['a Set of objects', new Set([{ a: 1 }])],
+                ['zero', 0],
+                ['false', false]
+            ])('should announce an untouched initial value that is %s', (_, initial) => {
+                const details = dispatchedDuringFirstCycle(initial, () => {});
+
+                expect(details).toHaveLength(1);
+                expect(details[0]).toBe(initial);
+            });
+
+            // known residual: the value went away and came back before the first cycle - the setter
+            // dispatched both changes, and the auto-trigger sees "equals initial" and announces it again
+            it('should announce the initial value again after a change-and-revert (known residual)', () => {
+                expect(dispatchedDuringFirstCycle('init', context => { context.myProp = 'x'; context.myProp = 'init'; }))
+                    .toEqual(['x', 'init', 'init']);
+            });
+
+            // known residual: a deep-equal replacement does not dispatch through the setter, and the
+            // auto-trigger dispatches the captured initial reference, not the object the property now holds
+            it('should dispatch the initial reference after a deep-equal replacement (known residual)', () => {
+                const initial = { a: 1 };
+                const replacement = { a: 1 };
+                const details = dispatchedDuringFirstCycle(initial, context => context.myProp = replacement);
+
+                expect(details).toHaveLength(1);
+                expect(details[0]).toBe(initial);
+                expect(details[0]).not.toBe(replacement);
+            });
         });
 
         it('should dispatch CustomEvent when eventer property changes', () => {
@@ -941,6 +1099,759 @@ describe('ContextBinder', () => {
                 expect.stringContaining('context is already set')
             );
             errorSpy.mockRestore();
+        });
+    });
+
+    describe('R2-5: single-bind nb-repeat and the enclosing scope', () => {
+        // Whole-tree counterpart of the unit tests in tests/nElement/handlers/Repeat.spec.ts.
+        // Only the repeatIndex 0 handler takes the single-bind skip path, so the pre-fix
+        // defect produced a TORN row set: row 0 stale, the cloned rows fresh. A
+        // handler-level test cannot see that, because the clones are separate instances.
+        function renderOf(root: Element): string {
+            return Array.from(root.querySelectorAll('[data-out]'))
+                        .map(element => element.textContent)
+                        .join(' | ');
+        }
+
+        function bindTree(html: string, context: any): { binder: ContextBinder; root: Element } {
+            const root = document.createElement('div');
+            root.innerHTML = html;
+
+            const binder = createBinder();
+            binder.bind(root, context, true, false);
+
+            return { binder, root };
+        }
+
+        function nextCycle(binder: ContextBinder): void {
+            binder.detectChanges();
+            jest.runAllTimers();
+        }
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+        });
+
+        it('should refresh an outer nb-var in every row of a single-bind repeat', () => {
+            const context: any = { label: 'first', rows: ['x', 'y'] };
+            const { binder, root } = bindTree(
+                '<section nb-var:label="this.label">' +
+                '<span nb-repeat="#this.rows" data-out nb-value="label + \':\' + item"></span>' +
+                '</section>', context);
+
+            expect(renderOf(root)).toBe('first:x | first:y');
+
+            context.label = 'second';
+            nextCycle(binder);
+
+            // pre-fix: 'first:x | second:y' - row 0 kept the first cycle's scope
+            expect(renderOf(root)).toBe('second:x | second:y');
+        });
+
+        it('should refresh the outer repeat item in every row of a single-bind repeat', () => {
+            const context: any = { groups: ['G1', 'G2'], rows: ['x', 'y'] };
+            const { binder, root } = bindTree(
+                '<section nb-repeat:g="this.groups">' +
+                '<span nb-repeat="#this.rows" data-out nb-value="gItem + \'-\' + gIndex + \'/\' + item"></span>' +
+                '</section>', context);
+
+            expect(renderOf(root)).toBe('G1-0/x | G1-0/y | G2-1/x | G2-1/y');
+
+            context.groups = ['A1', 'A2'];
+            nextCycle(binder);
+
+            // pre-fix: 'G1-0/x | A1-0/y | G2-1/x | A2-1/y'
+            expect(renderOf(root)).toBe('A1-0/x | A1-0/y | A2-1/x | A2-1/y');
+        });
+
+        it('should refresh the outer scope inside a child of a single-bind repeat', () => {
+            const context: any = { label: 'first', rows: ['x', 'y'] };
+            const { binder, root } = bindTree(
+                '<section nb-var:label="this.label">' +
+                '<span nb-repeat="#this.rows"><b data-out nb-value="label + \':\' + item"></b></span>' +
+                '</section>', context);
+
+            expect(renderOf(root)).toBe('first:x | first:y');
+
+            context.label = 'second';
+            nextCycle(binder);
+
+            expect(renderOf(root)).toBe('second:x | second:y');
+        });
+
+        it('should still freeze the data source of a single-bind repeat', () => {
+            const context: any = { rows: ['x', 'y'] };
+            const { binder, root } = bindTree(
+                '<span nb-repeat="#this.rows" data-out nb-value="item + \'|\' + index + \'|\' + count"></span>',
+                context);
+
+            expect(renderOf(root)).toBe('x|0|2 | y|1|2');
+
+            context.rows = ['p', 'q', 'r'];
+            nextCycle(binder);
+
+            expect(renderOf(root)).toBe('x|0|2 | y|1|2');
+        });
+
+        it('should refresh the outer scope for object and number data sources', () => {
+            const context: any = { label: 'L1', obj: { a: 1, b: 2 } };
+            const { binder, root } = bindTree(
+                '<section nb-var:label="this.label">' +
+                '<span nb-repeat="#this.obj" data-out nb-value="label + \':\' + item"></span>' +
+                '<i nb-repeat="#3" data-out nb-value="label + \'#\' + item"></i>' +
+                '</section>', context);
+
+            expect(renderOf(root)).toBe('L1:1 | L1:2 | L1#1 | L1#2 | L1#3');
+
+            context.label = 'L2';
+            nextCycle(binder);
+
+            // pre-fix: 'L1:1 | L2:2 | L1#1 | L2#2 | L2#3'
+            expect(renderOf(root)).toBe('L2:1 | L2:2 | L2#1 | L2#2 | L2#3');
+        });
+
+        it('should refresh the outer scope through nested single-bind repeats', () => {
+            const context: any = { label: 'L1', groups: ['G1', 'G2'], rows: ['x', 'y'] };
+            const { binder, root } = bindTree(
+                '<section nb-var:label="this.label">' +
+                '<div nb-repeat:g="#this.groups">' +
+                '<span nb-repeat="#this.rows" data-out nb-value="label + \':\' + gItem + \'/\' + item"></span>' +
+                '</div></section>', context);
+
+            expect(renderOf(root)).toBe('L1:G1/x | L1:G1/y | L1:G2/x | L1:G2/y');
+
+            context.label = 'L2';
+            nextCycle(binder);
+            expect(renderOf(root)).toBe('L2:G1/x | L2:G1/y | L2:G2/x | L2:G2/y');
+
+            // both repeats stay frozen on their own data
+            context.groups = ['Z1', 'Z2'];
+            nextCycle(binder);
+            expect(renderOf(root)).toBe('L2:G1/x | L2:G1/y | L2:G2/x | L2:G2/y');
+        });
+
+        it('should keep clone removal working when the outer repeat shrinks', () => {
+            const context: any = { groups: ['G1', 'G2', 'G3'], rows: ['x', 'y'] };
+            const { binder, root } = bindTree(
+                '<section nb-repeat:g="this.groups">' +
+                '<span nb-repeat="#this.rows" data-out nb-value="gItem + \'/\' + item"></span>' +
+                '</section>', context);
+
+            expect(renderOf(root)).toBe('G1/x | G1/y | G2/x | G2/y | G3/x | G3/y');
+
+            context.groups = ['A1'];
+            nextCycle(binder);
+
+            expect(renderOf(root)).toBe('A1/x | A1/y');
+        });
+    });
+
+    describe('R3-2: change detection requested while disabled must not be lost', () => {
+        // A container/component inside a false nb-if/nb-case/nb-switch has its binder's
+        // change detection disabled (ContextedBase.commit). Requests that arrived while
+        // hidden used to be discarded outright - no flag, no queue - so when the branch
+        // became visible again enableChangeDetection() restored the flag but nothing ran,
+        // and the stale DOM was shown until an unrelated future trigger happened to fire.
+        // The binder now remembers that a cycle is owed and runs it on re-enable.
+        function bindTree(html: string, context: any): { binder: ContextBinder; root: Element } {
+            const root = document.createElement('div');
+            root.innerHTML = html;
+
+            const binder = createBinder();
+            binder.bind(root, context, true, false);
+
+            return { binder, root };
+        }
+
+        function outputOf(root: Element): string | null {
+            return root.querySelector('[data-out]')!.textContent;
+        }
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+        });
+
+        it('should flush a request that arrived while change detection was disabled', () => {
+            const context: any = { text: 'v1' };
+            const { binder, root } = bindTree('<span data-out nb-value="this.text"></span>', context);
+
+            expect(outputOf(root)).toBe('v1');
+
+            binder.disableChangeDetection();
+            context.text = 'v2';
+            binder.detectChanges();
+            jest.runAllTimers();
+
+            // a disabled binder still must not touch the DOM
+            expect(outputOf(root)).toBe('v1');
+
+            binder.enableChangeDetection();
+            jest.runAllTimers();
+
+            expect(outputOf(root)).toBe('v2');
+        });
+
+        it('should not run a cycle when re-enabled with nothing pending', () => {
+            const context: any = { text: 'v1' };
+            const { binder } = bindTree('<span data-out nb-value="this.text"></span>', context);
+
+            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            detectSpy.mockClear();
+
+            binder.disableChangeDetection();
+            binder.enableChangeDetection();
+            jest.runAllTimers();
+
+            expect(detectSpy).not.toHaveBeenCalled();
+        });
+
+        it('should coalesce every request dropped while disabled into one cycle', () => {
+            const context: any = { text: 'v1' };
+            const { binder } = bindTree('<span data-out nb-value="this.text"></span>', context);
+
+            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            detectSpy.mockClear();
+
+            binder.disableChangeDetection();
+            binder.detectChanges();
+            binder.detectChanges();
+            binder.detectChanges();
+            jest.runAllTimers();
+
+            expect(detectSpy).not.toHaveBeenCalled();
+
+            binder.enableChangeDetection();
+            jest.runAllTimers();
+
+            expect(detectSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('should consume the pending request so a later re-enable stays quiet', () => {
+            const context: any = { text: 'v1' };
+            const { binder } = bindTree('<span data-out nb-value="this.text"></span>', context);
+
+            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            detectSpy.mockClear();
+
+            binder.disableChangeDetection();
+            binder.detectChanges();
+            binder.enableChangeDetection();
+            jest.runAllTimers();
+
+            expect(detectSpy).toHaveBeenCalledTimes(1);
+
+            // the owed cycle has been paid - hiding and reshowing again asks for nothing
+            binder.disableChangeDetection();
+            binder.enableChangeDetection();
+            jest.runAllTimers();
+
+            expect(detectSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('should not flush a pending request after the binder was disposed', () => {
+            const context: any = { text: 'v1' };
+            const { binder } = bindTree('<span data-out nb-value="this.text"></span>', context);
+
+            const rootNElement = binder.rootNElement as any;
+            const detectSpy = jest.spyOn(rootNElement, 'detectChanges');
+            detectSpy.mockClear();
+
+            binder.disableChangeDetection();
+            binder.detectChanges();
+            binder.dispose();
+
+            expect(() => binder.enableChangeDetection()).not.toThrow();
+            jest.runAllTimers();
+
+            expect(detectSpy).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('R3-2: a hidden container catches up when it becomes visible again', () => {
+        // Whole-tree counterpart: nb-if hides the host element, ContextedBase.commit
+        // disables the child container's binder, the child context asks for a cycle
+        // (ChangeDetector.detect(), a @Detector write, a resolved promise) and the
+        // request is owed until nb-if turns true again.
+        function nextCycle(binder: ContextBinder): void {
+            binder.detectChanges();
+            jest.runAllTimers();
+        }
+
+        function buildHostWithHiddenChild(containerName: string): { binder: ContextBinder; host: any; childContext: any; childBinder: any; root: Element } {
+            let childContext: any;
+
+            class ChildContext {
+                public text = 'v1';
+                constructor() {
+                    childContext = this;
+                }
+            }
+
+            Environment.addContainer(containerName, ChildContext as any, [],
+                                     '<span data-out nb-value="this.text"></span>', undefined);
+
+            const host: any = { show: true };
+            const root = document.createElement('div');
+            root.innerHTML = '<div nb-if="this.show" nb-container="@' + containerName + '"></div>';
+            document.body.appendChild(root);
+
+            const binder = createBinder();
+            binder.bind(root, host, true, false);
+            jest.runAllTimers();
+
+            const childBinder = (binder.rootNElement as any)._children[0].container.contextBinder;
+
+            return { binder, host, childContext, childBinder, root };
+        }
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+        });
+
+        it('should render the update that was requested while the branch was hidden', () => {
+            const { binder, host, childContext, childBinder, root } = buildHostWithHiddenChild('R32Child');
+
+            expect(root.querySelector('[data-out]')!.textContent).toBe('v1');
+            expect(childBinder.changeDetectionEnabled).toBe(true);
+
+            host.show = false;
+            nextCycle(binder);
+
+            expect(childBinder.changeDetectionEnabled).toBe(false);
+
+            // the child keeps living while hidden - a timer, a promise or an injected
+            // ChangeDetector.detect() all land on its own binder
+            childContext.text = 'v2';
+            childBinder.detectChanges();
+            jest.runAllTimers();
+
+            expect(root.querySelector('[data-out]')!.textContent).toBe('v1');
+
+            host.show = true;
+            nextCycle(binder);
+
+            expect(childBinder.changeDetectionEnabled).toBe(true);
+            expect(root.querySelector('[data-out]')!.textContent).toBe('v2');
+
+            root.remove();
+        });
+
+        it('should leave a hidden mutation that never asked for a cycle alone', () => {
+            // boundary of the fix: only dropped REQUESTS are replayed. A silent write with
+            // no trigger behind it is the ordinary optimistic contract, hidden or not.
+            const { binder, host, childContext, childBinder, root } = buildHostWithHiddenChild('R32QuietChild');
+
+            host.show = false;
+            nextCycle(binder);
+
+            childContext.text = 'v2';
+            jest.runAllTimers();
+
+            host.show = true;
+            nextCycle(binder);
+
+            expect(childBinder.changeDetectionEnabled).toBe(true);
+            expect(root.querySelector('[data-out]')!.textContent).toBe('v1');
+
+            root.remove();
+        });
+    });
+
+    describe('R6-4: an empty container name settles instead of churning every cycle', () => {
+        // nb-container="this.view" with view '' / undefined is the normal "no view selected"
+        // state. Container.setContextData marks the handler dirty on every bind, so the
+        // empty branch itself has to recognise "already cleaned up" - otherwise the fallback
+        // is re-cloned every cycle and, in pessimistic mode, the tree never stabilizes.
+        let passesSpy: jest.SpyInstance;
+        let errorSpy: jest.SpyInstance;
+
+        function createPessimisticBinder(): ContextBinder {
+            return new ContextBinder(undefined, true, () => 'nb-hidden', undefined,
+                                     () => false, () => undefined, () => undefined);
+        }
+
+        function build(view: any, pessimistic: boolean): { binder: ContextBinder; host: any; root: Element } {
+            const host: any = { view };
+            const root = document.createElement('div');
+            root.innerHTML = '<div nb-container="this.view"><b data-fallback>fallback</b></div>';
+            document.body.appendChild(root);
+
+            const binder = pessimistic ? createPessimisticBinder() : createBinder();
+            binder.bind(root, host, true, false);
+            jest.runAllTimers();
+
+            return { binder, host, root };
+        }
+
+        // returns the number of tree passes the trigger produced
+        function trigger(binder: ContextBinder): number {
+            passesSpy.mockClear();
+            binder.detectChanges();
+            jest.runAllTimers();
+            return passesSpy.mock.calls.length;
+        }
+
+        function stabilizeErrors(): number {
+            return errorSpy.mock.calls.filter(call => String(call[0]).includes("can't stabilize")).length;
+        }
+
+        function notFoundErrors(): number {
+            return errorSpy.mock.calls.filter(call => call.some((arg: any) => String(arg).includes('not found'))).length;
+        }
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+            passesSpy = jest.spyOn(ContextBinder.prototype as any, 'processChangeDetection');
+            errorSpy = jest.spyOn(Console, 'error').mockImplementation(() => {});
+        });
+
+        afterEach(() => {
+            passesSpy.mockRestore();
+            errorSpy.mockRestore();
+            jest.useRealTimers();
+        });
+
+        it.each([[''], [undefined]])('pessimistic: a steady empty name (%p) takes one pass per trigger', (view) => {
+            const { binder, root } = build(view, true);
+
+            expect(trigger(binder)).toBe(1);
+            expect(trigger(binder)).toBe(1);
+            expect(stabilizeErrors()).toBe(0);
+
+            root.remove();
+        });
+
+        it.each([[true], [false]])('pessimistic=%p: the fallback element is not re-cloned while the name stays empty', (pessimistic) => {
+            const { binder, root } = build('', pessimistic);
+            const fallback = root.querySelector('[data-fallback]');
+
+            trigger(binder);
+            trigger(binder);
+
+            expect(fallback).not.toBeNull();
+            expect(root.querySelector('[data-fallback]')).toBe(fallback);
+
+            root.remove();
+        });
+
+        it('pessimistic: name -> empty disposes the child, restores the fallback once, then settles', () => {
+            let disposeCount = 0;
+            Environment.addContainer('R64Child', class { onDispose() { disposeCount++; } } as any, [],
+                                     '<span data-child>child</span>', undefined);
+
+            const { binder, host, root } = build('R64Child', true);
+            expect(root.querySelector('[data-child]')).not.toBeNull();
+
+            host.view = '';
+            trigger(binder);
+
+            expect(disposeCount).toBe(1);
+            expect(root.querySelector('[data-child]')).toBeNull();
+            const fallback = root.querySelector('[data-fallback]');
+            expect(fallback).not.toBeNull();
+
+            expect(trigger(binder)).toBe(1);
+            expect(root.querySelector('[data-fallback]')).toBe(fallback);
+            expect(stabilizeErrors()).toBe(0);
+
+            root.remove();
+        });
+
+        it('pessimistic: empty -> name -> empty round trip re-renders and re-settles', () => {
+            Environment.addContainer('R64RoundTrip', class { } as any, [],
+                                     '<span data-child>child</span>', undefined);
+
+            const { binder, host, root } = build(undefined, true);
+
+            host.view = 'R64RoundTrip';
+            trigger(binder);
+            expect(root.querySelector('[data-child]')).not.toBeNull();
+            expect(root.querySelector('[data-fallback]')).toBeNull();
+
+            host.view = undefined;
+            trigger(binder);
+            expect(root.querySelector('[data-child]')).toBeNull();
+            expect(root.querySelector('[data-fallback]')).not.toBeNull();
+
+            expect(trigger(binder)).toBe(1);
+            expect(stabilizeErrors()).toBe(0);
+
+            root.remove();
+        });
+
+        it('pessimistic: an unregistered name no longer spins the stabilization loop (still logs once per cycle)', () => {
+            // characterization: the not-found branch resets the stored names, so the next bind
+            // retries the lookup - one "not found" per cycle - but it reports no change, so
+            // pessimistic mode no longer re-runs it up to the 10-cycle cap
+            const { binder, root } = build('R64NotRegistered', true);
+            errorSpy.mockClear();
+
+            expect(trigger(binder)).toBe(1);
+            expect(notFoundErrors()).toBe(1);
+            expect(stabilizeErrors()).toBe(0);
+
+            root.remove();
+        });
+    });
+
+    describe('R10-1: a detector written from inside a pass cannot re-trigger detection endlessly', () => {
+        // nb-exec="this.counter = this.counter + 1" on a @Detector() used to schedule a fresh pass from
+        // every pass, forever and silently. A detector write made during a pass is now counted per property
+        // across consecutive passes; past the cap the detector stops scheduling passes, logs once and
+        // stays disabled. The cap is counted in change detection cycles and its bookkeeping lags (a pass is
+        // confirmed only when the following one completes, from a count captured at write time), so the
+        // effective limit is 2 * MAX + 1 passes - 21 with MAX = 10 - not the 10 the message names. Accepted
+        // as is by the author (2026-10-09).
+        const MAX_PASSES = 21;
+        const STEP_LIMIT = 500;
+
+        let errorSpy: jest.SpyInstance;
+
+        function attr(name: string): string {
+            return `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${name}`;
+        }
+
+        function build(context: any, detectors: string[], execs: string[], values: string[] = [], pessimistic = false): { binder: ContextBinder; root: Element; passes: () => number } {
+            const binder = new ContextBinder(undefined, pessimistic, () => 'nb-hidden', undefined,
+                                             () => false, () => detectors, () => undefined);
+            const root = document.createElement('div');
+
+            for (const exec of execs) {
+                const el = document.createElement('div');
+                el.setAttribute(attr(Constants.EXEC_HANDLER_ATTRIBUTE_NAME), exec);
+                root.appendChild(el);
+            }
+
+            for (const value of values) {
+                const el = document.createElement('span');
+                el.setAttribute(attr(Constants.VALUE_HANDLER_ATTRIBUTE_NAME), value);
+                root.appendChild(el);
+            }
+
+            document.body.appendChild(root);
+
+            let passes = 0;
+            context.onDetectChangesDone = () => { passes++; };
+
+            binder.bind(root, context, false, false);
+
+            return { binder, root, passes: () => passes };
+        }
+
+        // runs scheduled passes one at a time until none is left; a regression to the endless loop
+        // fails the step-limit assertion instead of hanging the suite
+        function drain(): void {
+            let steps = 0;
+            while ((jest.getTimerCount() > 0) && (steps < STEP_LIMIT)) {
+                jest.runOnlyPendingTimers();
+                steps++;
+            }
+
+            expect(steps).toBeLessThan(STEP_LIMIT);
+        }
+
+        function disabledErrors(propertyName: string): number {
+            return errorSpy.mock.calls.filter(call => String(call[1]).startsWith(`${propertyName} property value can't stabilize`)).length;
+        }
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+            errorSpy = jest.spyOn(Console, 'error').mockImplementation(() => {});
+        });
+
+        afterEach(() => {
+            errorSpy.mockRestore();
+            jest.useRealTimers();
+        });
+
+        it.each([[false], [true]])('pessimistic=%p: a self-incrementing detector stops after the cap and logs once', (pessimistic) => {
+            const context: any = { counter: 0 };
+            const { binder, root, passes } = build(context, ['counter'], ['this.counter = this.counter + 1'], [], pessimistic);
+
+            drain();
+
+            expect(passes()).toBe(MAX_PASSES);
+            expect(context.counter).toBe(MAX_PASSES);
+            expect(jest.getTimerCount()).toBe(0);
+            expect(disabledErrors('counter')).toBe(1);
+            expect(errorSpy).toHaveBeenCalledWith(context, "counter property value can't stabilize in 10 change detection cycles, detector is disabled.");
+
+            binder.dispose();
+            root.remove();
+        });
+
+        it('pessimistic: an unstable tree (sub-cycle re-runs write the detector again) still stops and logs once', () => {
+            const context: any = { counter: 0 };
+            const { binder, root, passes } = build(context, ['counter'], ['this.counter = this.counter + 1'], ['this.counter'], true);
+
+            drain();
+
+            expect(passes()).toBe(MAX_PASSES);
+            expect(disabledErrors('counter')).toBe(1);
+            expect(root.querySelector('span')!.textContent).toBe(String(context.counter));
+
+            binder.dispose();
+            root.remove();
+        });
+
+        it('several looping detectors are counted independently and trip together', () => {
+            const context: any = { a: 0, b: 0, c: 0 };
+            const { binder, root, passes } = build(context, ['a', 'b', 'c'], ['this.a = this.a + 1', 'this.b = this.b + 1', 'this.c = this.c + 1']);
+
+            drain();
+
+            expect(passes()).toBe(MAX_PASSES);
+            expect(disabledErrors('a')).toBe(1);
+            expect(disabledErrors('b')).toBe(1);
+            expect(disabledErrors('c')).toBe(1);
+
+            binder.dispose();
+            root.remove();
+        });
+
+        it('a detector that changes only every other pass is not disabled next to a looping one', () => {
+            const context: any = { counter: 0, label: 0 };
+            const { binder, root } = build(context, ['label', 'counter'], ['this.label = Math.floor(this.counter / 2)', 'this.counter = this.counter + 1']);
+
+            drain();
+
+            expect(disabledErrors('label')).toBe(0);
+            expect(disabledErrors('counter')).toBeGreaterThan(0);
+
+            binder.dispose();
+            root.remove();
+        });
+
+        it('a self-write that converges below the cap settles without an error', () => {
+            const context: any = { counter: 0 };
+            const { binder, root, passes } = build(context, ['counter'], ['this.counter = Math.min(this.counter + 1, 5)']);
+
+            drain();
+
+            expect(context.counter).toBe(5);
+            expect(passes()).toBe(6);
+            expect(disabledErrors('counter')).toBe(0);
+
+            binder.dispose();
+            root.remove();
+        });
+
+        it('derived state recomputed on every external trigger never trips (a quiet pass resets the count)', () => {
+            const context: any = { counter: 0, items: [1, 2, 3] };
+            const { binder, root, passes } = build(context, ['counter'], ['this.counter = this.items.length']);
+            drain();
+
+            for (let i = 0; i < 3 * MAX_PASSES; i++) {
+                context.items.push(i);
+                binder.detectChanges();
+                drain();
+            }
+
+            expect(context.counter).toBe(3 + 3 * MAX_PASSES);
+            // each trigger: the pass that writes plus the self-triggered pass that finds nothing changed
+            expect(passes()).toBe(2 + 2 * 3 * MAX_PASSES);
+            expect(disabledErrors('counter')).toBe(0);
+
+            binder.dispose();
+            root.remove();
+        });
+
+        it('a tripped detector stays disabled: its writes are stored but no longer schedule a pass', () => {
+            const context: any = { counter: 0 };
+            const { binder, root } = build(context, ['counter'], ['this.counter = this.counter + 1'], ['this.counter']);
+            drain();
+
+            context.counter = 1000;
+
+            expect(context.counter).toBe(1000);
+            expect(jest.getTimerCount()).toBe(0);
+            expect(root.querySelector('span')!.textContent).toBe(String(MAX_PASSES));
+
+            // an explicit trigger still renders it
+            binder.detectChanges();
+            jest.runOnlyPendingTimers();
+
+            expect(root.querySelector('span')!.textContent).toBe('1001');
+            expect(jest.getTimerCount()).toBe(0);
+
+            binder.dispose();
+            root.remove();
+        });
+
+        it('dispose mid-loop stops further passes without an error', () => {
+            const context: any = { counter: 0 };
+            const { binder, root, passes } = build(context, ['counter'], ['this.counter = this.counter + 1']);
+
+            jest.runOnlyPendingTimers();
+            jest.runOnlyPendingTimers();
+            const passesAtDispose = passes();
+
+            binder.dispose();
+            drain();
+
+            expect(passes()).toBe(passesAtDispose);
+            expect(errorSpy).not.toHaveBeenCalled();
+
+            root.remove();
+        });
+
+        // Residual (open): the update queued by the previous pass fires after the trip and overwrites the
+        // MAX * MAX "already reported" marker, so the next write from a later pass logs the error a second
+        // time before the marker sticks.
+        it('residual: a tripped detector can log the error a second time, then stays quiet', () => {
+            const context: any = { counter: 0 };
+            const { binder, root } = build(context, ['counter'], ['this.counter = this.counter + 1']);
+            drain();
+            expect(disabledErrors('counter')).toBe(1);
+
+            for (let i = 0; i < 5; i++) {
+                binder.detectChanges();
+                drain();
+            }
+
+            expect(disabledErrors('counter')).toBe(2);
+
+            binder.dispose();
+            root.remove();
+        });
+
+        // Residual (open): an external trigger that lands before the self-scheduled pass is debounced into
+        // it, so user-driven changes arriving faster than detection settles look exactly like a
+        // self-sustaining loop - the derived detector is disabled although it would settle on its own.
+        it('residual: external triggers merged into self-scheduled passes trip the guard', () => {
+            const context: any = { counter: 0, items: [1, 2, 3] };
+            const { binder, root } = build(context, ['counter'], ['this.counter = this.items.length']);
+            drain();
+
+            let tripsAt = -1;
+            for (let i = 0; (i < 3 * MAX_PASSES) && (tripsAt < 0); i++) {
+                context.items.push(i);
+                binder.detectChanges();          // merges with the pass the previous write scheduled
+                jest.runOnlyPendingTimers();     // exactly one pass per trigger, never a quiet one
+
+                if (disabledErrors('counter') > 0) {
+                    tripsAt = i + 1;
+                }
+            }
+
+            expect(tripsAt).toBeGreaterThan(0);
+            expect(tripsAt).toBeLessThanOrEqual(MAX_PASSES);
+
+            binder.dispose();
+            drain();
+            root.remove();
         });
     });
 });

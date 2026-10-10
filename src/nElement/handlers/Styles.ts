@@ -14,6 +14,9 @@ import { Console } from '../../Console';
 import { Constants } from '../../Constants';
 
 export class Styles extends Base implements IHandler<Map<string, IExpressionDetails>> {
+    private readonly IMPORTANT_PRIORITY = 'important';
+    private readonly IMPORTANT_FLAG = `!${this.IMPORTANT_PRIORITY}`;
+
     private readonly _nativeElement: HTMLElement;
 
     private _previousStyles: Map<string, string>;
@@ -111,17 +114,23 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
         if (this._isDirty) {
             let attrsObjectsSyncRequired = false;
 
-            for (const [key, value] of this._previousStyles) {
+            for (const [key, rawValue] of this._previousStyles) {
                 if (!this._styles.has(key)) {
                     this._nativeElement.style.setProperty(key, '');
                     attrsObjectsSyncRequired = true;
                 }
             }
 
-            for (const [key, value] of this._styles) {
+            for (const [key, rawValue] of this._styles) {
                 const previousValue = this._previousStyles.get(key);
-                if (Helpers.isUndefined(previousValue) || (!Helpers.isUndefined(previousValue) && (value !== previousValue))) {
-                    this._nativeElement.style.setProperty(key, value!);
+                if (Helpers.isUndefined(previousValue) || (!Helpers.isUndefined(previousValue) && (rawValue !== previousValue))) {
+                    const importantFlagIndex = rawValue.toLowerCase().indexOf(this.IMPORTANT_FLAG);
+                    if (importantFlagIndex > 0) {
+                        this._nativeElement.style.setProperty(key, rawValue.substring(0, importantFlagIndex).trim(), this.IMPORTANT_PRIORITY);
+                    } else {
+                        this._nativeElement.style.setProperty(key, rawValue);
+                    }
+
                     attrsObjectsSyncRequired = true;
                 }
             }

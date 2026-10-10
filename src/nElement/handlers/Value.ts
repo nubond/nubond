@@ -15,7 +15,7 @@ import { Constants } from '../../Constants';
 export class Value extends Base implements IHandler<IExpressionDetails> {
     private readonly _nativeElement: Element | undefined;
 
-    private _previousValue = '';
+    private _previousValue: string | undefined = undefined;
     private _value = '';
 
     protected get value(): string { 

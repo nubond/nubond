@@ -175,6 +175,16 @@ export class Helpers {
     }
 
     /**
+     * Check if value is of primitive type.
+     * 
+     * @param value value
+     * @returns true - value is of primitive type, false - otherwise
+     */
+    public static isPrimitive(value: any): boolean {
+        return !(value instanceof Object) && ((value === null) || (typeof(value) !== 'object'));
+    }
+
+    /**
      * Stringify data.
      * 
      * @param data data
@@ -323,7 +333,9 @@ export class Helpers {
 
             if ((aType === bType) && (a?.constructor === b?.constructor)) {
                 if (a instanceof Date) {
-                    return a.getTime() === b.getTime();
+                    const aTime = a.getTime();
+                    const bTime = b.getTime();
+                    return (aTime === bTime) || (isNaN(aTime) && isNaN(bTime));
                 } else if (a instanceof RegExp) {
                     return (a.source === b.source) && (a.flags === b.flags);
                 } else if (aType === 'number') {

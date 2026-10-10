@@ -14,13 +14,13 @@ describe('Default handler', () => {
     } {
         const switchEl = document.createElement('div');
         switchEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_HANDLER_ATTRIBUTE_NAME}`, switchExpr);
-        const switchAttrs = new Attributes(switchEl);
+        const switchAttrs = new Attributes(switchEl, () => false);
         const switchClasses = new Classes(switchEl, switchAttrs, () => hideClassName);
         const switchHandler = new Switch(switchAttrs, switchClasses);
 
         const defaultEl = document.createElement('div');
         defaultEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME}`, '');
-        const defaultAttrs = new Attributes(defaultEl);
+        const defaultAttrs = new Attributes(defaultEl, () => false);
         const defaultClasses = new Classes(defaultEl, defaultAttrs, () => hideClassName);
         const defaultHandler = new Default(defaultEl, defaultAttrs, defaultClasses, switchHandler);
 
@@ -34,7 +34,7 @@ describe('Default handler', () => {
 
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const classes = new Classes(el, attrs, () => hideClassName);
         const handler = new Default(el, attrs, classes, undefined);
 
@@ -93,7 +93,7 @@ describe('Default handler', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const defaultEl = document.createElement('div');
         defaultEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME}`, '');
-        const defaultAttrs = new Attributes(defaultEl);
+        const defaultAttrs = new Attributes(defaultEl, () => false);
         const defaultClasses = new Classes(defaultEl, defaultAttrs, () => hideClassName);
 
         const handler = new Default(defaultEl, defaultAttrs, defaultClasses, undefined);
@@ -111,7 +111,7 @@ describe('Default handler', () => {
         // Add a second default to the same switch
         const defaultEl2 = document.createElement('div');
         defaultEl2.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME}`, '');
-        const defaultAttrs2 = new Attributes(defaultEl2);
+        const defaultAttrs2 = new Attributes(defaultEl2, () => false);
         const defaultClasses2 = new Classes(defaultEl2, defaultAttrs2, () => hideClassName);
 
         const handler2 = new Default(defaultEl2, defaultAttrs2, defaultClasses2, switchHandler);
@@ -140,7 +140,7 @@ describe('Default handler', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const defaultEl = document.createElement('div');
         defaultEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME}`, '');
-        const defaultAttrs = new Attributes(defaultEl);
+        const defaultAttrs = new Attributes(defaultEl, () => false);
         const defaultClasses = new Classes(defaultEl, defaultAttrs, () => hideClassName);
         const handler = new Default(defaultEl, defaultAttrs, defaultClasses, undefined);
 
@@ -152,7 +152,7 @@ describe('Default handler', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const defaultEl = document.createElement('div');
         defaultEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME}`, '');
-        const defaultAttrs = new Attributes(defaultEl);
+        const defaultAttrs = new Attributes(defaultEl, () => false);
         const defaultClasses = new Classes(defaultEl, defaultAttrs, () => hideClassName);
         const handler = new Default(defaultEl, defaultAttrs, defaultClasses, undefined);
 
@@ -164,7 +164,7 @@ describe('Default handler', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const defaultEl = document.createElement('div');
         defaultEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME}`, '');
-        const defaultAttrs = new Attributes(defaultEl);
+        const defaultAttrs = new Attributes(defaultEl, () => false);
         const defaultClasses = new Classes(defaultEl, defaultAttrs, () => hideClassName);
         const handler = new Default(defaultEl, defaultAttrs, defaultClasses, undefined);
 

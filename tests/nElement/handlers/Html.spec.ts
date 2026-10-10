@@ -13,7 +13,7 @@ describe('Html handler', () => {
 
     it('should detect expression from element attribute', () => {
         const el = createElementWithAttr('ctx.content');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Html(el, attrs, undefined);
 
         expect(handler.hasNExpression).toBe(true);
@@ -22,7 +22,7 @@ describe('Html handler', () => {
 
     it('should have no expression if attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Html(el, attrs, undefined);
 
         expect(handler.hasNExpression).toBe(false);
@@ -30,7 +30,7 @@ describe('Html handler', () => {
 
     it('should set innerHTML on commit after bind', () => {
         const el = createElementWithAttr('ctx.html');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Html(el, attrs, undefined);
 
         handler.bind(undefined, () => '<b>bold</b>');
@@ -42,7 +42,7 @@ describe('Html handler', () => {
     it('should apply htmlSanitizer when provided', () => {
         const sanitizer = (html: string) => html.replace(/<script>/g, '');
         const el = createElementWithAttr('ctx.html');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Html(el, attrs, sanitizer);
 
         handler.bind(undefined, () => '<script>alert("xss")</script>');
@@ -54,7 +54,7 @@ describe('Html handler', () => {
 
     it('should not update DOM when html has not changed', () => {
         const el = createElementWithAttr('ctx.html');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Html(el, attrs, undefined);
 
         handler.bind(undefined, () => '<p>Hello</p>');
@@ -68,7 +68,7 @@ describe('Html handler', () => {
 
     it('commit should return false when not dirty', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Html(el, attrs, undefined);
 
         expect(handler.commit()).toBe(false);
@@ -77,7 +77,7 @@ describe('Html handler', () => {
     it('should use htmlSanitizer function when provided (covers htmlSanitizer branch)', () => {
         const sanitizer = jest.fn((html: string) => html.toUpperCase());
         const el = createElementWithAttr('ctx.html');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Html(el, attrs, sanitizer);
 
         handler.bind(undefined, () => '<p>hello</p>');
@@ -89,7 +89,7 @@ describe('Html handler', () => {
 
     it('should return executionParams from bind', () => {
         const el = createElementWithAttr('ctx.x');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Html(el, attrs, undefined);
 
         const params = { a: 1 } as any;
@@ -100,7 +100,7 @@ describe('Html handler', () => {
         it('should not call sanitizer during bind()', () => {
             const sanitizer = jest.fn((html: string) => html);
             const el = createElementWithAttr('ctx.html');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Html(el, attrs, sanitizer);
 
             handler.bind(undefined, () => '<p>x</p>');
@@ -112,7 +112,7 @@ describe('Html handler', () => {
         it('should call sanitizer once per commit when html changed', () => {
             const sanitizer = jest.fn((html: string) => html);
             const el = createElementWithAttr('ctx.html');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Html(el, attrs, sanitizer);
 
             handler.bind(undefined, () => '<p>a</p>');
@@ -127,7 +127,7 @@ describe('Html handler', () => {
         it('should not call sanitizer on commit when html is unchanged', () => {
             const sanitizer = jest.fn((html: string) => html);
             const el = createElementWithAttr('ctx.html');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Html(el, attrs, sanitizer);
 
             handler.bind(undefined, () => '<p>same</p>');
@@ -139,5 +139,43 @@ describe('Html handler', () => {
             handler.commit();
             expect(sanitizer).toHaveBeenCalledTimes(1);
         });
+    });
+
+    // R7-3: _previousHtml starts as undefined ('never committed'), not '', so a first value
+    // that stringifies to '' still writes and clears the element's authored placeholder markup.
+    it('should clear authored placeholder markup when the first html is empty (R7-3)', () => {
+        const el = createElementWithAttr('ctx.empty');
+        el.innerHTML = '<b>ph</b>';
+        const attrs = new Attributes(el, () => false);
+        const handler = new Html(el, attrs, undefined);
+
+        handler.bind(undefined, () => '');
+        expect(handler.commit()).toBe(true);
+        expect(el.innerHTML).toBe('');
+    });
+
+    it('should clear the placeholder markup when the first value is undefined (R7-3)', () => {
+        const el = createElementWithAttr('ctx.value');
+        el.innerHTML = '<b>ph</b>';
+        const attrs = new Attributes(el, () => false);
+        const handler = new Html(el, attrs, undefined);
+
+        handler.bind(undefined, () => undefined);
+        handler.commit();
+        expect(el.innerHTML).toBe('');
+    });
+
+    it('should not rewrite the DOM while the html stays empty (R7-3)', () => {
+        const el = createElementWithAttr('ctx.empty');
+        el.innerHTML = '<b>ph</b>';
+        const attrs = new Attributes(el, () => false);
+        const handler = new Html(el, attrs, undefined);
+
+        handler.bind(undefined, () => '');
+        handler.commit();
+
+        handler.bind(undefined, () => '');
+        expect(handler.commit()).toBe(false);
+        expect(el.innerHTML).toBe('');
     });
 });

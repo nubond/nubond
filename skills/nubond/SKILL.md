@@ -9,10 +9,10 @@ nuBond is a zero-runtime-dependency TypeScript UI framework. Entities are plain 
 decorators; markup lives in separate `.html` files bound through `nb-*` attributes; state updates flow
 through a poll-based change-detection pass over a tree of bound DOM elements.
 
-> **Version.** This skill describes the published **`nubond` 1.0.8** package (and the
+> **Version.** This skill describes the published **`nubond` 1.0.9** package (and the
 > `create-nubond` 1.0.11 / `@nubond/posthtml-value-interpolation` 1.0.3 tooling). Check the project's
-> installed version (`node_modules/nubond/package.json`) — later releases may lift some of the
-> limitations listed here.
+> installed version (`node_modules/nubond/package.json`) — behavior differs between releases, and
+> later ones may lift some of the limitations listed here.
 
 **Before writing code, confirm the project's conventions**: read the app's `index.ts` (the `@AppRoot`),
 its `tsconfig.json` `paths`, and one existing container + component pair. Match them.
@@ -67,27 +67,31 @@ These cause the most failures. Internalize them.
    `nb-if` + `nb-container`, plus any number of
    `nb-attr:`/`nb-prop:`/`nb-event:`/`nb-aspect:`/`nb-var:`/`nb-in:` on the same element.
 
-   **Do not put two *visibility* handlers on one element** — `nb-if` + `nb-repeat`, `nb-if` +
-   `nb-switch`, `nb-repeat` + `nb-switch`. They are not rejected, but they drive one shared hidden
-   class with no refcounting, so one handler can show the element while the other still wants it
-   hidden (stale content on screen). Put the second condition on a child or wrapper element.
+   Visibility handlers may share an element — `nb-if` + `nb-repeat` (a per-row filter), `nb-if` +
+   `nb-switch`, `nb-repeat` + `nb-switch`. Each holds its own claim on the hidden class, so the
+   element is shown only while *all* of them want it shown.
 
 6. **Always write binding names in kebab-case.** HTML lowercases attribute names, so `nb-in:metaData`
    arrives as `metadata` and silently sets the wrong property. nuBond converts kebab → camel for you:
    `nb-in:meta-data` → `metaData`, `nb-var:date-time` → `dateTime`, `nb-prop:read-only` → `readOnly`.
    **`nb-repeat:` prefixes get no conversion** — `nb-repeat:userRole` yields `userroleItem`, so
-   `userRoleItem` reads `undefined`, silently. Keep prefixes one lowercase word (a hyphen produces an
-   invalid identifier and breaks every expression under the repeat).
+   `userRoleItem` reads `undefined`, silently. Keep prefixes one lowercase word (a prefix that is not
+   a valid identifier, e.g. one with a hyphen, is rejected with an error and the repeat does not run).
 
 7. **`nb-in` deep-clones with `structuredClone`; `nb-in-ref` passes by reference.** Use `nb-in-ref`
-   for class instances with methods, DOM nodes, functions — anything not structured-cloneable.
+   for class instances with methods, DOM nodes and **functions** — anything not structured-cloneable.
+   A value that cannot be cloned is *not delivered*: the child's property becomes `undefined` and an
+   error is logged on every pass. Callbacks therefore always go through `nb-in-ref`.
 
-8. **Push inputs and detector values as new, deep-unequal objects — never by mutation.** The `nb-in`
-   cache holds the *same reference* your expression returned, so it later compares the object against
-   itself and mutations can **never** be delivered (not "usually missed" — never). `@Detector()` is
-   gated by deep equality too. Always `this.cfg = { ...this.cfg, x: 2 }`, never `this.cfg.x = 2`.
-   (`nb-repeat` is the exception — it reads the collection live, so in-place array edits do render
-   once a pass is triggered.)
+8. **Know what counts as a change.** `nb-in` clones the value on every pass and deep-compares it with
+   the previous clone: a replaced object *and* an in-place mutation (`this.cfg.x = 2`) are both
+   delivered on the parent's next pass; a new object with identical contents is not. `nb-in-ref`
+   shares the live object, so a mutation delivers nothing — the child's data is right but its DOM
+   stays stale; assign a new reference. `@Detector()` fires only on **assignment** of a deep-unequal
+   value: `this.cfg = { ...this.cfg, x: 2 }`, never `this.cfg.x = 2`. In the child, treat inputs as
+   read-only (an edit is reverted by the parent's next pass), and keep `nb-in` payloads small — they
+   are cloned every pass. (`nb-repeat` reads its collection live, so in-place array edits render once
+   a pass is triggered.)
 
 9. **`@Detector()` / `@Eventer()` go on plain fields of the context class itself.** They are keyed on
    the exact prototype they decorate, so a base class's decorated property has no effect on a derived
@@ -103,7 +107,9 @@ These cause the most failures. Internalize them.
 12. **Components only come alive inside a nuBond-bound template.** They bootstrap through an internal
     `$bind` call, not `connectedCallback` — `document.createElement('my-card')` yields an inert
     element. Relatedly, `onContainerAttached`/`onContainerDetached` fire for **`nb-container` only**,
-    never for components.
+    never for components. And they come alive **lazily**: a component or container whose own element
+    starts hidden (`nb-if` false, an unpicked `nb-case`, an empty `nb-repeat`) is not constructed
+    until that element is first shown — don't count on its constructor having run at startup.
 
 13. **`nb-attr` stringifies, `nb-prop` passes values through.** `nb-attr:disabled="false"` writes
     `disabled="false"` — which *disables* the control. Use `this.x ? '' : null` or `nb-prop:`.
@@ -251,9 +257,13 @@ non-`undefined` result · `@` = constant — a coercion grammar, never evaluated
 
 **Value coercion:** `nb-value`/`nb-html`/`nb-attr`/`nb-style` stringify via `Helpers.stringify` —
 `null`/`undefined` become `''`, objects become JSON (`nb-attr` and `nb-style` instead *remove* on
-`null`/`undefined`). `nb-switch`/`nb-case` compare those stringified values with `===`, which is why
-`@0` and `@true` match numbers and booleans. `nb-if` coerces with `!!`. `nb-prop` alone assigns the
-raw value.
+`null`/`undefined`). `nb-if` coerces with `!!`. `nb-prop` alone assigns the raw value.
+
+**Switch matching is type-strict.** `nb-switch`/`nb-case` compare with `===` and primitives keep their
+type: `@0` matches the number `0` and `@true` the boolean `true`, but `@5` does **not** match the
+string `'5'` (router state, input values, URL params — write `nb-case="'5'"`), and an
+`undefined`/`null` switch value matches no case and falls to `nb-default`. Objects and arrays are
+compared by their JSON text.
 
 > Separate expression statements with `,` (comma operator), never `;` — a `;` forces multi-statement
 > compilation and the expression then always returns `undefined`. Inside `nb-class`/`nb-style` the
@@ -271,8 +281,10 @@ Large nuBond apps converge on a small set of techniques. Reach for these before 
   for literals (`nb-aspect:tooltip="@Delete"`). In a large app this alone halves the expressions per
   pass. (`#` must not be used inside repeats whose rows can change — see rule 14.)
 - **Hidden subtrees are nearly free.** A hidden element runs its own handlers but its children are
-  not evaluated at all (and are not even built until first shown), so "render every variant, show
-  one" with `nb-if`/`nb-switch` costs one expression per hidden branch and keeps each branch's state.
+  not evaluated at all (and are not even built until first shown), and a component/container on the
+  hidden element itself is not constructed until first shown. So "render every variant, show one"
+  with `nb-if`/`nb-switch` costs one expression per hidden branch, keeps each branch's state once
+  built, and moves each variant's build cost to its first show.
 - **Memoize expensive getters per subtree with `nb-var`.** A `nb-var` is evaluated once per pass and
   its value flows to every descendant expression, so `nb-var:date-time="this.dateTime"` replaces a
   dozen re-invocations of a costly getter.
@@ -284,42 +296,48 @@ Large nuBond apps converge on a small set of techniques. Reach for these before 
 - **Push state through singleton `@Injectable(true)` services** exposing a `CallBackEvent`; subscribe
   in the constructor and **always unsubscribe in `onDispose()`**.
 - **Build child inputs as fresh object literals** — `nb-in:data="{...this.data, offset: index}"` — the
-  deep-equal gate stops the churn.
+  deep-equal gate stops the churn. Keep them small: every `nb-in` object is cloned on each pass.
 - **Use `nb-switch` on a boolean as if/else**: `nb-switch="!!this.started"` with `@true`/`@false`
-  cases. The `!!` matters — `undefined` stringifies to `''` and matches neither.
+  cases. The `!!` matters — matching is type-strict, so `undefined`, `0` or `'yes'` match neither.
 - **Cache derived values in a private field and invalidate it from the input setter**, rather than
   recomputing in a getter read on every pass.
 
 ### Hard constraints to design around
 
-These are confirmed limitations of the 1.0.8 release. Each one is cheap to accommodate up front and
-expensive to discover late — the full set with mechanisms and workarounds is in
-`references/known-limitations.md`.
+These are confirmed limitations and design positions of the 1.0.9 release. Each one is cheap to
+accommodate up front and expensive to discover late — the full set with mechanisms and workarounds is
+in `references/known-limitations.md`.
 
-- **Apply global config that components need in a module imported before any component.**
-  `@Component` captures the shadow-root config (and inline templates capture the sanitizers) when its
-  decorator runs — i.e. when its module is imported, *before* `@AppRoot`'s config is applied. A
-  `shadowRootConfig` or `htmlSanitizer` passed only to `@AppRoot` therefore never reaches them. Call
-  `$Config({...})` in a tiny module that `index.ts` imports first.
-- **Inject concrete classes only.** An interface- or `any`-typed constructor parameter silently
-  receives the wrong object — a `ChangeDetector` in a container, the host DOM element in a component.
-  Also declare an explicit constructor on every decorated class: inherited constructors resolve to
-  zero arguments.
+- **Apply a global `shadowRootConfig` in a module imported before any component.** `@Component`
+  captures the shadow-root config when its decorator runs — i.e. when its module is imported, *before*
+  `@AppRoot`'s config is applied — so `@AppRoot({ shadowRootConfig })` reaches no component. Call
+  `$Config({...})` in a tiny module that `index.ts` imports first. (Every other global setting works
+  from `@AppRoot`.)
+- **Inject concrete classes only.** An interface-, `any`- or union-typed constructor parameter is not
+  injected — it arrives `undefined` with `Injection 'Object' cannot be resolve.` Also declare an
+  explicit constructor on every decorated class: inherited constructors resolve to zero arguments.
 - **Import every entity eagerly from the app root.** Components, aspects and templates resolve at
   tree-construction time; anything registered later is permanently inert in existing trees. Lazy
   entity modules do not work.
-- **Never write a `@Detector()` property from a template expression** — it self-sustains an endless
-  detection loop with no diagnostic in the default mode.
-- **Hash routing rewrites the URL to the origin root.** An app not served at `/` gets its path
-  clobbered at router construction, and the query string is dropped. Plan deployment accordingly, and
-  read `location.search` in the first-imported module if you need it.
-- **Push `nb-in` values as new objects, never by mutation** (rule 8), and never route a cyclic or
-  non-cloneable object through `nb-in` — use `nb-in-ref` for those from the start.
-- **Don't put placeholder content inside `nb-value`/`nb-html` elements** — a first value that
-  stringifies to `''` (including `undefined`/`null`) leaves the placeholder rendered as if it were data.
+- **Never write a `@Detector()` property from a template expression.** Each write re-triggers the
+  pass; after ~20 passes the framework logs `… can't stabilize …, detector is disabled` and that
+  detector stops triggering detection for the life of the context.
+- **Design for lazy, sticky hidden entities.** A component/container on a hidden element is built on
+  first show, so anything its constructor subscribes to starts then — pass earlier state in through an
+  input. Once built it is kept while hidden, and a hidden `nb-container` ignores name changes
+  (swap, emptying, route change) until it is shown again — reset a dialog's state yourself rather
+  than by emptying its container name after hiding it.
+- **Serve path-mode routing from the origin root.** Hash mode (`/#…`) preserves the document path and
+  query string and follows real hash links; path mode owns the whole URL, so an app under `/app/`
+  reads `app` as its first slot.
+- **Route anything non-cloneable through `nb-in-ref`** — functions, DOM nodes, class instances (cloned
+  into method-less plain objects), cyclic graphs, `Set`s of objects (rule 7, rule 8).
+- **Toggle only classes that are not in the markup.** `nb-class` never removes a class authored in the
+  element's `class="…"`; `class="active" nb-class="{active: …}"` is rejected with an error.
 - **Sanitize untrusted values yourself.** No sanitizer runs by default. A configured `htmlSanitizer`
-  covers `nb-html` values, but not inline templates (see the config-timing point above) and never
-  `nb-attr`/`nb-prop` (`nb-attr:onclick`, `javascript:` hrefs, `srcdoc` all bind freely).
+  covers `nb-html` values and templates loaded by URL/provider; inline templates and styles are
+  trusted and never sanitized, and `nb-attr`/`nb-prop` bypass it entirely (`javascript:` hrefs,
+  `srcdoc`, `nb-attr:onclick` — the last only warns under `showDebugInfo`).
 
 ## Where to look next
 
@@ -333,7 +351,7 @@ Load a reference file when the task touches its area — don't read them all up 
 | `references/project-setup.md` | Scaffolding a new app, Parcel/PostHTML/tsconfig wiring, file layout, the `add-*` CLI, reserved file names |
 | `references/patterns.md` | Proven patterns from real apps: services, localization, adopted styles, third-party web components, base classes, binding-cost control |
 | `references/pitfalls.md` | Console error → cause → fix, plus the traps that don't produce errors |
-| `references/known-limitations.md` | **Confirmed framework limitations in 1.0.8** — data-flow, change detection, routing/deployment, DI, registration timing, security. Read before designing anything non-trivial, and when behavior defies explanation |
+| `references/known-limitations.md` | **Confirmed framework limitations in 1.0.9** — data-flow, change detection, routing/deployment, DI, registration timing, security. Read before designing anything non-trivial, and when behavior defies explanation |
 
 ## Working checklist
 

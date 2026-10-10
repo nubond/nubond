@@ -15,7 +15,7 @@ import { Helpers } from './Helpers';
 import { Console } from './Console';
 
 export interface IContextBinder extends IDisposable {
-    readonly isChangeDetectionEnabled: boolean;
+    readonly changeDetectionEnabled: boolean;
     readonly context: IContext | IComponentContext | undefined;
 
     enableChangeDetection(): void;
@@ -43,6 +43,7 @@ export class ContextBinder implements IContextBinder {
 
     private _detectChangesTimeout: number | undefined;
 
+    private _detectorsSelfTriggeringCounts: Map<string, number> | undefined;
     private _detectorsValueContainer: Map<string, any> | undefined;
     private _eventersValueContainer: Map<string, any> | undefined;
 
@@ -51,9 +52,13 @@ export class ContextBinder implements IContextBinder {
         return this._isDisposed;
     }
 
-    private _isChangeDetectionEnabled = true;
-    public get isChangeDetectionEnabled(): boolean {
-        return this._isChangeDetectionEnabled;
+    private _changeDetectionPending = false;
+    private _changeDetectionInProgress = false;
+    private _changeDetectionCycleId: number = 0;
+
+    private _changeDetectionEnabled = true;
+    public get changeDetectionEnabled(): boolean {
+        return this._changeDetectionEnabled;
     }
 
     private _rootNElement: INElement | INTreeElement | undefined;
@@ -112,16 +117,23 @@ export class ContextBinder implements IContextBinder {
     }
 
     public enableChangeDetection(): void {
-        this._isChangeDetectionEnabled = true;
+        this._changeDetectionEnabled = true;
+
+        if (this._changeDetectionPending) {
+            this.detectChangesInternal();
+        }
     }
 
     public disableChangeDetection(): void {
-        this._isChangeDetectionEnabled = false;
+        this._changeDetectionEnabled = false;
     }
 
     public dispose(): void {
         if (!this._isDisposed) {
             this._isDisposed = true;
+
+            this._changeDetectionPending = false;
+            this._changeDetectionInProgress = false;
             
             if (Helpers.isNumber(this._detectChangesTimeout)) {
                 clearTimeout(this._detectChangesTimeout!);
@@ -140,6 +152,7 @@ export class ContextBinder implements IContextBinder {
 
             delete this._rootNElement;
             delete this._context;
+            delete this._detectorsSelfTriggeringCounts;
             delete this._detectorsValueContainer;
             delete this._eventersValueContainer;
         }
@@ -201,7 +214,7 @@ export class ContextBinder implements IContextBinder {
         }
     }
 
-    //TODO: implement @Detector() + @Eventer() support
+    //TODO: implement @Detector() + @Eventer() support ?
     protected bindInternal(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean, debounced: boolean): void {
         if (Helpers.isUndefined(this._context)) {
             if (Helpers.isUndefined(this._rootNElement)) {
@@ -211,13 +224,50 @@ export class ContextBinder implements IContextBinder {
                 const detectors = this._getDetectors(context);
                 if (Helpers.isArray(detectors) && (detectors!.length > 0)) {
                     this._detectorsValueContainer = new Map<string, any>();
-                    this.getSetifyFromArray(this._context, this._detectorsValueContainer!, detectors!, false, () => this.detectChanges());
+                    this._detectorsSelfTriggeringCounts = new Map<string, number>();
+
+                    let detectorsChangeDetectionCycleUnSubscribes = new Map<string, () => void>();
+
+                    this.getSetifyFromArray(this._context, this._detectorsValueContainer!, detectors!, false, (propertyName: string, newValue: any) => {
+                        let count = this._detectorsSelfTriggeringCounts!.get(propertyName);
+
+                        if (Helpers.isUndefined(count)) {
+                            count = 0;
+                        }
+
+                        if (count! < this.MAX_CHANGE_DETECTION_CYCLES) {
+                            if (this._changeDetectionInProgress && !detectorsChangeDetectionCycleUnSubscribes.has(propertyName)) {
+                                detectorsChangeDetectionCycleUnSubscribes.set(propertyName, this.onDetectChangesDone(() => {
+                                    detectorsChangeDetectionCycleUnSubscribes.get(propertyName)!();
+                                    detectorsChangeDetectionCycleUnSubscribes.delete(propertyName);
+
+                                    const changeDetectionCycleId = this._changeDetectionCycleId;
+
+                                    const nextChangeDetectionCycleUnSubscribe = this.onDetectChangesDone(() => {
+                                        nextChangeDetectionCycleUnSubscribe();
+
+                                        this._detectorsSelfTriggeringCounts!.set(propertyName, ((changeDetectionCycleId + 1) === this._changeDetectionCycleId) &&
+                                                                                               !Helpers.equals(newValue, this._detectorsValueContainer!.get(propertyName))
+                                                                                                            ? count! + 1
+                                                                                                            : 0);
+                                    });
+                                }));
+                            }
+
+                            this.detectChanges();
+                        } else {
+                            if (count! < this.MAX_CHANGE_DETECTION_CYCLES * this.MAX_CHANGE_DETECTION_CYCLES) { //multiply here works for flagging that this detector is disabled and error is placed
+                                this._detectorsSelfTriggeringCounts!.set(propertyName, this.MAX_CHANGE_DETECTION_CYCLES * this.MAX_CHANGE_DETECTION_CYCLES);
+                                Console.error(context, `${propertyName} property value can't stabilize in ${this.MAX_CHANGE_DETECTION_CYCLES} change detection cycles, detector is disabled.`);
+                            }
+                        }
+                    });
                 }
 
                 const eventers = this._getEventers(context);
                 if (!Helpers.isUndefined(eventers) && (eventers!.size > 0)) {
                     this._eventersValueContainer = new Map<string, any>();
-                    this.getSetifyFromMap(this._context, this._eventersValueContainer!, eventers!, true, (eventName: string, newValue: any) => {
+                    this.getSetifyFromMap(this._context, this._eventersValueContainer!, eventers!, true, (eventName: string, propertyName: string, newValue: any) => {
                         this._rootNElement!.nativeElement.dispatchEvent(new CustomEvent(eventName, Helpers.isUndefined(newValue) ? newValue : { detail: newValue }));
                     });
                 }
@@ -258,23 +308,35 @@ export class ContextBinder implements IContextBinder {
     }
 
     protected detectChangesInternal(): void {
-        if (!this.isDisposed && !Helpers.isUndefined(this._context) && this._isChangeDetectionEnabled) {
-            if (Helpers.isNumber(this._detectChangesTimeout)) {
-                clearTimeout(this._detectChangesTimeout!);
-                this._detectChangesTimeout = undefined;
-            }
+        if (!this.isDisposed && !Helpers.isUndefined(this._context)) {
+            if (this._changeDetectionEnabled) {
+                this._changeDetectionPending = false;
 
-            this._detectChangesTimeout = setTimeout(() => {
-                if (!this.isDisposed) {
-                    this.processChangeDetection();
-                    this.changeDetectionIsDone();
+                if (Helpers.isNumber(this._detectChangesTimeout)) {
+                    clearTimeout(this._detectChangesTimeout!);
+                    this._detectChangesTimeout = undefined;
                 }
-            });
+
+                this._detectChangesTimeout = setTimeout(() => {
+                    if (!this.isDisposed) {
+                        this.processChangeDetection();
+                        this.changeDetectionIsDone();
+                    }
+                });
+            } else {
+                this._changeDetectionPending = true;
+            }
         }
     }
 
     protected processChangeDetection(cycle: number = 0) {
         if (!this.isDisposed) {
+            this._changeDetectionInProgress = true;
+
+            if (cycle === 0) {
+                this._changeDetectionCycleId++;
+            }
+
             this._rootNElement!.detectChanges(this._context!);
 
             if (!this.isDisposed && this._pessimisticChangeDetectionStrategy) {
@@ -286,11 +348,13 @@ export class ContextBinder implements IContextBinder {
                     }
                 }
             }
+
+            this._changeDetectionInProgress = false;
         }
     }
 
     private getSetifyFromArray(context: {[key: string]: any}, valueContainer: Map<string, any>, properties: Array<string>, 
-                               autoTrigger: boolean, action: (newValue: any) => void): void {
+                               autoTrigger: boolean, action: (propertyName: string, newValue: any) => void): void {
         for (const propertyName of properties) {
             try {
                 const descriptor = Object.getOwnPropertyDescriptor(context, propertyName);
@@ -319,7 +383,7 @@ export class ContextBinder implements IContextBinder {
                         valueContainer.set(propertyName, newValue);
 
                         if (!Helpers.equals(currentValue, newValue)) {
-                            action(newValue);
+                            action(propertyName, newValue);
                         }
                     },
                     enumerable: true
@@ -328,7 +392,10 @@ export class ContextBinder implements IContextBinder {
                 if (autoTrigger && !Helpers.isUndefined(propertyValue)) {
                     const unSubscribe = this.onDetectChangesDone(() => {
                         unSubscribe();
-                        action(propertyValue);
+
+                        if (Helpers.equals(valueContainer.get(propertyName), propertyValue)) {
+                            action(propertyName, propertyValue);
+                        }
                     });
                 }
             } catch(ex) {
@@ -338,7 +405,7 @@ export class ContextBinder implements IContextBinder {
     }
 
     private getSetifyFromMap(context: {[key: string]: any}, valueContainer: Map<string, any>, properties: Map<string, any>, 
-                             autoTrigger: boolean, action: (metaData: any, newValue: any) => void): void {
+                             autoTrigger: boolean, action: (metaData: any, propertyName: string, newValue: any) => void): void {
         for (const [propertyName, metaData] of properties) {
             try {
                 const descriptor = Object.getOwnPropertyDescriptor(context, propertyName);
@@ -367,7 +434,7 @@ export class ContextBinder implements IContextBinder {
                         valueContainer.set(propertyName, newValue);
 
                         if (!Helpers.equals(currentValue, newValue)) {
-                            action(metaData, newValue);
+                            action(metaData, propertyName, newValue);
                         }
                     },
                     enumerable: true
@@ -376,7 +443,10 @@ export class ContextBinder implements IContextBinder {
                 if (autoTrigger && !Helpers.isUndefined(propertyValue)) {
                     const unSubscribe = this.onDetectChangesDone(() => {
                         unSubscribe();
-                        action(metaData, propertyValue);
+
+                        if (Helpers.equals(valueContainer.get(propertyName), propertyValue)) {
+                            action(metaData, propertyName, propertyValue);
+                        }
                     });
                 }
             } catch(ex) {

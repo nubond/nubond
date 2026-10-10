@@ -109,6 +109,88 @@ describe('Helpers', () => {
         });
     });
 
+    describe('isPrimitive', () => {
+        it.each([
+            ['undefined', undefined],
+            ['null', null],
+            ['a number', 42],
+            ['zero', 0],
+            ['NaN', NaN],
+            ['Infinity', Infinity],
+            ['a string', 'hello'],
+            ['an empty string', ''],
+            ['true', true],
+            ['false', false],
+            ['a bigint', 10n],
+            ['a symbol', Symbol('s')]
+        ])('should return true for %s', (_, value) => {
+            expect(Helpers.isPrimitive(value)).toBe(true);
+        });
+
+        it.each([
+            ['a plain object', {}],
+            ['an array', []],
+            ['a Date', new Date(0)],
+            ['a Map', new Map()],
+            ['a typed array', new Uint8Array(1)],
+            ['a boxed number', new Number(1)],
+            ['a boxed string', new String('s')],
+            ['a function', function named() {}],
+            ['an arrow function', () => 1],
+            ['a class', class Some {}],
+            ['a class instance', new (class Some {})()]
+        ])('should return false for %s', (_, value) => {
+            expect(Helpers.isPrimitive(value)).toBe(false);
+        });
+
+        it('should return false for a null-prototype object (no Object.prototype in its chain)', () => {
+            const dictionary = Object.create(null);
+            dictionary.a = 1;
+
+            expect(dictionary instanceof Object).toBe(false);
+            expect(Helpers.isPrimitive(dictionary)).toBe(false);
+        });
+
+        describe('values from another realm (iframe)', () => {
+            let frame: HTMLIFrameElement;
+            let frameWindow: any;
+
+            beforeAll(() => {
+                frame = document.createElement('iframe');
+                document.body.appendChild(frame);
+                frameWindow = frame.contentWindow;
+            });
+
+            afterAll(() => {
+                frame.remove();
+            });
+
+            it('should run in a separate realm', () => {
+                expect(frameWindow.Object).not.toBe(Object);
+            });
+
+            it('should return false for an object from another realm', () => {
+                const foreign = frameWindow.eval('({ a: 1 })');
+
+                expect(foreign instanceof Object).toBe(false);
+                expect(Helpers.isPrimitive(foreign)).toBe(false);
+            });
+
+            it('should return false for an array from another realm', () => {
+                expect(Helpers.isPrimitive(frameWindow.eval('[1, 2]'))).toBe(false);
+            });
+
+            // known gap: the `instanceof Object` clause is realm-bound and typeof gives 'function',
+            // so a function created in another realm is reported as primitive (a same-realm one is not)
+            it('should return true for a function from another realm (known gap)', () => {
+                const foreign = frameWindow.eval('(function () {})');
+
+                expect(typeof foreign).toBe('function');
+                expect(Helpers.isPrimitive(foreign)).toBe(true);
+            });
+        });
+    });
+
     describe('isArray', () => {
         it('should return true for array', () => {
             expect(Helpers.isArray([1, 2, 3])).toBe(true);
@@ -518,8 +600,27 @@ describe('Helpers', () => {
                 expect(Helpers.equals(d, d)).toBe(true);
             });
 
-            it('should return false for two invalid Date instances', () => {
-                expect(Helpers.equals(new Date('invalid'), new Date('invalid'))).toBe(false);
+            // R9-2: two Invalid Dates are equal, mirroring the number branch's NaN === NaN handling -
+            // otherwise a freshly minted Invalid Date never deep-equals its previous value
+            it('should return true for two distinct invalid Date instances (R9-2)', () => {
+                expect(Helpers.equals(new Date('invalid'), new Date('invalid'))).toBe(true);
+                expect(Helpers.equals(new Date(NaN), new Date('also invalid'))).toBe(true);
+            });
+
+            it('should return false for an invalid Date compared with a valid one (R9-2)', () => {
+                expect(Helpers.equals(new Date('invalid'), new Date(0))).toBe(false);
+                expect(Helpers.equals(new Date(0), new Date('invalid'))).toBe(false);
+            });
+
+            it('should return false for an invalid Date compared with NaN or an empty object (R9-2)', () => {
+                expect(Helpers.equals(new Date('invalid'), NaN)).toBe(false);
+                expect(Helpers.equals(new Date('invalid'), {})).toBe(false);
+            });
+
+            it('should compare Invalid Dates nested in objects and arrays (R9-2)', () => {
+                expect(Helpers.equals({ d: new Date('x') }, { d: new Date('y') })).toBe(true);
+                expect(Helpers.equals([new Date('x'), 1], [new Date('y'), 1])).toBe(true);
+                expect(Helpers.equals({ d: new Date('x') }, { d: new Date(0) })).toBe(false);
             });
 
             it('should return false when only one side is Date', () => {

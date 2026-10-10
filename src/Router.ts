@@ -80,8 +80,12 @@ class RouteSlot {
 export class Router {
     private readonly _getShowDebugInfo: () => boolean;
 
+    private readonly _documentPath: string | undefined;
+
     private readonly _routeSlots: Array<RouteSlot> | undefined;
     private readonly _routeObj: {[key: string]: RouteSlot} | undefined;
+    private readonly _routeSlotNames: Array<string> | undefined;
+
     private readonly _isSingleSlotted: boolean;
 
     private readonly _onBeforeStateChangeCallBackEvent = new CallBackEvent<(preventChange: () => void, oldState: Readonly<{[key: string]: string | undefined}>, newState: Readonly<{[key: string]: string | undefined}>, oldPath: string, newPath: string) => void>();
@@ -120,6 +124,8 @@ export class Router {
         if (Helpers.isNotEmptyString(routeConfig)) {
             this._isConfigured = true;
 
+            this._documentPath = location.pathname + location.search;
+
             let rawRouteConfig = routeConfig!.trim();
             if (rawRouteConfig.startsWith('/')) {
                 rawRouteConfig = rawRouteConfig.substring(1).trim();
@@ -132,94 +138,19 @@ export class Router {
 
             this._routeSlots = rawRouteConfig.split('/').filter(el => Helpers.isNotEmptyString(el)).map(el => new RouteSlot(el, containerName => isContainerExists(containerName)));
             this._routeObj = Object.create(null);
+            this._routeSlotNames = [];
 
             this._isSingleSlotted = (this._routeSlots.length == 1) && Helpers.isNotEmptyString(this._routeSlots[0].name);
-
-            const slotNames: Array<string> = [];
 
             for (const slot of this._routeSlots) {
                 if (Helpers.isString(slot.name)) {
                     this._routeObj![slot.name!] = slot;
-                    slotNames.push(slot.name!);
+                    this._routeSlotNames.push(slot.name!);
                 }
             }
 
             //update current state based on URL
-            const routeState = Object.create(null);
-
-            let locationPathName = '';
-            let locationSearch = '';
-
-            if (this._hashBased) {
-                let locationHash = location.hash.trim();
-                if (locationHash.length > 0) {
-                    if (locationHash.startsWith('#')) {
-                        locationHash = locationHash.substring(1).trim();
-                    }
-
-                    if (locationHash.length > 0) {
-                        const splittedLocationHash = locationHash.split('?');
-                        locationPathName = splittedLocationHash[0].trim();
-                        locationSearch = splittedLocationHash.length > 1 ? splittedLocationHash[1].trim() : '';
-                    }
-                }
-            } else {
-                locationPathName = location.pathname.trim();
-                locationSearch = location.search.trim();
-            }
-
-            if (locationPathName.length > 1) {
-                if (locationPathName.startsWith('/')) {
-                    locationPathName = locationPathName.substring(1).trim();
-                }
-
-                if (locationPathName.endsWith('/')) {
-                    locationPathName = locationPathName.substring(0, locationPathName.length - 1).trim();
-                }
-
-                if (locationPathName.length > 0) {
-                    const splittedLocationPathName = locationPathName.split('/');
-                    if (splittedLocationPathName.length > 0) {
-                        for (let index = 0; index < Math.min(splittedLocationPathName.length, this._routeSlots.length); index++) {
-                            const slot = this._routeSlots[index];
-                            if (Helpers.isString(slot.name)) {
-                                const value = splittedLocationPathName[index];
-                                try {
-                                    routeState[slot.name!] = decodeURIComponent(value);
-                                } catch (ex) {
-                                    Console.error(`Router is not able to decodeURIComponent '${value}', exception: ${ex}`);
-                                }
-                            }
-                        }
-                    }   
-                }
-            }
-            
-            if (locationSearch.length > 2) {
-                if (locationSearch.startsWith('?')) {
-                    locationSearch = locationSearch.substring(1).trim();
-                }
-
-                if (locationSearch.length > 2) {
-                    const splittedLocationSearch = locationSearch.split('&').map(el => {
-                        const splitIndex = el.indexOf('=');
-                        return [el.substring(0, splitIndex), splitIndex > 0 ? el.substring(splitIndex + 1) : ''];
-                    });
-                    if (splittedLocationSearch.length > 0) {
-                        for (const [key, value] of splittedLocationSearch) {
-                            const keyIndex = slotNames.findIndex(el => el.toLowerCase() == key.toLowerCase());
-                            if (keyIndex >= 0) {
-                                try {
-                                    routeState[slotNames[keyIndex]] = decodeURIComponent(value);
-                                } catch (ex) {
-                                    Console.error(`Router is not able to decodeURIComponent '${value}', exception: ${ex}`);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
+            const routeState = this.getStateFromRoute();
             if (Object.getOwnPropertyNames(routeState).length > 0) {
                 this.handleStateChange(routeState, true, () => {
                     this._states = [this.state!];
@@ -270,13 +201,20 @@ export class Router {
                         this.handleStateChange(newState, false, () => {
                             this._states.push(this.state!);
                             this._stateIndex = this._states.length - 1;
-                            history.pushState(this.state, '', this.path!.length == 0 
-                                                                    ? '/' 
-                                                                    : ((this._hashBased ? '/#' : '') + this.path));
+                            history.pushState(this.state, '', this.getStatePath());
                         });
                     }
                 } else {
-                    this.handleStateChange(null, false);
+                    this.handleStateChange(this.getStateFromRoute(), false, () => {
+                        while (this._stateIndex < (this._states.length - 1)) {
+                            this._states.pop();
+                        }
+
+                        this._states.push(this.state!);
+                        this._stateIndex = this._states.length - 1;
+
+                        this.saveState(true);
+                    });
                 }
             });
         } else {
@@ -521,14 +459,103 @@ export class Router {
         return state;
     }
 
+    private getStatePath(): string {
+        const pathIsEmpty = this.path!.length == 0;
+
+        return this._hashBased
+                    ? (pathIsEmpty
+                            ? this._documentPath!
+                            : `${this._documentPath!}#${this.path!}`)
+                    : (pathIsEmpty
+                            ? '/'
+                            : this.path!);
+    }
+
     private saveState(removeHistory: boolean): void {
-        const statePath = this.path!.length == 0 
-                                    ? '/' 
-                                    : ((this._hashBased ? '/#' : '') + this.path);
         if (removeHistory) {
-            history.replaceState(this.state, '', statePath);
+            history.replaceState(this.state, '', this.getStatePath());
         } else {
-            history.pushState(this.state, '', statePath);
+            history.pushState(this.state, '', this.getStatePath());
         }
+    }
+
+    //route processing
+    private getStateFromRoute(): {[key: string]: string} {
+        const routeState = Object.create(null);
+
+        let locationPathName = '';
+        let locationSearch = '';
+
+        if (this._hashBased) {
+            let locationHash = location.hash.trim();
+            if (locationHash.length > 0) {
+                if (locationHash.startsWith('#')) {
+                    locationHash = locationHash.substring(1).trim();
+                }
+
+                if (locationHash.length > 0) {
+                    const splittedLocationHash = locationHash.split('?');
+                    locationPathName = splittedLocationHash[0].trim();
+                    locationSearch = splittedLocationHash.length > 1 ? splittedLocationHash[1].trim() : '';
+                }
+            }
+        } else {
+            locationPathName = location.pathname.trim();
+            locationSearch = location.search.trim();
+        }
+
+        if (locationPathName.length > 1) {
+            if (locationPathName.startsWith('/')) {
+                locationPathName = locationPathName.substring(1).trim();
+            }
+
+            if (locationPathName.endsWith('/')) {
+                locationPathName = locationPathName.substring(0, locationPathName.length - 1).trim();
+            }
+
+            if (locationPathName.length > 0) {
+                const splittedLocationPathName = locationPathName.split('/');
+                if (splittedLocationPathName.length > 0) {
+                    for (let index = 0; index < Math.min(splittedLocationPathName.length, this._routeSlots!.length); index++) {
+                        const slot = this._routeSlots![index];
+                        if (Helpers.isString(slot.name)) {
+                            const value = splittedLocationPathName[index];
+                            try {
+                                routeState[slot.name!] = decodeURIComponent(value);
+                            } catch (ex) {
+                                Console.error(`Router is not able to decodeURIComponent '${value}', exception: ${ex}`);
+                            }
+                        }
+                    }
+                }   
+            }
+        }
+        
+        if (locationSearch.length > 2) {
+            if (locationSearch.startsWith('?')) {
+                locationSearch = locationSearch.substring(1).trim();
+            }
+
+            if (locationSearch.length > 2) {
+                const splittedLocationSearch = locationSearch.split('&').map(el => {
+                    const splitIndex = el.indexOf('=');
+                    return [el.substring(0, splitIndex), splitIndex > 0 ? el.substring(splitIndex + 1) : ''];
+                });
+                if (splittedLocationSearch.length > 0) {
+                    for (const [key, value] of splittedLocationSearch) {
+                        const keyIndex = this._routeSlotNames!.findIndex(el => el.toLowerCase() == key.toLowerCase());
+                        if (keyIndex >= 0) {
+                            try {
+                                routeState[this._routeSlotNames![keyIndex]] = decodeURIComponent(value);
+                            } catch (ex) {
+                                Console.error(`Router is not able to decodeURIComponent '${value}', exception: ${ex}`);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return routeState;
     }
 }

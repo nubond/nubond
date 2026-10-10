@@ -106,24 +106,40 @@ export class Environment {
         let element: Element;
         
         if (Helpers.isString(selectorOrElement)) {
-            const selectedElement = document.querySelector(<string>selectorOrElement);
+            try {
+                const selectedElement = document.querySelector(<string>selectorOrElement);
 
-            if (selectedElement === null) {
-                Console.error(`Element with selector '${selectorOrElement}' not found`);
+                if (selectedElement === null) {
+                    Console.error(`Element with selector '${selectorOrElement}' not found, application cannot be created.`);
+                    return;
+                }
+                
+                element = selectedElement;
+            } catch (ex) {
+                Console.error(`Invalid selector '${selectorOrElement}', application cannot be created.`);
                 return;
             }
-            
-            element = selectedElement;
         } else {
             element = (Helpers.isUndefined(selectorOrElement)) || (selectorOrElement === null)
                                 ? document.body
                                 : <Element>selectorOrElement;
         }
 
-        if (this._elementsToContextsMapping.has(element)) {
-            Console.error(`Attempt to create multiple ${Constants.DISPLAY_NAME} applications binded to the same element found. ${Constants.DISPLAY_NAME} application cannot be created.`);
+        if (!element.isConnected) {
+            Console.error(element, `Root element is not connected to DOM, application cannot be created.`);
             return;
         }
+
+        let treeElement: Element | null = element;
+        do
+        {
+            if (this._elementsToContextsMapping.has(treeElement)) {
+                Console.error(treeElement, `Attempt to create multiple ${Constants.DISPLAY_NAME} applications binded to the same already bounded tree found, application cannot be created.`);
+                return;
+            } else {
+                treeElement = treeElement.parentElement;
+            }
+        } while(treeElement != null);
 
         //root bootstrap
         const rootContextBinder = new RootContextBinder(undefined, this._pessimisticChangeDetectionStrategy,

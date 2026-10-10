@@ -33,12 +33,18 @@ Bootstraps the application. Accepts, in any order:
 | entity constructors | dependencies |
 
 Unlike the other decorators, `@AppRoot` **throws** on conflicting metadata (two selectors, two route
-templates, two global configs). Binding two app roots to the same element is an error.
+templates, two global configs). Problems with the root *element* are soft failures — an error is
+logged and that app is not created:
+
+- the element already is an app root, or sits **inside** an already-bound app's tree;
+- the element is **not connected to the document** — attach it first; preparing an app offscreen and
+  appending it later is not supported;
+- the selector matches nothing, or is not a valid selector.
 
 A string counts as a route template **only if it starts with `/`**. A typo like `'#/[page=main]'` is
-taken as an element selector instead — and an invalid selector makes `document.querySelector` throw
-out of the decorator, killing module evaluation. A valid-but-unmatched selector logs
-`Element with selector '…' not found` and nothing renders.
+taken as an element selector instead: it logs `Invalid selector '…', application cannot be created.`
+(or `Element with selector '…' not found, …` when the string happens to be valid CSS) and nothing
+renders.
 
 ```typescript
 @AppRoot(
@@ -116,9 +122,16 @@ bootstrap. An element created with `document.createElement('item-card')` and app
 inert — no shadow root, no template, no context. Render components from templates (or from a container
 bound by nuBond), never by hand.
 
-On bind, the component attaches its shadow root, adopts the framework's hide stylesheets, then any
-`$AdoptedStyle` sheets, then appends its own `<style>` and template, processes projections, and binds
-the context to the shadow root.
+**Construction is lazy.** The context class is instantiated when the component's element is first
+*visible*: a component sitting on an element hidden by its own `nb-if`, an unpicked
+`nb-case`/`nb-default` or an empty `nb-repeat` is not constructed until that changes (the same holds
+for `nb-container`). Once built it survives being hidden again. Don't rely on a constructor side
+effect — a service subscription, a self-registration — having happened at startup.
+
+On bind, the component attaches its shadow root, adopts the framework's hide stylesheets, then its
+`$AdoptedStyle` sheets **in the order their names are declared** (regardless of which finishes loading
+first), then appends its own `<style>` and template, processes projections, and binds the context to
+the shadow root.
 
 ### `@Aspect(styleOrTuple?, ...metadata)`
 
@@ -132,9 +145,11 @@ the host element it is attached to.
 - Injections: the host element, `ChangeDetector` (requests a pass of the binder that owns the host),
   `ElementManipulations`, `ElementSubscriptions`, `EventDispatcher` (dispatches on the host element).
 - Because aspects have no shadow root, adopted stylesheets land on `document.adoptedStyleSheets` for
-  light-DOM hosts, or the enclosing shadow root when attached inside a component. Sheets are
-  reference-counted and removed when the last aspect using them is disposed.
-- Aspects are instantiated eagerly when the element is constructed, not lazily on first bind.
+  light-DOM hosts, or the enclosing shadow root when attached inside a component — the aspect's own
+  sheet first, then the adopted ones in declared order. Sheets are reference-counted per root and
+  removed when the last aspect using them is disposed.
+- Aspects are instantiated eagerly when the element is constructed — not on first bind, and (unlike
+  components and containers) also for elements that are hidden.
 - `nb-aspect:name` may be used **without a value** — the aspect is attached and its `data` setter is
   never called.
 
@@ -171,7 +186,7 @@ Registers a class in the DI container. **Transient by default** — pass `true` 
 | Decorator | Effect |
 |---|---|
 | `@Detector()` | Assigning a new value triggers a change-detection cycle (gated by deep equality). |
-| `@Eventer(eventName?)` | Assigning dispatches a `CustomEvent` with the value in `event.detail` (an `undefined` value arrives as `null`). Name defaults to the kebab-cased property name. A non-`undefined` initial value fires once after the first cycle. It does **not** schedule detection itself — the parent's `nb-event` subscriber does. |
+| `@Eventer(eventName?)` | Assigning dispatches a `CustomEvent` with the value in `event.detail` (an `undefined` value arrives as `null`). Name defaults to the kebab-cased property name. A non-`undefined` initial value is announced once after the first cycle — unless the property was assigned something else before then (that assignment has already dispatched the newer value). It does **not** schedule detection itself — the parent's `nb-event` subscriber does. |
 
 Both are implemented with `Object.defineProperty` and are supported only on **plain, configurable
 fields declared on the context class itself**. An *own* property that already has a getter/setter, or
@@ -232,19 +247,26 @@ and `$AdoptedStyle`:
 @Container('/templates/my-container.html')                    // URL — fetched at runtime
 ```
 
-A string is treated as a **URL** only when it starts with `/` and contains no spaces, `{` or `<`.
+A string is treated as a **URL** only when it starts with `/` and contains no newline, `{` or `<`.
 URL- and provider-based sources resolve lazily on first use; inline strings compile eagerly.
 
 > **`https://…`, `./tpl.html` and `templates/tpl.html` are NOT recognized as URLs** — they are treated
-> as inline template content and rendered as literal text, with no diagnostic. A root-relative path
-> containing a space is not a URL either. Use a root-relative path, or an `ITemplateProvider` whose
-> `get()` fetches (it may return a `Promise<string>`) for anything else. Note also that inline strings
-> are sanitized at decorator-import time, which is *before* `@AppRoot` applies a global
-> `htmlSanitizer` — so a global sanitizer reaches them only if set via `$Config` in a module imported
-> before the entity modules.
+> as inline template content and rendered as literal text, with no diagnostic. External sources are
+> unsupported by design: use a root-relative path (spaces are fine), or an `ITemplateProvider` whose
+> `get()` fetches (it may return a `Promise<string>`) for anything else. Conversely, *any* single-line
+> string starting with `/` is fetched — including a protocol-relative `//host/tpl.html`.
 >
 > A failing fetch is retried on later use; after 3 failed attempts the entity gives up with
 > `Unable to get <entity> '…' template in 3 attempts`.
+
+> **Inline sources are trusted; fetched sources are sanitized.** An inline string — which includes a
+> bundler-imported `.html`/`.scss` file — is stored verbatim and never passed through
+> `htmlSanitizer`/`styleSanitizer`: it is authored source code, and a sanitizer tuned for hostile
+> input would strip the `nb-*` attributes and custom elements the framework needs. URL- and
+> provider-resolved content *is* sanitized, with the most specific registration winning (the
+> `sanitizer` argument of `$Template`/`$AdoptedStyle`/`@Aspect`, or the entity's context config, then
+> the global config). Sanitizers are looked up when the content arrives, so setting them in
+> `@AppRoot` is early enough.
 
 ## Dependency injection
 
@@ -258,11 +280,11 @@ recursively; circular references are detected and logged, yielding `undefined`.
 
 **Three DI rules that are not optional:**
 
-1. **Inject concrete classes only.** TypeScript emits `Object` for interface-, union- and `any`-typed
-   parameters. `Object` is never registered, so resolution falls through to "first context injection
-   that is `instanceof` it" — and everything is. `constructor(private cfg: IMyConfig)` silently
-   receives a `ChangeDetector` in a container, or the host **DOM element** in a component. No error,
-   no `undefined`.
+1. **Inject concrete classes only.** TypeScript emits `Object` for interface-, `any`-, `unknown`-,
+   union- and generic-typed parameters, and `Object` is deliberately never matched against the
+   per-entity services. `constructor(private cfg: IMyConfig)` therefore receives `undefined` and logs
+   `Injection 'Object' cannot be resolve.` — with the class being constructed as the first console
+   argument, which is how you find the offending constructor.
 2. **Declare an explicit constructor on every decorated class.** The bundled `Reflect` polyfill does
    not walk the prototype chain, so a decorated subclass that inherits its constructor finds no
    `design:paramtypes` and is constructed with **zero arguments** — every injection the base expects
@@ -357,8 +379,8 @@ Implement any of these on a container/component context (`IContext`):
 
 | Hook | When |
 |---|---|
-| `onContainerAttached(context)` | After an **`nb-container` in this context's own template** is attached and bound. Fired on the **host** context, receiving the child container's context. A context is never notified of its own attachment. |
-| `onContainerDetached(context)` | When that child container is disposed / its name resolves to something else. |
+| `onContainerAttached(context)` | After an **`nb-container` in this context's own template** is attached and bound — for a container whose element starts hidden, that is when it is first shown. Fired on the **host** context, receiving the child container's context. A context is never notified of its own attachment. |
+| `onContainerDetached(context)` | When that child container is disposed / its name resolves to something else. While the container element is hidden, a name change is deferred, and so is this hook. |
 | `onInputsRefreshDone()` | After this context's `nb-in` inputs were updated (only fires when something actually changed). |
 | `onDetectChangesDone()` | After a change-detection cycle on this context completes. |
 | `onDispose()` | During teardown of this context. |
@@ -403,10 +425,15 @@ Global config cannot be changed after the first app root is bound. A config obje
 its shape: any unknown key or wrongly typed value (`{ showDebugInfo: 'true' }`) makes the whole
 object unrecognized and it is **silently ignored**.
 
-**Config timing.** `showDebugInfo`, `complyWithW3C` and the change-detection strategy are read when
-apps bind, so passing them to `@AppRoot` works. `shadowRootConfig`, and the sanitizers as applied to
-*inline* templates/styles, are captured when each entity's decorator runs — set those with `$Config`
-in a module imported before any entity module (see `@Component` above).
+**Config timing.** `showDebugInfo`, `complyWithW3C`, the change-detection strategy and the sanitizers
+are read lazily, so passing them to `@AppRoot` works. The global `shadowRootConfig` is the exception:
+it is captured when each `@Component` decorator runs — set it with `$Config` in a module imported
+before any component module (see `@Component` above).
+
+**What the sanitizers cover.** `htmlSanitizer` is applied to `nb-html` values and to HTML templates
+resolved from a URL or provider; `styleSanitizer` to styles resolved from a URL or provider. Inline
+templates and styles are never sanitized (see "Template sources"), and `nb-attr`/`nb-prop` values
+never pass through either.
 
 `showDebugInfo: true` also makes expression compile/execution errors **throw** instead of being
 logged — invaluable while developing, remove for production.
@@ -417,8 +444,10 @@ logged — invaluable while developing, remove for production.
 for consistency with the framework's own semantics.
 
 Type checks: `isUndefined`, `isString`, `isNotEmptyString` (length > 0, **no trim**), `isNumber`,
-`isBoolean`, `isObject` (non-null, excludes functions), `isArray`, `isIterableCollection`
-(strictly `Map`/`Set`), `isTypedArray`, `isFunction`, `isSymbol`, `isBigInt`, `isValidElementName`,
+`isBoolean`, `isObject` (non-null, excludes functions), `isPrimitive` (`null`, `undefined`, string,
+number, boolean, bigint, symbol — the test `nb-in` uses to decide what to clone and `nb-switch` uses
+to decide what to compare as-is), `isArray`, `isIterableCollection` (strictly `Map`/`Set`),
+`isTypedArray`, `isFunction`, `isSymbol`, `isBigInt`, `isValidElementName`,
 `isValidCustomElementName`, `isValidIdentifier`.
 
 ### `Helpers.equals` — the rules every gate obeys
@@ -430,7 +459,7 @@ or an `nb-prop` value counts as changed. Its exact semantics matter at scale:
 |---|---|
 | `a === b` | equal (fast path) |
 | Different `typeof` **or different `constructor`** | not equal — a plain `{x:1}` never equals `new Foo()` with the same fields |
-| `Date` | compared by `getTime()` |
+| `Date` | compared by `getTime()`; two Invalid Dates are equal |
 | `RegExp` | compared by `source` + `flags` |
 | `NaN` vs `NaN` | equal |
 | Array / typed array | same length, then element-wise deep |
@@ -446,6 +475,9 @@ Two consequences to design around:
   (`public onClick = () => {}`) are own+enumerable, so any object carrying one is never deep-equal to
   another — a `@Detector()` holding it fires on every assignment. Use prototype methods (`onClick() {}`),
   which are non-enumerable and skipped.
+- **`Set` members and `Map` keys are compared by identity**, so a `Set` of objects never equals its
+  own `structuredClone` — through `nb-in` such a value is re-delivered on every pass. Use arrays, or
+  `nb-in-ref`.
 - **Cyclic graphs are reported equal** after logging `deep equality comparison detected a circular
   reference`. Never pass a cyclic object through `nb-in` or a `@Detector()` property; pass a flat
   projection of it, or use `nb-in-ref` plus a manual `detect()`.

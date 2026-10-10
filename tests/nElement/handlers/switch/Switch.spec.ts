@@ -11,7 +11,7 @@ describe('Switch handler', () => {
         if (expression !== undefined) {
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_HANDLER_ATTRIBUTE_NAME}`, expression);
         }
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const classes = new Classes(el, attrs, () => hideClassName);
         return { el, attrs, classes };
     }

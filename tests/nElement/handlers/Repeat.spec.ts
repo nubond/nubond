@@ -3,6 +3,7 @@ import { Attributes } from '../../../src/nElement/handlers/Attributes';
 import { Classes } from '../../../src/nElement/handlers/Classes';
 import { Constants } from '../../../src/Constants';
 import { Environment } from '../../../src/Environment';
+import { ExecutionParams } from '../../../src/expression/ExpressionExecParamsHelper';
 
 describe('Repeat handler', () => {
     const hideClassName = 'nb-hidden';
@@ -15,7 +16,7 @@ describe('Repeat handler', () => {
                 : `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}`;
             el.setAttribute(attrName, expression);
         }
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const classes = new Classes(el, attrs, () => hideClassName);
         return { el, attrs, classes };
     }
@@ -179,6 +180,71 @@ describe('Repeat handler', () => {
             handler.bind(undefined, () => -5);
 
             expect(handler.isVisible).toBe(false);
+        });
+    });
+
+    describe('R4-2: non-finite and fractional repeat counts', () => {
+        function bindNumber(value: number) {
+            const { el, attrs, classes } = createElements('ctx.count');
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const result = handler.bind(undefined, () => value);
+            return { handler, result };
+        }
+
+        function countOf(result: ReturnType<typeof bindNumber>['result']) {
+            return result!.values[result!.names.indexOf('count')];
+        }
+
+        it('should not request a clone when number is Infinity', () => {
+            const { handler } = bindNumber(Infinity);
+
+            // Infinity used to pass the `> 0` check, making every element request the next clone forever.
+            expect(mockClone).not.toHaveBeenCalled();
+            expect(handler.isVisible).toBe(false);
+        });
+
+        it('should reject Infinity as repeat data (count stays at the no-data value)', () => {
+            const { result } = bindNumber(Infinity);
+
+            expect(countOf(result)).toBe(-1);
+        });
+
+        it('should not request a clone when number is -Infinity', () => {
+            const { handler } = bindNumber(-Infinity);
+
+            expect(mockClone).not.toHaveBeenCalled();
+            expect(handler.isVisible).toBe(false);
+        });
+
+        it('should not request a clone when number is NaN', () => {
+            const { handler } = bindNumber(NaN);
+
+            expect(mockClone).not.toHaveBeenCalled();
+            expect(handler.isVisible).toBe(false);
+        });
+
+        it('should hide element when number floors to zero', () => {
+            const { handler, result } = bindNumber(0.5);
+
+            // 0 < n < 1 floors to 0 and is rejected, exactly like a plain 0
+            expect(handler.isVisible).toBe(false);
+            expect(mockClone).not.toHaveBeenCalled();
+            expect(countOf(result)).toBe(-1);
+        });
+
+        it('should floor a fractional number above one', () => {
+            const { handler, result } = bindNumber(3.7);
+
+            expect(handler.isVisible).toBe(true);
+            expect(mockClone).toHaveBeenCalledTimes(1);
+            expect(countOf(result)).toBe(3);
+        });
+
+        it('should accept any finite number — there is no sanity cap', () => {
+            const { handler, result } = bindNumber(Number.MAX_SAFE_INTEGER);
+
+            expect(handler.isVisible).toBe(true);
+            expect(countOf(result)).toBe(Number.MAX_SAFE_INTEGER);
         });
     });
 
@@ -560,6 +626,57 @@ describe('Repeat handler', () => {
         });
     });
 
+    describe('R4-4: repeat prefix must be a valid identifier', () => {
+        // The prefix builds the formal parameter names of every compiled expression in the subtree
+        // (`prefixItem` / `prefixIndex` / `prefixCount`), and expression bodies compile in strict mode.
+        // An unusable prefix must disable this handler rather than break compilation downstream.
+        const invalidPrefixes = [
+            'my-2nd',      // kebab remnant: fromKebabToCamelCase only rewrites `-[a-z]`
+            'foo:bar',     // the attribute parser happily produces this
+            '2nd',         // cannot start with a digit
+            'let',         // strict-mode-only reserved word
+            'eval',        // illegal strict-mode parameter name
+        ];
+
+        it.each(invalidPrefixes)('should refuse to bind with prefix %s', (prefix) => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+            const { el, attrs, classes } = createElements('ctx.items', prefix);
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+
+            expect(handler.hasNExpression).toBe(false);
+            expect(consoleSpy).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                el,
+                expect.stringContaining('is not a valid identifier')
+            );
+            consoleSpy.mockRestore();
+        });
+
+        it('should leave the incoming execution params untouched when the prefix is invalid', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+            const { el, attrs, classes } = createElements('ctx.items', 'my-2nd');
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const params = { names: ['outer'], values: ['kept'] } as any;
+
+            // The subtree keeps compiling: no `my-2nd` parameter is ever contributed.
+            expect(handler.bind(params, () => ['a', 'b'])).toBe(params);
+            expect(mockClone).not.toHaveBeenCalled();
+            consoleSpy.mockRestore();
+        });
+
+        it('should bind normally with a valid prefix', () => {
+            const { el, attrs, classes } = createElements('ctx.items', 'row');
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+
+            const result = handler.bind(undefined, () => ['a', 'b']);
+
+            expect(handler.hasNExpression).toBe(true);
+            expect(result!.names).toEqual(expect.arrayContaining(['rowItem', 'rowIndex', 'rowCount']));
+        });
+    });
+
     describe('prefix conflict with transformer', () => {
         // `instances` returns ReadonlyArrays; reach for the live mutable arrays via the private fields
         // so these tests can install and tear down a fake transformer entry without polluting the
@@ -585,7 +702,7 @@ describe('Repeat handler', () => {
                 expect(consoleSpy).toHaveBeenCalledWith(
                     `${Constants.DISPLAY_NAME}: `,
                     el,
-                    expect.stringContaining("conflicting with transformer")
+                    expect.stringContaining("conflicting with rowItem transformer")
                 );
             } finally {
                 transformerNames.pop();
@@ -673,6 +790,100 @@ describe('Repeat handler', () => {
             expect(result1).toBeDefined();
             expect(result2).toBeDefined();
             expect(result2!.names).toContain('item');
+        });
+    });
+
+    describe('R2-5: single-bind repeat must not freeze the outer scope', () => {
+        // A '#' repeat freezes its own DATA SOURCE, not the scope it lives in.
+        // The skip path used to return a stored ExecutionParams snapshot, and because
+        // createOrExtendRepeatParams builds that snapshot by COPYING the incoming outer
+        // params, the snapshot also pinned the enclosing nb-repeat / nb-var values.
+        function outerParams(label: string): ExecutionParams {
+            return new ExecutionParams(['label'], [label]);
+        }
+
+        function valueOf(params: ExecutionParams | undefined, name: string): any {
+            const index = params!.names.indexOf(name);
+            return index >= 0 ? params!.values[index] : undefined;
+        }
+
+        it('should propagate the fresh outer scope on the single-bind skip path', () => {
+            const { el, attrs, classes } = createElements('#ctx.items');
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+
+            const mockExec = jest.fn().mockReturnValue(['a', 'b']);
+
+            const first = handler.bind(outerParams('outer-1'), mockExec);
+            expect(valueOf(first, 'label')).toBe('outer-1');
+
+            const second = handler.bind(outerParams('outer-2'), mockExec);
+
+            // the expression is still evaluated only once...
+            expect(mockExec).toHaveBeenCalledTimes(1);
+            // ...but the outer scope must be this cycle's, not the first cycle's
+            expect(valueOf(second, 'label')).toBe('outer-2');
+        });
+
+        it('should keep item, index and count frozen while the outer scope moves', () => {
+            const { el, attrs, classes } = createElements('#ctx.items');
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+
+            // a changed data source must be ignored by '#'
+            const mockExec = jest.fn()
+                                 .mockReturnValueOnce(['a', 'b'])
+                                 .mockReturnValue(['x', 'y', 'z']);
+
+            handler.bind(outerParams('outer-1'), mockExec);
+            const second = handler.bind(outerParams('outer-2'), mockExec);
+
+            expect(valueOf(second, Constants.ITEM_EXECUTION_PARAM_NAME)).toBe('a');
+            expect(valueOf(second, Constants.INDEX_EXECUTION_PARAM_NAME)).toBe(0);
+            expect(valueOf(second, Constants.TOTAL_COUNT_EXECUTION_PARAM_NAME)).toBe(2);
+            expect(valueOf(second, 'label')).toBe('outer-2');
+        });
+
+        it('should propagate the fresh outer scope for a prefixed single-bind repeat', () => {
+            const { el, attrs, classes } = createElements('#ctx.items', 'row');
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+
+            const mockExec = jest.fn().mockReturnValue(['a', 'b']);
+
+            handler.bind(outerParams('outer-1'), mockExec);
+            const second = handler.bind(outerParams('outer-2'), mockExec);
+
+            expect(valueOf(second, 'label')).toBe('outer-2');
+            expect(valueOf(second, 'rowItem')).toBe('a');
+            expect(valueOf(second, 'rowIndex')).toBe(0);
+            expect(valueOf(second, 'rowCount')).toBe(2);
+        });
+
+        it('should not resurrect a stale outer value when the outer param disappears', () => {
+            const { el, attrs, classes } = createElements('#ctx.items');
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+
+            const mockExec = jest.fn().mockReturnValue(['a', 'b']);
+
+            handler.bind(outerParams('outer-1'), mockExec);
+            const second = handler.bind(undefined, mockExec);
+
+            expect(second!.names).not.toContain('label');
+            expect(valueOf(second, Constants.ITEM_EXECUTION_PARAM_NAME)).toBe('a');
+        });
+
+        it('should keep a frozen item that is no longer reachable from the data source', () => {
+            const { el, attrs, classes } = createElements('#ctx.items');
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+
+            const original = { v: 1 };
+            const mockExec = jest.fn()
+                                 .mockReturnValueOnce([original, { v: 2 }])
+                                 .mockReturnValue([{ v: 9 }, { v: 8 }]);
+
+            handler.bind(outerParams('outer-1'), mockExec);
+            const second = handler.bind(outerParams('outer-2'), mockExec);
+
+            // identity, not just shape - the item is remembered, not re-read
+            expect(valueOf(second, Constants.ITEM_EXECUTION_PARAM_NAME)).toBe(original);
         });
     });
 

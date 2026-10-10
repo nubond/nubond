@@ -523,13 +523,16 @@ describe('Components', () => {
     });
 
     describe('styleSanitizer in setStyleTemplate', () => {
-        it('should apply styleSanitizer when provided', () => {
+        it('should not apply htmlSanitizer/styleSanitizer to inline template and style', () => {
             class MyCtx implements IComponentContext {}
-            const sanitizer = (style: string) => style.replace('red', 'blue');
+            const htmlSanitizer = jest.fn((html: string) => html.replace('html', 'sanitized'));
+            const styleSanitizer = jest.fn((style: string) => style.replace('red', 'blue'));
             components.add('sanitize-style-comp', MyCtx as any, [], undefined,
                 '<div>html</div>', ':host { color: red; }', undefined,
-                mockBinderCreator, () => undefined, () => sanitizer, () => undefined);
+                mockBinderCreator, () => htmlSanitizer, () => styleSanitizer, () => undefined);
             expect(components.has('sanitize-style-comp')).toBe(true);
+            expect(htmlSanitizer).not.toHaveBeenCalled();
+            expect(styleSanitizer).not.toHaveBeenCalled();
         });
     });
 
@@ -573,6 +576,122 @@ describe('Components', () => {
                 `${Constants.DISPLAY_NAME}: `,
                 expect.stringContaining(`Component '${name}' registration error`)
             );
+        });
+    });
+
+    describe('R3-5: adopted stylesheets are adopted in declared order', () => {
+        let seq = 0;
+
+        //a real binder is not needed; $bind only forwards it
+        const stubBinder = () => ({
+            bind: () => {},
+            detectChanges: () => {},
+            dispose: () => {},
+            onDispose: () => {},
+        } as any);
+
+        /** register + instantiate + drive $bind; the shadow root is opened so the test can read it back */
+        function bindComponent(adoptedStyleNames: Array<string>): ShadowRoot {
+            const name = `r35-comp-${++seq}-${Date.now()}`;
+            class MyCtx implements IComponentContext {}
+
+            injectables.register(MyCtx as any, []);
+            components.add(name, MyCtx as any, [], undefined,
+                '<div>tpl</div>', undefined, adoptedStyleNames,
+                stubBinder, () => undefined, () => undefined, () => ({ mode: 'open' }));
+
+            const el = document.createElement(name);
+            document.body.appendChild(el);
+            (el as any).$bind(stubBinder(), {} as any, false);
+
+            if (!el.shadowRoot) { throw new Error('no shadow root — harness problem'); }
+            return el.shadowRoot;
+        }
+
+        it('should adopt two ready stylesheets in declared order, not registration order', () => {
+            adoptedStyles.add('r35-a', '.a { color: red; }', () => undefined);
+            adoptedStyles.add('r35-b', '.b { color: blue; }', () => undefined);
+
+            const sheetA = adoptedStyles.get('r35-a')!;
+            const sheetB = adoptedStyles.get('r35-b')!;
+
+            //declared in the reverse of the registration order
+            const sheets = [...bindComponent(['r35-b', 'r35-a']).adoptedStyleSheets];
+
+            expect(sheets).toContain(sheetA);
+            expect(sheets).toContain(sheetB);
+            expect(sheets.indexOf(sheetB)).toBeLessThan(sheets.indexOf(sheetA));
+        });
+
+        it('should adopt async stylesheets in declared order even when they resolve out of order', async () => {
+            //'r35-slow' resolves after 'r35-fast' — pre-fix, network completion order decided
+            //adoptedStyleSheets order, and that array *is* cascade order
+            let resolveSlow: (v: string) => void = () => {};
+            adoptedStyles.add('r35-slow', { get: () => new Promise<string>(r => { resolveSlow = r; }) }, () => undefined);
+            adoptedStyles.add('r35-fast', { get: () => Promise.resolve('.f { color: blue; }') }, () => undefined);
+
+            const shadowRoot = bindComponent(['r35-slow', 'r35-fast']);
+
+            //tryPrepare defers its ready callbacks through setTimeout, so real macrotasks are needed
+            const flush = async () => {
+                for (let i = 0; i < 5; i++) {
+                    for (let j = 0; j < 10; j++) { await Promise.resolve(); }
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            };
+
+            await flush();
+            resolveSlow('.s { color: red; }');
+            await flush();
+
+            const sheets = [...shadowRoot.adoptedStyleSheets];
+            const sheetSlow = adoptedStyles.get('r35-slow')!;
+            const sheetFast = adoptedStyles.get('r35-fast')!;
+
+            expect(sheets).toContain(sheetSlow);
+            expect(sheets).toContain(sheetFast);
+            expect(sheets.indexOf(sheetSlow)).toBeLessThan(sheets.indexOf(sheetFast));
+        });
+
+        it('should keep the two framework stylesheets first', () => {
+            adoptedStyles.add('r35-own', '.o { color: red; }', () => undefined);
+
+            const sheets = [...bindComponent(['r35-own']).adoptedStyleSheets];
+
+            expect(sheets[0]).toBe(adoptedStyles.processingHideCSSStyleSheet);
+            expect(sheets[1]).toBe(adoptedStyles.hideCSSStyleSheet);
+            expect(sheets[2]).toBe(adoptedStyles.get('r35-own'));
+        });
+
+        it('should dedupe repeated names so the completion gate is still reachable', () => {
+            adoptedStyles.add('r35-dup', '.d { color: red; }', () => undefined);
+
+            const sheets = [...bindComponent(['r35-dup', 'r35-dup']).adoptedStyleSheets];
+            const sheet = adoptedStyles.get('r35-dup')!;
+
+            expect(sheets).toContain(sheet);
+            expect(sheets.filter(el => el === sheet).length).toBe(1);
+        });
+
+        it('should still adopt a ready style declared before an unregistered one', () => {
+            //tryPrepare returns false for an unregistered name and never calls back, so the
+            //completion gate has to be re-evaluated from that fallback too — otherwise the
+            //sheets already collected are never pushed
+            adoptedStyles.add('r35-ready', '.r { color: red; }', () => undefined);
+            const sheet = adoptedStyles.get('r35-ready')!;
+
+            const sheets = [...bindComponent(['r35-ready', 'r35-unregistered']).adoptedStyleSheets];
+
+            expect(sheets).toContain(sheet);
+            expect(sheets.filter(el => el === sheet).length).toBe(1);
+        });
+
+        it('should adopt only the framework stylesheets when every name is unregistered', () => {
+            const sheets = [...bindComponent(['r35-nope-1', 'r35-nope-2']).adoptedStyleSheets];
+
+            expect(sheets.length).toBe(2);
+            expect(sheets[0]).toBe(adoptedStyles.processingHideCSSStyleSheet);
+            expect(sheets[1]).toBe(adoptedStyles.hideCSSStyleSheet);
         });
     });
 });

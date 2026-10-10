@@ -113,23 +113,38 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
 
                                                     //handle adopted styles
                                                     if (Helpers.isArray(adoptedStyleNames)) {
-                                                        for (const el of adoptedStyleNames!) {
-                                                            Environment.adoptedStyles.tryPrepare(el, () => {
-                                                                const adoptedCssStyleSheet = Environment.adoptedStyles.get(el);
-                                                                if (!Helpers.isUndefined(adoptedCssStyleSheet)) {
-                                                                    if (root!.adoptedStyleSheets.indexOf(adoptedCssStyleSheet!) < 0) {
-                                                                        root!.adoptedStyleSheets.push(adoptedCssStyleSheet!);
+                                                        const adoptedStyleSheets = new Map<string, CSSStyleSheet | undefined>();
+                                                        const tryPushAdoptedStyleSheets = () => { 
+                                                            if (adoptedStyleNames!.length == adoptedStyleSheets.size) {
+                                                                for (const el of adoptedStyleNames!) {
+                                                                    const adoptedCssStyleSheet = adoptedStyleSheets.get(el);
+                                                                    if (!Helpers.isUndefined(adoptedCssStyleSheet)) {
+                                                                        if (root!.adoptedStyleSheets.indexOf(adoptedCssStyleSheet!) < 0) {
+                                                                            root!.adoptedStyleSheets.push(adoptedCssStyleSheet!);
+                                                                        }
+
+                                                                        this._adoptedCssStyleSheet!.push(adoptedCssStyleSheet!);
+
+                                                                        const adoptedCssStyleSheetUsageCount = adoptedCssStyleSheetsTracker!.get(adoptedCssStyleSheet!);
+                                                                        adoptedCssStyleSheetsTracker!.set(adoptedCssStyleSheet!,
+                                                                                                          (Helpers.isNumber(adoptedCssStyleSheetUsageCount) 
+                                                                                                                       ? adoptedCssStyleSheetUsageCount! 
+                                                                                                                       : 0) + 1);
                                                                     }
-
-                                                                    this._adoptedCssStyleSheet!.push(adoptedCssStyleSheet!);
-
-                                                                    const adoptedCssStyleSheetUsageCount = adoptedCssStyleSheetsTracker!.get(adoptedCssStyleSheet!);
-                                                                    adoptedCssStyleSheetsTracker!.set(adoptedCssStyleSheet!,
-                                                                                                      (Helpers.isNumber(adoptedCssStyleSheetUsageCount) 
-                                                                                                                ? adoptedCssStyleSheetUsageCount! 
-                                                                                                                : 0) + 1);
                                                                 }
+                                                            }
+                                                        };
+
+                                                        for (const el of adoptedStyleNames!) {
+                                                            const prepareRequestResult = Environment.adoptedStyles.tryPrepare(el, asyncCallBack => {
+                                                                adoptedStyleSheets.set(el, Environment.adoptedStyles.get(el));
+                                                                tryPushAdoptedStyleSheets();
                                                             });
+
+                                                            if (!prepareRequestResult) {
+                                                                adoptedStyleSheets.set(el, undefined);
+                                                                tryPushAdoptedStyleSheets();
+                                                            }
                                                         }
                                                     }
                                                 }

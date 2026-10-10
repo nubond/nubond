@@ -395,5 +395,48 @@ describe('Aspects', () => {
             expect(sanitizer).toHaveBeenCalledWith(':host { color: red; }');
             expect(aspects.isReady('san-a')).toBe(true);
         });
+
+        it('should not apply the style sanitizer to an inline style', () => {
+            class MyAspect implements IAspectContext {}
+            const sanitizer = jest.fn((css: string) => css.replace('red', 'blue'));
+            aspects.add('san-inline-a', MyAspect as any, [], ':host { color: red; }', undefined, () => sanitizer);
+
+            expect(aspects.isReady('san-inline-a')).toBe(true);
+            expect(sanitizer).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('adopted style names', () => {
+        // The Aspects handler gates its adopted-style push on
+        // `adoptedStyleNames.length === collectedSheets.size`, where the map is keyed by name.
+        // A repeated name would make that gate unreachable, so the dedupe below is what keeps
+        // it satisfiable — it belongs to the registration path, not the handler.
+        it('should remove repeated adopted style names at registration', () => {
+            class MyAspect implements IAspectContext {}
+            aspects.add('dedupe-a', MyAspect as any, [], undefined,
+                        ['a', 'a', 'b', 'a'], () => undefined);
+
+            expect(aspects.getStyles('dedupe-a')?.[1]).toEqual(['a', 'b']);
+        });
+
+        it('should keep first-occurrence declared order when deduping', () => {
+            class MyAspect implements IAspectContext {}
+            aspects.add('dedupe-order-a', MyAspect as any, [], undefined,
+                        ['z', 'a', 'z', 'm'], () => undefined);
+
+            expect(aspects.getStyles('dedupe-order-a')?.[1]).toEqual(['z', 'a', 'm']);
+        });
+
+        it('should not dedupe case variants, since the filter is case-sensitive', () => {
+            // Characterization: adopted-style *lookup* is case-insensitive, so both entries
+            // resolve to the same sheet. The handler adopts it once and the usage count is
+            // incremented once per entry — symmetric with dispose, which decrements once per
+            // entry, so this does not leak. See the handler spec for that half.
+            class MyAspect implements IAspectContext {}
+            aspects.add('case-a', MyAspect as any, [], undefined,
+                        ['Shared', 'shared'], () => undefined);
+
+            expect(aspects.getStyles('case-a')?.[1]).toEqual(['Shared', 'shared']);
+        });
     });
 });

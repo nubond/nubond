@@ -5,9 +5,9 @@ thousands of bindings — and the `create-nubond` showcase.
 
 ## Config-first module
 
-Settings that entities capture when their decorators run (`shadowRootConfig`, sanitizers for inline
-templates) must be applied before any entity module is imported. Make it the first import of
-`index.ts`; it is also the last moment the original query string exists (the router drops it).
+The global `shadowRootConfig` is captured by each `@Component` when its decorator runs, so it must be
+applied before any component module is imported. Make it the first import of `index.ts`. (Every
+other global setting — debug info, sanitizers, CD strategy — can stay in `@AppRoot`.)
 
 ```typescript
 // src/config-first.ts
@@ -16,9 +16,11 @@ import { $Config } from 'nubond';
 if (process.env.NODE_ENV !== 'production') {
     $Config({ shadowRootConfig: { mode: 'open' } });   // e.g. so a test harness can reach in
 }
-
-export const INITIAL_SEARCH = typeof window === 'undefined' ? '' : window.location.search;
 ```
+
+With **path-mode** routing this module is also the place to capture `window.location.search` before
+the router rewrites the URL — query parameters that are not route slots do not survive. Hash-mode
+routing keeps the document path and query string, so there is nothing to rescue.
 ```typescript
 // src/index.ts
 import './config-first';            // must stay first
@@ -250,8 +252,12 @@ Down — inputs; up — events:
 ```
 
 `nb-in-ref` for `item` because it is a class instance with methods (`beginEdit()`, `endEdit()`);
-`nb-in` for `time`, a plain cloneable value object. The `nb-if` sits on a child of the repeated
-element — never put two visibility handlers (`nb-repeat`, `nb-if`, `nb-switch`) on one element.
+`nb-in` for `time`, a plain cloneable value object. The `nb-if` on the component tag also makes it
+lazy: only the scheduler for the active index is constructed, each of the others is built the first
+time its tab is opened, and all of them keep their state once built.
+
+To hand a **callback** down, use `nb-in-ref:on-pick="this.pick"` — a function passed with `nb-in` is
+not cloneable and never arrives. Usually an event is the better channel:
 
 ```typescript
 constructor(private _eventDispatcher: EventDispatcher) { }
@@ -262,8 +268,9 @@ The parent receives the payload as `data` in the event expression.
 
 ## Combining `nb-repeat` with `nb-switch` / `nb-if`
 
-`nb-repeat`, `nb-if` and `nb-switch` all drive the same hidden class, so give each its own element —
-the switch (or condition) goes on a child of the repeated row:
+`nb-repeat` may share its element with `nb-if` or `nb-switch` — each handler holds its own claim on
+the hidden class — but not with `nb-case`/`nb-default`, and a row that is both repeated and switched
+is hard to read. Put the switch on a child of the repeated row:
 
 ```html
 <fluent-tab nb-repeat="this.schedulers"
@@ -280,8 +287,11 @@ the switch (or condition) goes on a child of the repeated row:
 </fluent-tab>
 ```
 
+`nb-switch="index"` with `@0` works because both sides are numbers — switch matching is type-strict.
+
 Use `item?.` on and inside repeated elements — an empty repeat still evaluates its element with `item`
-undefined. When the list is large, filter in TypeScript instead of hiding rows with `nb-if`.
+undefined. A short list can be filtered in place with `nb-if` on the repeated element
+(`nb-repeat="this.rows" nb-if="item?.visible"`); when the list is large, filter in TypeScript instead.
 
 ## Global templates for repeated markup
 
@@ -362,7 +372,8 @@ public refresh(): void { this._currentContainerContext!.detectChanges(); }
 
 These hooks fire for **`nb-container` children only** — never for components. To track a component,
 capture it with `nb-bound` on the tag, or have the component announce itself through
-`EventDispatcher`.
+`EventDispatcher`. A container that starts hidden attaches — and notifies — when it is first shown,
+and one that is hidden when its name changes detaches only once it is shown again.
 
 ## High-frequency interaction without change detection
 
@@ -467,8 +478,9 @@ cells this is the difference between one pass and hundreds.
 
 ## Composing child inputs as object literals
 
-`nb-in` deep-clones and deep-compares, so building a fresh object per pass is cheap and idiomatic —
-the equality gate absorbs the churn:
+`nb-in` deep-clones and deep-compares, so building a fresh object per pass is idiomatic — the equality
+gate absorbs the churn. Keep these objects small and plain: each one is cloned on every parent pass,
+whether or not it changed.
 
 ```html
 <time-cell nb-repeat="this.hoursToShow"
@@ -579,9 +591,19 @@ state between visits:
 <div nb-switch="this.activePane">
     <section nb-case="@general">…</section>
     <section nb-case="@appearance">…</section>
-    <section nb-case="@advanced">…</section>
+    <advanced-pane nb-case="@advanced"></advanced-pane>   <!-- not constructed until first picked -->
 </div>
 ```
+
+This scales to dozens of heavy variants: a component or container placed directly on a case (or
+under one) costs nothing until its case is first picked, so startup pays only for what is on screen.
+The price is paid on first show, and a variant's constructor has not run before then — a panel that
+must react to something that happened earlier needs that state passed in (an input, or a service it
+reads on construction), not a subscription it would have had to make at startup.
+
+Hiding that nuBond does not drive gets none of this. Menus in a closed `popover`, the body of a
+`<dialog>`, collapsed accordion content: all of it is built at startup unless you put it under an
+`nb-if` bound to the open state.
 
 The alternative — one `nb-repeat` whose array is swapped per pane — makes the repeat reuse its rows
 by index, rewriting every control on screen into a control of some other kind (thousands of DOM

@@ -84,7 +84,7 @@ components add `.scss`. Aspects/transformers/injectables are single `.ts` files.
     "parcel-reporter-static-files-copy": "^1.5.3",
     "posthtml": "^0.16.7"
   },
-  "dependencies": { "nubond": "^1.0.8" }
+  "dependencies": { "nubond": "^1.0.9" }
 }
 ```
 
@@ -112,9 +112,9 @@ entity names. Matching `remove-*` commands exist in `package-cli.js` (no npm scr
 
 Known problems in the `create-nubond` 1.0.11 templates:
 
-- **`add-container` / `acont` is broken** in the `blank` and `native` templates — `package-cli.js`
-  calls the misspelled `addDirectoryWitFiles`. Fix the typo to `addDirectoryWithFiles` in the
-  generated project, or copy an existing container folder.
+- **`add-container` / `acont` is broken** in every template — `package-cli.js` calls the misspelled
+  `addDirectoryWitFiles`. Fix the typo to `addDirectoryWithFiles` in the generated project, or copy
+  an existing container folder.
 - **The scripts assume Windows.** `%INIT_CWD%` / `%ROOT_CWD%` are cmd.exe syntax; under a POSIX
   script-shell (macOS, Linux, or npm configured with bash) `%INIT_CWD%` is passed through literally.
   There, run the CLI directly: `node package-cli.js "$PWD" add-component scss MyCard` — the target
@@ -250,7 +250,7 @@ including route slot containers declared directly in `index.html`.
 
 | Package | Purpose |
 |---|---|
-| `nubond` (1.0.8) | The framework. |
+| `nubond` (1.0.9) | The framework. |
 | `create-nubond` (1.0.11) | Scaffolder — `npm create nubond <template> <name>`. |
 | `@nubond/posthtml-value-interpolation` (1.0.3) | `{{ expr }}` → `<span nb-value="expr">` at build time. |
 | nuBond Language Service (VS Code) | Hover, completion, go-to-definition, rename, references, diagnostics, CodeLens across templates and classes. |

@@ -66,7 +66,7 @@ export abstract class BaseTemplateEntityMetaData {
         if (Helpers.isNotEmptyString(value)) {
             const trimmedValue = value.trim();
             if (trimmedValue.length > 0) {
-                return trimmedValue.startsWith('/') && (trimmedValue.indexOf(' ') < 0) &&
+                return trimmedValue.startsWith('/') && (trimmedValue.indexOf('\n') < 0) &&
                        (trimmedValue.indexOf('{') < 0) && (trimmedValue.indexOf('<') < 0);
             } else {
                 return false;
@@ -106,17 +106,18 @@ export class TemplateEntityMetaData extends BaseTemplateEntityMetaData {
             if (this.isUrlLikeAndNotContent(htmlTemplateOrPath)) {
                 this.htmlTemplatePath = htmlTemplateOrPath;
             } else {
-                this.setHtmlTemplate(htmlTemplateOrPath);
+                this.setHtmlTemplate(htmlTemplateOrPath, false, true);
             }
         }
     }
 
-    public setHtmlTemplate(htmlTemplate: string): void {
-        if (!this.isHTMLTemplateReady) {
-            const newNode = document.createElement('template');
+    public setHtmlTemplate(htmlTemplate: string, override: boolean = false, skipSanitizer: boolean = false): void {
+        if (!this.isHTMLTemplateReady || (override === true)) {
             const htmlSanitizer = this.htmlSanitizerCreator();
-            newNode.innerHTML = Helpers.isFunction(htmlSanitizer) ? htmlSanitizer!(htmlTemplate) : htmlTemplate;
-    
+            
+            const newNode = document.createElement('template');
+            newNode.innerHTML = Helpers.isFunction(htmlSanitizer) && (skipSanitizer !== true) ? htmlSanitizer!(htmlTemplate) : htmlTemplate;
+
             this._htmlTemplate = newNode;
             this.isHTMLTemplateReady = true;
         }

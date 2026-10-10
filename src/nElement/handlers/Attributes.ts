@@ -11,6 +11,8 @@ import { Helpers } from '../../Helpers';
 import { Constants } from '../../Constants';
 import { Console } from '../../Console';
 
+//TODO: think about solution of boolean attributes 
+//(disabled, checked, readonly, hidden, etc.) require null or false, if passed false it will become xxx="false"
 export class Attributes extends Base implements IHandler<Map<string, IExpressionDetails>> {
     private readonly DEFAULT_PREFIX_AND_SEPARATOR = Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR;
 
@@ -30,7 +32,7 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
         return this._isDirty;
     }
 
-    constructor(nativeElement: Element) {
+    constructor(nativeElement: Element, getShowDebugInfo: () => boolean) {
         super();
         
         this._nativeElement = nativeElement;
@@ -61,6 +63,10 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
                                            Constants.KNOWN_HANDLER_EXTENSIONS_WITHOUT_VALUES.has(attributeName)) {
                                     Console.error(nativeElement, `system (${attributeName}) attribute changes is not allowed`);
                                 } else {
+                                    if (attributeName.startsWith('on') && getShowDebugInfo()) {
+                                        Console.warn(nativeElement, `${attributeName} looks like an HTML Event Attribute, event subscription should be done via ${this.DEFAULT_PREFIX_AND_SEPARATOR}event`);
+                                    }
+
                                     this.hasNExpression = true;
 
                                     if (!this.nExpression) {

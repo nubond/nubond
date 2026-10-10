@@ -17,7 +17,7 @@ export class Html extends Base implements IHandler<IExpressionDetails> {
     
     private readonly _htmlSanitizer: ((html: string) => string) | undefined;
 
-    private _previousHtml = '';
+    private _previousHtml: string | undefined = undefined;
     private _html = '';
 
     protected get html(): string {

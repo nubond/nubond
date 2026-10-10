@@ -32,11 +32,11 @@ export class Switch extends Base implements IHandler<IExpressionDetails>, IVisib
         return this._isVisible;
     }
 
-    private _value = '';
-    public get value(): string {
+    private _value: any = undefined;
+    public get value(): any {
         return this._value;
     }
-    protected set value(value: string) {
+    protected set value(value: any) {
         this._value = value;
         this._isDirty = true;
     }
@@ -73,7 +73,10 @@ export class Switch extends Base implements IHandler<IExpressionDetails>, IVisib
         if (this.hasNExpression) {
             this.processExpressionExecution(this.nExpression!, Constants.SWITCH_HANDLER_ATTRIBUTE_NAME,
                                             expression => executeExpression(expression, executionParams), 
-                                            data => this.value = Helpers.stringify(data));
+                                            data => this.value = Helpers.isPrimitive(data) && 
+                                                                 (!Helpers.isNumber(data) || Helpers.isNumber(data) && !isNaN(data))
+                                                                            ? data 
+                                                                            : Helpers.stringify(data));
 
             for (const el of this._cases!) {
                 el.bind(executionParams, executeExpression);
@@ -113,9 +116,9 @@ export class Switch extends Base implements IHandler<IExpressionDetails>, IVisib
 
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show();
+                    this._classes!.show(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide();
+                    this._classes!.hide(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;

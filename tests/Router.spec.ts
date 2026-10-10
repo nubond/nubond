@@ -1868,4 +1868,225 @@ describe('Router', () => {
             expect(spy).toHaveBeenCalled();
         });
     });
+
+    describe('R4-3: a popstate from outside the router flow re-reads the URL', () => {
+        // A hash link or a manual URL edit creates a browser history entry without a state and fires
+        // popstate with state null. The handler used to reset every slot to its default, leaving the URL
+        // and the internal state out of sync. It now parses the URL like the constructor does, applies it
+        // as a full (non-partial) state, drops the forward states like go() does, and stamps the
+        // browser-created entry with replaceState, so later Back/Forward traversals hit the state-found branch.
+        function followHashLink(hash: string) {
+            realPushState(null, '', '/' + hash);   // the browser adds the entry without a state...
+            window.dispatchEvent(new PopStateEvent('popstate', { state: null }));   // ...and fires popstate
+        }
+
+        function lastReplacedState(): any {
+            // the router under test registered its popstate listener last, so its call is the last one
+            const calls = (history.replaceState as jest.Mock).mock.calls;
+            return calls[calls.length - 1][0];
+        }
+
+        it('should apply the route state parsed from the URL', () => {
+            const router = new Router('/#/{page=home}/{id}', () => true, () => false);
+            router.go({ page: 'a' });
+            const afterSpy = jest.fn();
+            router.onAfterStateChange(afterSpy);
+
+            followHashLink('#/users/5');
+
+            expect(router.state!['page']).toBe('users');
+            expect(router.state!['id']).toBe('5');
+            expect(router.path).toBe('/users/5');
+            expect(afterSpy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ page: 'users', id: '5' }), '/a', '/users/5');
+        });
+
+        it('should stamp the browser-created entry instead of pushing a second one', () => {
+            const router = new Router('/#/{page=home}/{id}', () => true, () => false);
+            router.go({ page: 'a' });
+            (history.pushState as jest.Mock).mockClear();
+            (history.replaceState as jest.Mock).mockClear();
+
+            followHashLink('#/users/5');
+
+            expect(history.pushState).not.toHaveBeenCalled();
+            expect(history.replaceState).toHaveBeenLastCalledWith(
+                expect.objectContaining({ page: 'users', id: '5' }),
+                '',
+                '/#/users/5'
+            );
+        });
+
+        it('should reset slots that are absent from the URL to their defaults', () => {
+            const router = new Router('/#/{page=home}/{id}', () => true, () => false);
+            router.go({ page: 'users', id: '5' });
+
+            followHashLink('#/home');
+
+            expect(router.state!['page']).toBe('home');
+            expect(router.state!['id']).toBeUndefined();
+            expect(router.path).toBe('/home');
+        });
+
+        it('should reset to defaults, rewrite the URL and record the state when the hash is cleared', () => {
+            const router = new Router('/#/{page=home}/{id}', () => true, () => false);
+            router.go({ page: 'a' });
+            (history.replaceState as jest.Mock).mockClear();
+
+            followHashLink('');
+
+            expect(router.state!['page']).toBe('home');
+            expect(history.replaceState).toHaveBeenLastCalledWith(expect.objectContaining({ page: 'home' }), '', '/#/home');
+
+            // the cleared-hash entry is recorded, so goBack steps back to 'a' instead of being a no-op
+            (history.back as jest.Mock).mockClear();
+            router.goBack();
+            expect(router.state!['page']).toBe('a');
+            expect(history.back).toHaveBeenCalled();
+        });
+
+        it('should let goBack return to the state before the hash link', () => {
+            const router = new Router('/#/{page=home}/{id}', () => true, () => false);
+            router.go({ page: 'a' });
+            router.go({ page: 'b' });
+
+            followHashLink('#/users/5');
+            router.goBack();
+
+            expect(router.state!['page']).toBe('b');
+            expect(history.back).toHaveBeenCalled();
+        });
+
+        it('should not record a duplicate when Back/Forward return to the stamped entry', () => {
+            const router = new Router('/#/{page=home}/{id}', () => true, () => false);
+            router.go({ page: 'a' });
+            router.go({ page: 'b' });
+            followHashLink('#/users/5');
+            const stamped = lastReplacedState();
+
+            // browser Back to 'b', then Forward to the stamped hash-link entry
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { page: 'b', id: undefined } }));
+            window.dispatchEvent(new PopStateEvent('popstate', { state: stamped }));
+            expect(router.state!['page']).toBe('users');
+
+            // pre-fix the entry stayed state-less, Forward re-parsed it and appended a duplicate,
+            // so goBack targeted the same path and became a permanent no-op
+            router.goBack();
+            expect(router.state!['page']).toBe('b');
+            router.goBack();
+            expect(router.state!['page']).toBe('a');
+        });
+
+        it('should drop the forward states the browser discarded', () => {
+            const router = new Router('/#/{page=home}/{id}', () => true, () => false);
+            router.go({ page: 'a' });
+            router.go({ page: 'b' });
+            router.go({ page: 'c' });
+            router.goBack();   // on 'b', 'c' is a forward state
+
+            followHashLink('#/x');
+
+            // 'c' is gone, so there is nothing to go forward to...
+            (history.forward as jest.Mock).mockClear();
+            router.goForward();
+            expect(history.forward).not.toHaveBeenCalled();
+            expect(router.state!['page']).toBe('x');
+
+            // ...and goBack lands on 'b' without a transition through 'c'
+            const afterSpy = jest.fn();
+            router.onAfterStateChange(afterSpy);
+            router.goBack();
+            expect(router.state!['page']).toBe('b');
+            expect(afterSpy).toHaveBeenCalledTimes(1);
+            expect(afterSpy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ page: 'b' }), '/x', '/b');
+        });
+    });
+
+    describe('R6-1: a hash-based router keeps the document path and query', () => {
+        // History URLs used to be built root-absolute ('/' or '/#' + path), so an app not served at the
+        // origin root lost its document path as soon as the router was constructed. Hash mode now prefixes
+        // the document path + query captured at construction; an empty route path drops the fragment
+        // entirely. The prefix is absolute on purpose: a bare '#…' resolves against <base href>.
+        const DOCUMENT_PATH = '/app/page.html?lang=en';
+
+        function lastUrl(mock: any): string {
+            const calls = (mock as jest.Mock).mock.calls;
+            return calls[calls.length - 1][2];
+        }
+
+        it('should keep the document path when constructed without route state or defaults', () => {
+            realPushState(null, '', '/app/page.html');
+            (history.replaceState as jest.Mock).mockClear();
+
+            new Router('/#/{page}', () => true, () => false);
+
+            expect(lastUrl(history.replaceState)).toBe('/app/page.html');
+        });
+
+        it('should prefix the route with the document path and query on construction and go()', () => {
+            realPushState(null, '', DOCUMENT_PATH);
+            (history.replaceState as jest.Mock).mockClear();
+
+            const router = new Router('/#/{page=home}', () => true, () => false);
+            expect(lastUrl(history.replaceState)).toBe(DOCUMENT_PATH + '#/home');
+
+            router.go('users');
+            expect(lastUrl(history.pushState)).toBe(DOCUMENT_PATH + '#/users');
+        });
+
+        it('should drop the fragment without a trailing # when the route path becomes empty', () => {
+            realPushState(null, '', DOCUMENT_PATH + '#/users');
+            const router = new Router('/#/{page}', () => true, () => false);
+
+            router.go({ page: null });
+
+            expect(router.path).toBe('');
+            expect(lastUrl(history.pushState)).toBe(DOCUMENT_PATH);
+        });
+
+        it('should keep the document path on a popstate with an unknown state', () => {
+            realPushState(null, '', DOCUMENT_PATH);
+            new Router('/#/{page=home}', () => true, () => false);
+
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { page: 'other' } }));
+
+            // the router under test registered its popstate listener last, so its call is the last one
+            expect(lastUrl(history.pushState)).toBe(DOCUMENT_PATH + '#/other');
+        });
+
+        it('should keep the document path when a hash link clears the hash', () => {
+            realPushState(null, '', DOCUMENT_PATH);
+            const router = new Router('/#/{page=home}', () => true, () => false);
+            router.go('a');
+
+            realPushState(null, '', DOCUMENT_PATH);   // the hash link to '' / '#'
+            window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+
+            expect(router.state!['page']).toBe('home');
+            expect(lastUrl(history.replaceState)).toBe(DOCUMENT_PATH + '#/home');
+        });
+
+        it('should not resolve the URL against <base href>', () => {
+            const base = document.createElement('base');
+            base.href = '/static/';
+            document.head.appendChild(base);
+
+            try {
+                // real history, so the browser-side URL resolution is exercised
+                (history.pushState as jest.Mock).mockRestore();
+                (history.replaceState as jest.Mock).mockRestore();
+                realPushState(null, '', DOCUMENT_PATH);
+
+                const router = new Router('/#/{page}', () => true, () => false);
+                expect(location.pathname + location.search + location.hash).toBe(DOCUMENT_PATH);
+
+                router.go('users');
+                expect(location.pathname + location.search + location.hash).toBe(DOCUMENT_PATH + '#/users');
+
+                router.go({ page: null });
+                expect(location.pathname + location.search + location.hash).toBe(DOCUMENT_PATH);
+            } finally {
+                base.remove();
+            }
+        });
+    });
 });

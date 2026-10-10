@@ -1,4 +1,4 @@
 export interface IVisibilityHandler {
-    show(): void;
-    hide(): void
+    show(requestingHandlerName: string): void;
+    hide(requestingHandlerName: string): void
 }

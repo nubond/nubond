@@ -20,7 +20,7 @@ describe('Container handler', () => {
 
     function createHandler(expression?: string) {
         const el = createElementWithAttr(expression);
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
                                       mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
         return { el, attrs, handler };
@@ -75,7 +75,7 @@ describe('Container handler', () => {
 
     it('should detect expression from attribute', () => {
         const el = createElementWithAttr('@myContainer');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
 
         // Register a container first
         class MockContainer {}
@@ -89,7 +89,7 @@ describe('Container handler', () => {
 
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
                                       mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
 
@@ -191,6 +191,31 @@ describe('Container handler', () => {
             handler.commit();
 
             // instantiateBinder should only be called once
+            expect(envMock.containers.instantiateBinder).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps a #-pinned container name pinned when the element also has an nb-in (R6-2)', () => {
+            const el = document.createElement('div');
+            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}`, '#this.name');
+            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}cfg`, 'this.cfg');
+            const attrs = new Attributes(el, () => false);
+            const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
+                                          mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            const envMock = mockContainersEnv({ has: true, isReady: true });
+
+            const exec1 = jest.fn((expression: string | null | undefined) => expression === 'this.name' ? 'containerA' : 1);
+            handler.bind(undefined, exec1);
+            handler.commit();
+
+            expect(envMock.containers.instantiateBinder).toHaveBeenCalledTimes(1);
+            expect(envMock.containers.instantiateBinder).toHaveBeenCalledWith('containera');
+
+            // instantiating a context re-runs bindInputs for the new context; that must not
+            // release the single-bind state of the container-name expression itself
+            const exec2 = jest.fn((expression: string | null | undefined) => expression === 'this.name' ? 'containerB' : 2);
+            handler.bind(undefined, exec2);
+            handler.commit();
+
             expect(envMock.containers.instantiateBinder).toHaveBeenCalledTimes(1);
         });
 

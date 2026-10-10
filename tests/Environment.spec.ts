@@ -376,6 +376,38 @@ describe('Environment', () => {
             );
         });
 
+        it('should log an error and not throw when the string selector is syntactically invalid', () => {
+            // R8-3: document.querySelector throws a SyntaxError DOMException on a malformed
+            // selector; addApp must soft-fail like every other Environment lifecycle method.
+            (console.error as jest.Mock).mockClear();
+            class InvalidSelectorCtx {}
+            expect(() => {
+                Environment.addApp('#/bad-selector', InvalidSelectorCtx as any, []);
+            }).not.toThrow();
+            expect(console.error as jest.Mock).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining("Invalid selector '#/bad-selector'"),
+            );
+        });
+
+        it('should not create the application when a route-like template is passed as a selector', () => {
+            // R8-3 reachable path: '#/{page}' does not start with '/', so the @AppRoot decorator
+            // classifies it as a selector and it lands in querySelector.
+            (console.error as jest.Mock).mockClear();
+            let instantiated = false;
+            class RouteLikeCtx {
+                constructor() { instantiated = true; }
+            }
+            expect(() => {
+                Environment.addApp('#/{page}', RouteLikeCtx as any, []);
+            }).not.toThrow();
+            expect(instantiated).toBe(false);
+            expect(console.error as jest.Mock).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining("Invalid selector '#/{page}'"),
+            );
+        });
+
         it('should bind with an Element directly', () => {
             const div = document.createElement('div');
             document.body.appendChild(div);
@@ -385,6 +417,42 @@ describe('Environment', () => {
             expect(() => {
                 Environment.addApp(div, DirectElementCtx as any, []);
             }).not.toThrow();
+        });
+
+        it('should log an error and not create the application for a detached element', () => {
+            // R9-1: a root bound while detached used to bind, then be silently disposed by the
+            // first detection trigger that ran before attachment. Detached roots are rejected up
+            // front now, so that state is unreachable — and the rejection is logged.
+            (console.error as jest.Mock).mockClear();
+            const div = document.createElement('div');   // deliberately not appended
+            let instantiated = false;
+            class DetachedCtx {
+                constructor() { instantiated = true; }
+            }
+            expect(() => {
+                Environment.addApp(div, DetachedCtx as any, []);
+            }).not.toThrow();
+            expect(instantiated).toBe(false);
+            expect(console.error as jest.Mock).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                div,
+                expect.stringContaining('Root element is not connected to DOM'),
+            );
+        });
+
+        it('should not leave a detached element bindable later — attaching it does not revive the app', () => {
+            // The offscreen-preparation pattern (addApp then appendChild) is not supported: the
+            // template must stay untouched, not half-rendered.
+            (console.error as jest.Mock).mockClear();
+            const div = document.createElement('div');
+            div.innerHTML = `<span ${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}="this.text">placeholder</span>`;
+            class OffscreenCtx { public text = 'bound'; }
+
+            Environment.addApp(div, OffscreenCtx as any, []);
+            document.body.appendChild(div);
+            testElements.push(div);
+
+            expect(div.textContent).toBe('placeholder');
         });
 
         it('should bind to document.body when null is passed', () => {
@@ -405,7 +473,8 @@ describe('Environment', () => {
             }).not.toThrow();
             expect(console.error as jest.Mock).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
-                expect.stringMatching(new RegExp(`Attempt to create multiple ${Constants.DISPLAY_NAME} applications binded to the same element`)),
+                expect.anything(),
+                expect.stringMatching(new RegExp(`Attempt to create multiple ${Constants.DISPLAY_NAME} applications binded to the same already bounded tree`)),
             );
         });
 
@@ -424,7 +493,8 @@ describe('Environment', () => {
             }).not.toThrow();
             expect(console.error as jest.Mock).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
-                expect.stringMatching(new RegExp(`Attempt to create multiple ${Constants.DISPLAY_NAME} applications binded to the same element`)),
+                expect.anything(),
+                expect.stringMatching(new RegExp(`Attempt to create multiple ${Constants.DISPLAY_NAME} applications binded to the same already bounded tree`)),
             );
         });
 
@@ -438,6 +508,83 @@ describe('Environment', () => {
             expect(() => {
                 Environment.addApp(div, ConfigCtx as any, []);
             }).not.toThrow();
+        });
+
+        describe('R5-2: a second app inside an already bounded tree', () => {
+            const mapOf = () => (Environment as any)._elementsToContextsMapping as Map<Element, any>;
+
+            it('should refuse to bind a child of an already bounded element', () => {
+                (console.error as jest.Mock).mockClear();
+                const outer = document.createElement('div');
+                const inner = document.createElement('div');
+                outer.appendChild(inner);
+                document.body.appendChild(outer);
+                testElements.push(outer);
+
+                class OuterCtx {}
+                class InnerCtx {}
+                Environment.addApp(outer, OuterCtx as any, []);
+                Environment.addApp(inner, InnerCtx as any, []);
+
+                expect(mapOf().has(outer)).toBe(true);
+                expect(mapOf().has(inner)).toBe(false);
+                expect(console.error as jest.Mock).toHaveBeenCalledWith(
+                    `${Constants.DISPLAY_NAME}: `,
+                    outer,   // the guard reports the bounded ancestor it found, not the requested element
+                    expect.stringMatching(new RegExp(`Attempt to create multiple ${Constants.DISPLAY_NAME} applications binded to the same already bounded tree`)),
+                );
+            });
+
+            it('should refuse to bind a deeply nested descendant', () => {
+                const outer = document.createElement('div');
+                const middle = document.createElement('section');
+                const deep = document.createElement('span');
+                middle.appendChild(deep);
+                outer.appendChild(middle);
+                document.body.appendChild(outer);
+                testElements.push(outer);
+
+                class OuterCtx {}
+                class DeepCtx {}
+                Environment.addApp(outer, OuterCtx as any, []);
+                Environment.addApp(deep, DeepCtx as any, []);
+
+                expect(mapOf().has(deep)).toBe(false);
+            });
+
+            it('should still bind sibling subtrees independently', () => {
+                const first = document.createElement('div');
+                const second = document.createElement('div');
+                document.body.appendChild(first);
+                document.body.appendChild(second);
+                testElements.push(first, second);
+
+                class FirstCtx {}
+                class SecondCtx {}
+                Environment.addApp(first, FirstCtx as any, []);
+                Environment.addApp(second, SecondCtx as any, []);
+
+                expect(mapOf().has(first)).toBe(true);
+                expect(mapOf().has(second)).toBe(true);
+            });
+
+            it('known gap: binding an ANCESTOR of an already bounded element is still allowed', () => {
+                // The guard only walks upwards, so the reverse nesting order is not detected —
+                // both binders end up managing `inner`. See R5-2 in bugs.md.
+                const outer = document.createElement('div');
+                const inner = document.createElement('div');
+                outer.appendChild(inner);
+                document.body.appendChild(outer);
+                testElements.push(outer);
+
+                class InnerCtx {}
+                class OuterCtx {}
+                Environment.addApp(inner, InnerCtx as any, []);
+                Environment.addApp(outer, OuterCtx as any, []);
+
+                expect(mapOf().has(inner)).toBe(true);
+                expect(mapOf().has(outer)).toBe(true);
+            });
         });
 
         it('should clean up mapping when binder is disposed', () => {

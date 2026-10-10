@@ -92,15 +92,15 @@ export class Injectables {
                         resolvedDependency = this.resolveInternal(dependencyMetaData!, undefined, injectionsCurrentlyBeingResolved);
 
                         if (Helpers.isUndefined(resolvedDependency)) {
-                            Console.error(`Injection '${dependency.name}' cannot be resolve.`);
+                            Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolve.`);
                         }
                     } else {
-                        Console.error(`Injection '${dependency.name}' cannot be resolve as it is a circular reference: `, 
+                        Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolve as it is a circular reference: `, 
                                       [...injectionsCurrentlyBeingResolved.keys(), dependency].map(el => el.name).join('->'));
                     }
 
-                    injections.push(resolvedDependency);
-                } else if (Helpers.isArray(contextDependantInjections) && (contextDependantInjections!.length > 0)) { //context-dependant injection
+                    injections.push(resolvedDependency);                                                               //Reflect Metadata 'design:paramtypes' for interface or any type will have Object
+                } else if (Helpers.isArray(contextDependantInjections) && (contextDependantInjections!.length > 0) && (dependency !== Object)) { //context-dependant injection 
                     let contextDependency = contextDependantInjections!.find(el => el instanceof dependency);
 
                     //when custom element has custom defined class and it is requested to be injected
@@ -110,13 +110,13 @@ export class Injectables {
                     }
 
                     if (Helpers.isUndefined(contextDependency)) {
-                        Console.error(`Injection '${dependency.name}' cannot be resolve.`);
+                        Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolve.`);
                     }
 
                     injections.push(contextDependency);
                 } else {
                     injections.push(undefined);
-                    Console.error(`Injection '${dependency.name}' cannot be resolve.`);
+                    Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolve.`);
                 }
             }
 

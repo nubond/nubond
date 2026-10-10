@@ -86,9 +86,9 @@ export class Default extends Base implements IHandler<IExpressionDetails>, IDisp
         if (this._isDirty) {
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show();
+                    this._classes!.show(Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide();
+                    this._classes!.hide(Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;

@@ -32,7 +32,7 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
 
     private _isFirstCommit = true;
 
-    private _currentExecutionParameters: ExecutionParams | undefined;
+    private _currentItem: any;
 
     private _previousIsVisible = true;
     
@@ -87,13 +87,36 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
             const prefix = attributeName === Constants.REPEAT_HANDLER_ATTRIBUTE_NAME
                                 ? undefined
                                 : attributeName.replace(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME + Constants.META_VALUE_SEPARATOR, '');
-            const [transformerNames, _] = Environment.transformers.instances;
+            let isValidPrefix = true;
+
+            if (!Helpers.isUndefined(prefix)) {
+                if (!Helpers.isValidIdentifier(prefix!)) {
+                    isValidPrefix = false;
+                    Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is not a valid identifier.`);
+                } else {
+                    const [transformerNames, _] = Environment.transformers.instances;
+
+                    const itemPrefixed = this.getContextParameterName(Constants.ITEM_EXECUTION_PARAM_NAME, prefix);
+                    if (transformerNames.indexOf(itemPrefixed) >= 0) {
+                        isValidPrefix = false;
+                        Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${itemPrefixed} transformer.`);
+                    } else {
+                        const indexPrefixed = this.getContextParameterName(Constants.INDEX_EXECUTION_PARAM_NAME, prefix);
+                        if (transformerNames.indexOf(indexPrefixed) >= 0) {
+                            isValidPrefix = false;
+                            Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${indexPrefixed} transformer.`);
+                        } else {
+                            const totalCountPrefixed = this.getContextParameterName(Constants.TOTAL_COUNT_EXECUTION_PARAM_NAME, prefix);
+                            if (transformerNames.indexOf(totalCountPrefixed) >= 0) {
+                                isValidPrefix = false;
+                                Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${totalCountPrefixed} transformer.`);
+                            }
+                        }
+                    }
+                }
+            }         
             
-            if (Helpers.isUndefined(prefix) || 
-                (!Helpers.isUndefined(prefix) && 
-                 (transformerNames.indexOf(this.getContextParameterName(Constants.ITEM_EXECUTION_PARAM_NAME, prefix)) < 0) &&
-                 (transformerNames.indexOf(this.getContextParameterName(Constants.INDEX_EXECUTION_PARAM_NAME, prefix)) < 0) &&
-                 (transformerNames.indexOf(this.getContextParameterName(Constants.TOTAL_COUNT_EXECUTION_PARAM_NAME, prefix)) < 0))) {
+            if (isValidPrefix) {
                 this._nativeElement = nativeElement;
                 this._attributes = attributes;
                 this._classes = classes;
@@ -114,7 +137,6 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
                     this.repeatIndex = 0;
                 }
             } else {
-                Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with transformer.`);
                 this.hasNExpression = false;
             }
         } else {
@@ -135,7 +157,7 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
                                                     this.processData(data);
                                                     currentExecutionParams = this.processRepeat(currentExecutionParams)
                                                 },
-                                                () => currentExecutionParams = this._currentExecutionParameters);
+                                                () => currentExecutionParams = this.createOrExtendRepeatParams(executionParams, this._currentItem));
             } else {
                 currentExecutionParams = this.processRepeat(currentExecutionParams);
             }
@@ -157,9 +179,9 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
 
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show();
+                    this._classes!.show(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide();
+                    this._classes!.hide(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;
@@ -189,9 +211,10 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
                 data = Array.from(rawData);
             } else {
                 if (Helpers.isNumber(rawData)) {
-                    if (rawData > 0) {
+                    const rawTotalCount = Math.floor(rawData);
+                    if ((rawTotalCount > 0) && (rawTotalCount < Infinity)) {
                         dataType = 'number';
-                        totalCount = Math.floor(rawData);
+                        totalCount = rawTotalCount;
                     }
                 } else {
                     if (this._showDebugInfo!()) {
@@ -219,11 +242,10 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
     }
 
     private processRepeat(executionParams: ExecutionParams | undefined): ExecutionParams | undefined {
-        let totalCount = this.totalCount;
         let item: any = undefined;
         let removeRequested = false;
 
-        if (totalCount > this.repeatIndex!) {
+        if (this.totalCount > this.repeatIndex!) {
             this.isVisible = true;
 
             item = this.dataType == 'number'
@@ -232,7 +254,7 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
                                 ? (<Array<any> | string>this.data)[this.repeatIndex!]
                                 : (<{[key: string]: any}>this.data)[this.dataFields![this.repeatIndex!]]);
 
-            if (totalCount > this.repeatIndex! + 1) {
+            if (this.totalCount > this.repeatIndex! + 1) {
                 if (!this.hasClone) {
                     this._requestNElementClone!();
                     this.hasClone = true;
@@ -249,15 +271,11 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
         }
 
         if (!removeRequested) {
-            const currentExecutionParams = ExpressionExecParamsHelper.createOrExtendRepeatParams(item, this.repeatIndex!, totalCount,
-                                                                                                 parameterName => this.getContextParameterName(parameterName, this.prefix),
-                                                                                                 executionParams);
-
             if (this.nExpression!.isSingleBinded) {
-                this._currentExecutionParameters = currentExecutionParams;
+                this._currentItem = item;
             }
 
-            return currentExecutionParams;
+            return this.createOrExtendRepeatParams(executionParams, item);
         } else {
             return executionParams;
         }
@@ -267,5 +285,11 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
         return Helpers.isNotEmptyString(prefix)
                         ? `${prefix}${Helpers.toPascalCase(parameterName)}`
                         : parameterName;
+    }
+
+    private createOrExtendRepeatParams(executionParams: ExecutionParams | undefined, item: any): ExecutionParams | undefined {
+        return ExpressionExecParamsHelper.createOrExtendRepeatParams(item, this.repeatIndex!, this.totalCount,
+                                                                     parameterName => this.getContextParameterName(parameterName, this.prefix),
+                                                                     executionParams);
     }
 }

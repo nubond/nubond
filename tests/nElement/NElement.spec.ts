@@ -797,6 +797,37 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(spans[1].textContent).toBe('1');
             expect(spans[2].textContent).toBe('2');
         });
+
+        // R3-1: clone() guards on parentNode, not parentElement. A direct child of a
+        // ShadowRoot has parentElement === null (the property only returns Element
+        // parents), so the parentElement guard rejected every top-level element of a
+        // component template as "orphaned" and rendered only the first item.
+        it('should repeat a top-level element of a shadow root (R3-1)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            try {
+                const host = document.createElement('div');
+                document.body.appendChild(host);
+                const shadow = host.attachShadow({ mode: 'open' });
+                shadow.innerHTML = '<span nb-repeat="this.items" nb-value="item"></span>';
+
+                // The premise of the finding: an Element parent is absent, a Node parent is not.
+                const binder = new ContextBinder(undefined, false, () => 'nb-hidden', undefined,
+                                                 () => false, () => undefined, () => undefined);
+                binder.bind(shadow, { items: ['a', 'b', 'c'] } as any, false, false);
+
+                const spans = shadow.querySelectorAll('span');
+                expect(spans[0].parentElement).toBeNull();
+                expect(spans[0].parentNode).toBe(shadow);
+
+                expect(spans.length).toBe(3);
+                expect(Array.from(spans).map(s => s.textContent)).toEqual(['a', 'b', 'c']);
+                expect(errorSpy).not.toHaveBeenCalled();
+
+                host.remove();
+            } finally {
+                errorSpy.mockRestore();
+            }
+        });
     });
 
     describe('nb-bound binding', () => {
@@ -1471,6 +1502,101 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(isInSequence('_commitSequenceInvisibleParentHandled')).toBe(true);
 
             consoleSpy.mockRestore();
+        });
+    });
+
+    describe('R2-3: visibility handlers sharing one hidden class', () => {
+        it('should keep the element hidden when nb-if turns true while nb-repeat is still empty', () => {
+            const ctx: any = { visible: true, items: [1, 2] };
+            const { binder, el } = createBoundElement('<span nb-if="this.visible" nb-repeat="this.items" nb-value="item"></span>', ctx);
+            const target = el.querySelector('span')!;
+            expect(target.classList.contains('nb-hidden')).toBe(false);
+
+            ctx.visible = false;
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            ctx.items = [];
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            //nb-if releases its own hold, nb-repeat still requires the element to stay hidden
+            ctx.visible = true;
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+            expect(target.textContent).toBe('');
+
+            ctx.items = [7];
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(false);
+            expect(target.textContent).toBe('7');
+        });
+
+        it('should keep the element hidden when nb-repeat refills while nb-if is still false', () => {
+            const ctx: any = { visible: true, items: [1] };
+            const { binder, el } = createBoundElement('<span nb-if="this.visible" nb-repeat="this.items" nb-value="item"></span>', ctx);
+            const target = el.querySelector('span')!;
+
+            ctx.items = [];
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            ctx.visible = false;
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            //nb-repeat releases its own hold, nb-if still requires the element to stay hidden
+            ctx.items = [1];
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            ctx.visible = true;
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(false);
+        });
+
+        it('should keep the element hidden when nb-if turns true while no nb-case matches', () => {
+            const ctx: any = { visible: true, mode: 'a' };
+            const { binder, el } = createBoundElement(`<div nb-if="this.visible" nb-switch="this.mode"><span nb-case="'a'">A</span></div>`, ctx);
+            const target = el.querySelector('div')!;
+            expect(target.classList.contains('nb-hidden')).toBe(false);
+
+            ctx.visible = false;
+            binder.rootNElement!.detectChanges(ctx);
+            ctx.mode = 'no-such-case';
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            //nb-if releases its own hold, nb-switch still requires the element to stay hidden
+            ctx.visible = true;
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            ctx.mode = 'a';
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(false);
+        });
+
+        it('should keep the element hidden until every visibility handler agrees', () => {
+            const ctx: any = { visible: false, items: [], mode: 'no-such-case' };
+            const { binder, el } = createBoundElement(
+                `<div nb-if="this.visible" nb-repeat="this.items" nb-switch="this.mode"><span nb-case="'a'">A</span></div>`,
+                ctx
+            );
+            const target = el.querySelector('div')!;
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            ctx.visible = true;
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            ctx.mode = 'a';
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(true);
+
+            ctx.items = [1];
+            binder.rootNElement!.detectChanges(ctx);
+            expect(target.classList.contains('nb-hidden')).toBe(false);
         });
     });
 });

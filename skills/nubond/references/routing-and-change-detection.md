@@ -44,6 +44,7 @@ matched positionally and `decodeURIComponent`d.
 ```html
 <div nb-container="%tab"></div>                                    <!-- slot-bound container -->
 <a nb-event:click="router.go('settings')">Settings</a>             <!-- router is an event param -->
+<a href="#/settings">Settings</a>                                  <!-- hash mode: plain links route too -->
 <a nb-class="{active: this.router.state.tab === 'home'}">Home</a>  <!-- inject Router to read state -->
 ```
 
@@ -68,14 +69,21 @@ matches the `Basics` container.
 
 ### Behavior notes
 
-- **Hash routing rewrites the URL to the origin root.** History URLs are built root-absolute with no
-  base-path concept, so an app served from `/app/page.html` has its path clobbered to `/` when the
-  router is merely constructed — a reload or shared link then fetches the wrong document. Path mode has
-  the same defect under a subpath. Plan on deploying at the origin root, or avoid the built-in router.
-- **The query string is dropped at bootstrap** by the same rewrite. If the app needs `?flags`, read
-  `location.search` in a module that `index.ts` imports first, before `@AppRoot` evaluates.
-- **Real hash navigation is ignored** — `<a href="#/settings">` and manual address-bar hash edits reset
-  state to defaults. Navigate through `router.go(...)` only.
+- **Hash mode leaves the document URL alone.** The router records `location.pathname +
+  location.search` when it is constructed and writes every history entry as that path plus `#route`,
+  so an app served from `/app/page.html?lang=en` keeps both — also under a `<base href>`. With an
+  empty route path no trailing `#` is written. The recorded path is a snapshot: if other code later
+  changes the query with `replaceState`, the next router write restores the original.
+- **Path mode owns the whole URL.** Without `#` the router reads slots from `location.pathname` and
+  writes root-absolute paths. Serve such an app from the origin root — under `/app/`, `app` becomes
+  the first slot's value — and expect query parameters that are not slot names to be dropped on the
+  first write (read `location.search` in a first-imported module if you need them).
+- **Real hash navigation is routed** (hash mode). `<a href="#/settings">` links and address-bar hash
+  edits are parsed exactly like the initial URL: slots missing from the new hash reset to their
+  defaults, the state-change callbacks fire, and the URL is rewritten to its canonical form. The same
+  goes for Back/Forward onto an entry the router did not create.
+- **A prevented change cannot take the URL back.** When `onBeforeStateChange` blocks a Back/Forward or
+  a hash link, the state stays put but the address bar keeps the entry the browser already moved to.
 - **All Router methods throw** when the router is not configured — by design, unlike the rest of the
   framework, which soft-fails via `Console.error`. Guard with `router.isConfigured` when routing is
   optional. A malformed route template (empty slot name, two `=`) also throws.
@@ -83,7 +91,10 @@ matches the `Basics` container.
   route template that router stays unconfigured, and a later `$Route('/…')` only logs "Router is
   already initialized". Declare the route template on the first `@AppRoot`, or call `$Route` before any
   app root is evaluated.
-- Slot values in `router.state` are strings (`router.go({ id: 5 })` stores `'5'`).
+- Slot values in `router.state` are strings (`router.go({ id: 5 })` stores `'5'`). `nb-switch`
+  matching is type-strict, so switch on them with string cases — `nb-case="'5'"`, not `nb-case="@5"`
+  (`@name` constants that are not numeric or boolean are strings and work as-is).
+- `router.state` is the router's own live object. Read it; never mutate it.
 - Setting a **container slot** to a name with no registered container logs an error and keeps the
   previous value.
 - Setting a slot to `undefined`/`null`/blank resets it to its default.
@@ -144,16 +155,20 @@ already sees them); without inputs it also binds synchronously.
 
 Root contexts whose bound element (other than `document.body`) has been detached from the DOM are
 automatically disposed on the next change-detection request. An app root bound to `document.body` is
-never auto-disposed.
+never auto-disposed. (An element must already be attached when `@AppRoot` binds it — a detached root
+is rejected.)
 
-Containers/components hidden by `nb-if` / `nb-switch` have change detection **disabled** while hidden,
+A container/component whose own element is hidden by `nb-if`, `nb-switch`/`nb-case` or an empty
+`nb-repeat` is **not constructed** until the element is first shown; its first pass runs then.
+
+Once built, containers/components hidden that way have change detection **disabled** while hidden,
 and re-enabled when they become visible. Their `nb-in` inputs are **not refreshed while hidden** — the
 child sees the new values only once it becomes visible again.
 
-> **Updates made while hidden are lost.** Detection requests are *dropped* while disabled (no queue),
-> and becoming visible re-enables detection without requesting a pass — so the stale DOM stays until
-> some unrelated later trigger. If a hidden branch keeps working (timers, promises), call `detect()`
-> when it becomes visible again.
+> **Requests made while hidden are remembered.** A `detect()` call or `@Detector()` write that
+> arrives while detection is disabled is not dropped: one pass is owed (however many requests came
+> in) and runs when the element becomes visible again. State changed *without* requesting detection
+> is still not rendered — the same rule as when visible.
 
 ## Strategies
 
@@ -165,13 +180,18 @@ child sees the new values only once it becomes visible again.
 Capped at **10** consecutive re-runs; exceeding it logs
 `tree can't stabilize in 10 change detection cycles` and stops.
 
-> **The cap does not prevent pass-to-pass loops.** It bounds pessimistic re-runs *within* one pass
-> only. An expression that writes a `@Detector()` property re-arms the scheduler and loops forever at
-> timer cadence — silently in the default optimistic mode. Never write detector properties from
-> `nb-exec` or any bound expression; see `known-limitations.md`.
+> **Pass-to-pass loops have their own guard — and it is permanent.** The cap above bounds pessimistic
+> re-runs *within* one pass. An expression that writes a `@Detector()` property schedules a new pass
+> each time; when a detector keeps being re-written with a changing value pass after pass, the
+> framework gives up after roughly 20 passes (both strategies), logs
+> `<prop> property value can't stabilize in 10 change detection cycles, detector is disabled.` and
+> that detector stops requesting detection **for the life of its context**. Later writes are stored
+> and rendered by any other trigger, but never trigger a pass themselves. Never write detector
+> properties from `nb-exec` or any bound expression; see `known-limitations.md`.
 >
-> Pessimistic mode also needs every handler to settle: a setter-only aspect, or an empty-named
-> `nb-container`, reports a change on every pass and burns the full cap on every trigger.
+> Pessimistic mode also needs every handler to settle: a setter-only aspect, or an `nb-in` value that
+> never equals its own clone (a `Set` of objects), reports a change on every pass and burns the full
+> cap on every trigger.
 
 ```typescript
 @AppRoot({ pessimisticChangeDetectionStrategy: true }, ...)       // global

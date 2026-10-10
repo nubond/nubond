@@ -77,9 +77,9 @@ export class If extends Base implements IHandler<IExpressionDetails>, IVisible {
 
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show();
+                    this._classes!.show(Constants.IF_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide();
+                    this._classes!.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;

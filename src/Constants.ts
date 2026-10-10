@@ -30,18 +30,16 @@ export class Constants {
     }
 
     private static readonly _defaultProcessingHideClassTemplate = `
-* {
-    [nb-template]:not([nb-template-ready]), [data-nb-template]:not([data-nb-template-ready]),
-    [nb-if]:not([nb-if-ready]), [data-nb-if]:not([data-nb-if-ready]) { 
-        display: none !important; 
-    }
-    
-    [nb-container]:not([nb-container-ready]), [data-nb-container]:not([data-nb-container-ready]),
-    [nb-component]:not([nb-component-ready]), [data-nb-component]:not([data-nb-component-ready]),
-    [nb-repeat]:not([nb-repeat-ready]), [data-nb-repeat]:not([data-nb-repeat-ready]),
-    [nb-switch]:not([nb-switch-ready]), [data-nb-switch]:not([data-nb-switch-ready]) {
-        display: none; 
-    }
+[nb-switch]:not([nb-switch-ready]), [data-nb-switch]:not([data-nb-switch-ready]),
+[nb-if]:not([nb-if-ready]), [data-nb-if]:not([data-nb-if-ready]) { 
+    display: none !important; 
+}
+
+[nb-repeat]:not([nb-repeat-ready]), [data-nb-repeat]:not([data-nb-repeat-ready]),
+[nb-template]:not([nb-template-ready]), [data-nb-template]:not([data-nb-template-ready]),
+[nb-container]:not([nb-container-ready]), [data-nb-container]:not([data-nb-container-ready]),
+[nb-component]:not([nb-component-ready]), [data-nb-component]:not([data-nb-component-ready]) {
+    display: none; 
 }`;
     private static _defaultProcessingHideStyle = this.getDefaultProcessingHideStyle();
     public static get DEFAULT_PROCESSING_HIDE_STYLE(): string {

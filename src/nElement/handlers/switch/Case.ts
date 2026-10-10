@@ -34,12 +34,12 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
         this._isDirty = true;
     }
 
-    private _name = '';
-    protected get name(): string {
-        return this._name;
+    private _value: any = undefined;
+    protected get value(): any {
+        return this._value;
     }
-    protected set name(value: string) {
-        this._name = value;
+    protected set value(value: any) {
+        this._value = value;
     }
 
     public readonly nExpression: IExpressionDetails | undefined;
@@ -79,9 +79,12 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
         if (this.hasNExpression) {
             this.processExpressionExecution(this.nExpression!, Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME,
                                             expression => executeExpression(expression, executionParams), 
-                                            data => this.name = Helpers.stringify(data));
+                                            data => this.value = Helpers.isPrimitive(data) && 
+                                                                 (!Helpers.isNumber(data) || Helpers.isNumber(data) && !isNaN(data))
+                                                                            ? data 
+                                                                            : Helpers.stringify(data));
 
-            this.isVisible = this._controllingSwitch!.value === this.name;
+            this.isVisible = this._controllingSwitch!.value === this.value;
         }
 
         return executionParams;
@@ -93,9 +96,9 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
         if (this._isDirty) {
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show();
+                    this._classes!.show(Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide();
+                    this._classes!.hide(Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;

@@ -14,13 +14,13 @@ describe('Case handler', () => {
     } {
         const switchEl = document.createElement('div');
         switchEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_HANDLER_ATTRIBUTE_NAME}`, switchExpr);
-        const switchAttrs = new Attributes(switchEl);
+        const switchAttrs = new Attributes(switchEl, () => false);
         const switchClasses = new Classes(switchEl, switchAttrs, () => hideClassName);
         const switchHandler = new Switch(switchAttrs, switchClasses);
 
         const caseEl = document.createElement('div');
         caseEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, caseExpr);
-        const caseAttrs = new Attributes(caseEl);
+        const caseAttrs = new Attributes(caseEl, () => false);
         const caseClasses = new Classes(caseEl, caseAttrs, () => hideClassName);
         const caseHandler = new Case(caseEl, caseAttrs, caseClasses, switchHandler);
 
@@ -34,7 +34,7 @@ describe('Case handler', () => {
 
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const classes = new Classes(el, attrs, () => hideClassName);
         const handler = new Case(el, attrs, classes, undefined);
 
@@ -95,7 +95,7 @@ describe('Case handler', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const caseEl = document.createElement('div');
         caseEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'home');
-        const caseAttrs = new Attributes(caseEl);
+        const caseAttrs = new Attributes(caseEl, () => false);
         const caseClasses = new Classes(caseEl, caseAttrs, () => hideClassName);
 
         // Pass undefined as controllingSwitch
@@ -129,7 +129,7 @@ describe('Case handler', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const caseEl = document.createElement('div');
         caseEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'test');
-        const caseAttrs = new Attributes(caseEl);
+        const caseAttrs = new Attributes(caseEl, () => false);
         const caseClasses = new Classes(caseEl, caseAttrs, () => hideClassName);
         const caseHandler = new Case(caseEl, caseAttrs, caseClasses, undefined);
 
@@ -142,11 +142,91 @@ describe('Case handler', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const caseEl = document.createElement('div');
         caseEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'tab1');
-        const caseAttrs = new Attributes(caseEl);
+        const caseAttrs = new Attributes(caseEl, () => false);
         const caseClasses = new Classes(caseEl, caseAttrs, () => hideClassName);
         const caseHandler = new Case(caseEl, caseAttrs, caseClasses, undefined);
 
         expect(caseHandler.isDirty).toBe(false);
         consoleSpy.mockRestore();
+    });
+    describe('R7-5: primitives are matched by value AND type, not by their string form', () => {
+        // Switch/Case used to funnel both results through Helpers.stringify, so 5 matched '5' and an
+        // undefined/null switch value matched an empty-string case instead of falling to nb-default.
+        function matches(switchValue: any, caseValue: any): boolean {
+            const { switchHandler, caseHandler } = createSwitchAndCase('ctx.value', 'ctx.case');
+
+            switchHandler.bind(undefined, () => switchValue);
+            caseHandler.bind(undefined, () => caseValue);
+
+            return caseHandler.isVisible;
+        }
+
+        it.each([
+            [5, '5'],
+            ['5', 5],
+            [true, 'true'],
+            [0, false],
+            [undefined, ''],
+            [null, ''],
+            [undefined, null],
+            [1n, 1]
+        ])('should not match switch %p against case %p', (switchValue, caseValue) => {
+            expect(matches(switchValue, caseValue)).toBe(false);
+        });
+
+        it.each([
+            [5, 5],
+            ['5', '5'],
+            ['', ''],
+            [true, true],
+            [null, null],
+            [undefined, undefined],
+            [1n, 1n]
+        ])('should match switch %p against case %p', (switchValue, caseValue) => {
+            expect(matches(switchValue, caseValue)).toBe(true);
+        });
+
+        it('should match the same symbol and not a different one with the same description', () => {
+            const symbol = Symbol('s');
+
+            expect(matches(symbol, symbol)).toBe(true);
+            expect(matches(symbol, Symbol('s'))).toBe(false);
+        });
+
+        it('should keep matching objects by their JSON text', () => {
+            expect(matches({ a: 1 }, { a: 1 })).toBe(true);
+            expect(matches([1, 2], [1, 2])).toBe(true);
+            expect(matches({ a: 1 }, { a: 2 })).toBe(false);
+        });
+
+        it('should match a null-prototype object by JSON text like any other object', () => {
+            const dictionary = Object.assign(Object.create(null), { a: 1 });
+
+            expect(matches(dictionary, { a: 1 })).toBe(true);
+            expect(matches({ a: 1 }, Object.assign(Object.create(null), { a: 1 }))).toBe(true);
+        });
+
+        it('should match NaN against NaN (NaN is routed through stringify)', () => {
+            expect(matches(NaN, NaN)).toBe(true);
+            expect(matches(NaN, 0)).toBe(false);
+            expect(matches(NaN, undefined)).toBe(false);
+        });
+
+        // by design: non-primitives (and NaN) are compared by their Helpers.stringify text - the stored
+        // value is a string, so it can equal a string case with the same text
+        it('should match NaN against the string \'NaN\' (by design)', () => {
+            expect(matches(NaN, 'NaN')).toBe(true);
+            expect(matches('NaN', NaN)).toBe(true);
+        });
+
+        it('should match an object against a string case holding its JSON text (by design)', () => {
+            expect(matches({ a: 1 }, '{"a":1}')).toBe(true);
+            expect(matches('[1]', [1])).toBe(true);
+        });
+
+        it('should match a function against an empty-string case (by design)', () => {
+            expect(matches(() => 1, '')).toBe(true);
+            expect(matches('', function named() {})).toBe(true);
+        });
     });
 });

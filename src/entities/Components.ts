@@ -73,16 +73,17 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
             if (this.isUrlLikeAndNotContent(stylesTemplateOrPath)) {
                 this.styleTemplatePath = stylesTemplateOrPath;
             } else {
-                this.setStyleTemplate(stylesTemplateOrPath);
+                this.setStyleTemplate(stylesTemplateOrPath, true);
             }
         }
     }
 
-    public setStyleTemplate(styleTemplate: string): void {
+    public setStyleTemplate(styleTemplate: string, skipSanitizer: boolean = false): void {
         if (!this.isStyleTemplateReady) {
-            const newNode = document.createElement('style');
             const styleSanitizer = this.styleSanitizerCreator();
-            newNode.textContent = Helpers.isFunction(styleSanitizer) ? styleSanitizer!(styleTemplate) : styleTemplate;
+
+            const newNode = document.createElement('style');
+            newNode.textContent = Helpers.isFunction(styleSanitizer) && (skipSanitizer !== true) ? styleSanitizer!(styleTemplate) : styleTemplate;
     
             this._styleTemplate = newNode;
             this.isStyleTemplateReady = true;
@@ -291,13 +292,28 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
                                 //components
                                 if (Helpers.isArray(adoptedStyleNames) && (adoptedStyleNames!.length > 0)) {
                                     const filteredAdoptedStyleNames = adoptedStyleNames!.filter((el, index, self) => self.indexOf(el) === index);
-                                    for (const el of filteredAdoptedStyleNames) {
-                                        adoptedStyles.tryPrepare(el, asyncCallBack => {
-                                            const cssStyleSheet = adoptedStyles.get(el);
-                                            if (!Helpers.isUndefined(cssStyleSheet)) {
-                                                shadowRoot.adoptedStyleSheets.push(cssStyleSheet!);
+                                    const adoptedStyleSheets = new Map<string, CSSStyleSheet | undefined>();
+                                    const tryPushAdoptedStyleSheets = () => {
+                                        if (filteredAdoptedStyleNames.length == adoptedStyleSheets.size) {
+                                            for (const el of filteredAdoptedStyleNames) { 
+                                                const adoptedCssStyleSheet = adoptedStyleSheets.get(el);
+                                                if (!Helpers.isUndefined(adoptedCssStyleSheet)) {
+                                                    shadowRoot.adoptedStyleSheets.push(adoptedCssStyleSheet!);
+                                                }
                                             }
+                                        }
+                                    };
+
+                                    for (const el of filteredAdoptedStyleNames) {
+                                        const prepareRequestResult = adoptedStyles.tryPrepare(el, asyncCallBack => {
+                                            adoptedStyleSheets.set(el, adoptedStyles.get(el));
+                                            tryPushAdoptedStyleSheets();
                                         });
+
+                                        if (!prepareRequestResult) {
+                                            adoptedStyleSheets.set(el, undefined);
+                                            tryPushAdoptedStyleSheets();
+                                        }
                                     }
                                 }
 
@@ -308,7 +324,10 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
                                 }
 
                                 //template creation
-                                shadowRoot.append(...Array.from(componentMetaData.htmlTemplate!.content.cloneNode(true).childNodes));
+                                //check for htmlTemplate existence is needed because it can be empty due to htmlTemplate fetch error 
+                                if (!Helpers.isUndefined(componentMetaData.htmlTemplate)) {
+                                    shadowRoot.append(...Array.from(componentMetaData.htmlTemplate!.content.cloneNode(true).childNodes));
+                                }
 
                                 //nElement creations
                                 nElementProjection.process();

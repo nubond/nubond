@@ -53,16 +53,17 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
             if (this.isUrlLikeAndNotContent(stylesTemplateOrPath)) {
                 this.styleTemplatePath = stylesTemplateOrPath;
             } else {
-                this.setStyleTemplate(stylesTemplateOrPath);
+                this.setStyleTemplate(stylesTemplateOrPath, true);
             }
         }
     }
 
-    public setStyleTemplate(styleTemplate: string): void {
+    public setStyleTemplate(styleTemplate: string, skipSanitizer: boolean = false): void {
         if (!this.isStyleTemplateReady) {
-            const cssStyleSheet = new CSSStyleSheet();
             const styleSanitizer = this.styleSanitizerCreator();
-            cssStyleSheet.replaceSync(Helpers.isFunction(styleSanitizer) ? styleSanitizer!(styleTemplate) : styleTemplate);
+            
+            const cssStyleSheet = new CSSStyleSheet();
+            cssStyleSheet.replaceSync(Helpers.isFunction(styleSanitizer) && (skipSanitizer !== true) ? styleSanitizer!(styleTemplate) : styleTemplate);
     
             this._cssStyleSheet = cssStyleSheet;
             this.isStyleTemplateReady = true;

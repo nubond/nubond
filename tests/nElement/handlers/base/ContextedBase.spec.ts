@@ -47,7 +47,7 @@ function createMockContextBinder(contextObj?: Record<string, any>): IContextBind
         enableChangeDetection: jest.fn(),
         disableChangeDetection: jest.fn(),
         inputsRefreshIsDone: jest.fn(),
-        isChangeDetectionEnabled: true,
+        changeDetectionEnabled: true,
         onDispose: jest.fn().mockReturnValue(() => {}),
     } as unknown as IContextBinder;
 }
@@ -69,7 +69,7 @@ function createHandlerSimple(expression?: string) {
     if (expression !== undefined) {
         el.setAttribute(`${PREFIX}container`, expression);
     }
-    const attrs = new Attributes(el);
+    const attrs = new Attributes(el, () => false);
     return new TestContextedBase(expression, el, attrs, () => true);
 }
 
@@ -84,7 +84,7 @@ function createHandlerWithIn(expression: string, inAttrs: Record<string, string>
         }
     }
     const el = createElement(attrMap);
-    const attrs = new Attributes(el);
+    const attrs = new Attributes(el, () => false);
     return new TestContextedBase(expression, el, attrs, () => true);
 }
 
@@ -139,7 +139,7 @@ describe('ContextedBase', () => {
     describe('constructor', () => {
         it('sets hasNExpression=false when expression is undefined', () => {
             const el = createElement();
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase(undefined, el, attrs, () => true);
             expect(handler.hasNExpression).toBe(false);
             expect(handler.nExpression).toBeUndefined();
@@ -178,6 +178,32 @@ describe('ContextedBase', () => {
             expect(inMap.get('propB')!.ref).toBe(true);
         });
 
+        it('keeps the in-entry and logs an error when in-ref targets the same name (first wins)', () => {
+            const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' }, { 'my-prop': 'this.refValue' });
+            const inMap = handler.nExpression!.nInExpression!;
+            expect(inMap.size).toBe(1);
+            expect(inMap.get('myProp')!.ref).toBe(false);
+            expect(inMap.get('myProp')!.nExpression.expression).toBe('this.value');
+            expect(consoleSpy).toHaveBeenCalledWith('nuBond: ', expect.anything(),
+                                                    'multiple handlers for one in (myProp) are not supported');
+        });
+
+        it('lets in win over in-ref on a name collision even when in-ref is declared first', () => {
+            const attrMap: Record<string, string> = {
+                [`${PREFIX}container`]: 'this.data',
+                [`${PREFIX}${Constants.IN_REF_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.refValue',
+                [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value',
+            };
+            const el = createElement(attrMap);
+            const attrs = new Attributes(el, () => false);
+            const handler = new TestContextedBase('this.data', el, attrs, () => true);
+            const inMap = handler.nExpression!.nInExpression!;
+            expect(inMap.size).toBe(1);
+            expect(inMap.get('myProp')!.ref).toBe(false);
+            expect(consoleSpy).toHaveBeenCalledWith('nuBond: ', expect.anything(),
+                                                    'multiple handlers for one in (myProp) are not supported');
+        });
+
         it('logs error when in-handler value is empty (undefined)', () => {
             // An attribute present but with no value — Attributes stores it as undefined
             // We need a system attribute key with no value. Let's manually build an element
@@ -188,7 +214,7 @@ describe('ContextedBase', () => {
                 [`${PREFIX}container`]: 'this.data',
                 [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}`]: 'this.x',
             });
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase('this.data', el, attrs, () => true);
             // The property name after "in:" is empty → Console.error
             expect(consoleSpy).toHaveBeenCalled();
@@ -237,7 +263,7 @@ describe('ContextedBase', () => {
     describe('bind', () => {
         it('returns executionParams unchanged when hasNExpression is false', () => {
             const el = createElement();
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase(undefined, el, attrs, () => true);
             const params = new ExecutionParams([], []);
             const result = handler.bind(params, jest.fn());
@@ -247,7 +273,7 @@ describe('ContextedBase', () => {
         it('sets isVisible from isElementVisible and calls onBind', () => {
             let visible = false;
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase('this.data', el, attrs, () => visible);
             const execExpr = jest.fn();
             handler.bind(undefined, execExpr);
@@ -295,7 +321,7 @@ describe('ContextedBase', () => {
                 [`${PREFIX}container`]: 'this.data',
                 [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value',
             });
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase('this.data', el, attrs, () => visible);
             const mockBinder = createMockContextBinder({ myProp: 'old' });
             handler.entityChangeReturnValue = mockBinder;
@@ -362,7 +388,7 @@ describe('ContextedBase', () => {
         it('calls notifyContextAttached when provided', () => {
             const attached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase('this.data', el, attrs, () => true, attached);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
@@ -572,12 +598,182 @@ describe('ContextedBase', () => {
         });
     });
 
+    // --- commit while the element is hidden ---
+
+    // the entity block is skipped while the element is hidden and the entity dirty flag is kept,
+    // so the request stays owed and is paid by the first commit that finds the element visible
+    describe('commit while the element is hidden', () => {
+        it('does not call onCommit and keeps the entity request owed', () => {
+            const handler = createHandlerSimple('this.data');
+            const onCommit = jest.spyOn(handler as any, 'onCommit');
+            handler.exposedIsEntityDataDirty = true;
+            handler.exposedIsVisible = false;
+
+            // first hidden commit reports the visibility flip only
+            expect(handler.commit()).toBe(true);
+            // nothing left to report: a hidden tree is stable although the request is still owed
+            expect(handler.commit()).toBe(false);
+
+            expect(onCommit).not.toHaveBeenCalled();
+            expect(handler.exposedContextBinder).toBeUndefined();
+            expect(handler.exposedCurrentEntityData).toBeUndefined();
+            expect(handler.exposedIsEntityDataDirty).toBe(true);
+            expect(handler.isDirty).toBe(true);
+        });
+
+        it('pays the owed request on the first visible commit', () => {
+            const attached = jest.fn();
+            const el = createElement({ [`${PREFIX}container`]: 'this.data' });
+            const attrs = new Attributes(el, () => false);
+            const handler = new TestContextedBase('this.data', el, attrs, () => true, attached);
+            const onCommit = jest.spyOn(handler as any, 'onCommit');
+            const ctx = { someProp: 'test' };
+            const mockBinder = createMockContextBinder(ctx);
+            handler.entityChangeReturnValue = mockBinder;
+            handler.exposedIsEntityDataDirty = true;
+
+            handler.exposedIsVisible = false;
+            handler.commit();
+            handler.commit();
+            expect(attached).not.toHaveBeenCalled();
+
+            handler.exposedIsVisible = true;
+            expect(handler.commit()).toBe(true);
+
+            expect(onCommit).toHaveBeenCalledTimes(1);
+            expect(handler.exposedContextBinder).toBe(mockBinder);
+            expect(handler.exposedPreviousEntityData).toBe('entity-1');
+            expect(attached).toHaveBeenCalledWith(ctx);
+            expect(handler.exposedIsEntityDataDirty).toBe(false);
+            expect(handler.isDirty).toBe(false);
+        });
+
+        it('keeps a request raised by a direct commit() owed (async template path)', () => {
+            const handler = createHandlerSimple('this.data');
+            const onCommit = jest.spyOn(handler as any, 'onCommit');
+            handler.exposedIsVisible = false;
+            handler.commit();
+
+            // what the tryPrepare callbacks of Container / Component do
+            handler.exposedIsEntityDataDirty = true;
+            expect(handler.commit()).toBe(false);
+
+            expect(onCommit).not.toHaveBeenCalled();
+            expect(handler.exposedIsEntityDataDirty).toBe(true);
+        });
+
+        it('defers a change of entity data of an existing entity until it is visible again', () => {
+            const handler = createHandlerSimple('this.data');
+            const mockBinder1 = createMockContextBinder();
+            const mockBinder2 = createMockContextBinder();
+
+            handler.entityChangeReturnValue = mockBinder1;
+            handler.commitReturnValue = 'entity-1';
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            handler.exposedIsVisible = false;
+            handler.entityChangeReturnValue = mockBinder2;
+            handler.commitReturnValue = 'entity-2';
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            expect(mockBinder1.disableChangeDetection).toHaveBeenCalledTimes(1);
+            expect(mockBinder1.dispose).not.toHaveBeenCalled();
+            expect(handler.exposedContextBinder).toBe(mockBinder1);
+            expect(handler.exposedPreviousEntityData).toBe('entity-1');
+
+            handler.exposedIsVisible = true;
+            handler.commit();
+
+            expect(mockBinder1.dispose).toHaveBeenCalledTimes(1);
+            expect(handler.exposedContextBinder).toBe(mockBinder2);
+            expect(handler.exposedPreviousEntityData).toBe('entity-2');
+        });
+
+        it('defers a disposal (onCommit returning undefined) of an existing entity until it is visible again', () => {
+            const detached = jest.fn();
+            const el = createElement({ [`${PREFIX}container`]: 'this.data' });
+            const attrs = new Attributes(el, () => false);
+            const handler = new TestContextedBase('this.data', el, attrs, () => true, undefined, detached);
+            const ctx = { someProp: 'test' };
+            const mockBinder = createMockContextBinder(ctx);
+
+            handler.entityChangeReturnValue = mockBinder;
+            handler.commitReturnValue = 'entity-1';
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            handler.exposedIsVisible = false;
+            handler.commitReturnValue = undefined;
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            expect(mockBinder.dispose).not.toHaveBeenCalled();
+            expect(detached).not.toHaveBeenCalled();
+            expect(handler.exposedContextBinder).toBe(mockBinder);
+
+            handler.exposedIsVisible = true;
+            handler.commit();
+
+            expect(mockBinder.dispose).toHaveBeenCalledTimes(1);
+            expect(detached).toHaveBeenCalledWith(ctx);
+            expect(handler.exposedContextBinder).toBeUndefined();
+        });
+
+        it('still disposes a hidden entity through dispose()', () => {
+            const handler = createHandlerSimple('this.data');
+            const mockBinder = createMockContextBinder();
+            handler.entityChangeReturnValue = mockBinder;
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            handler.exposedIsVisible = false;
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+            handler.dispose();
+
+            expect(mockBinder.dispose).toHaveBeenCalledTimes(1);
+            expect(handler.exposedContextBinder).toBeUndefined();
+        });
+
+        it('does not evaluate in-expressions while hidden and delivers the values of the pass that builds the entity', () => {
+            let visible = false;
+            const el = createElement({
+                [`${PREFIX}container`]: 'this.data',
+                [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value'
+            });
+            const attrs = new Attributes(el, () => false);
+            const handler = new TestContextedBase('this.data', el, attrs, () => visible);
+            const ctx: Record<string, any> = { myProp: 'initial' };
+            handler.entityChangeReturnValue = createMockContextBinder(ctx);
+            handler.exposedIsEntityDataDirty = true;
+
+            const execExpr = jest.fn().mockReturnValue('first');
+            handler.bind(undefined, execExpr);
+            handler.commit();
+
+            execExpr.mockReturnValue('second');
+            handler.bind(undefined, execExpr);
+            handler.commit();
+
+            expect(execExpr).not.toHaveBeenCalled();
+            expect(handler.exposedContextBinder).toBeUndefined();
+
+            visible = true;
+            handler.bind(undefined, execExpr);
+            handler.commit();
+
+            expect(ctx['myProp']).toBe('second');
+        });
+    });
+
     // --- dispose ---
 
     describe('dispose', () => {
         it('does nothing when hasNExpression is false', () => {
             const el = createElement();
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase(undefined, el, attrs, () => true);
             // Should not throw
             handler.dispose();
@@ -586,7 +782,7 @@ describe('ContextedBase', () => {
         it('disposes contextBinder and calls notifyContextDetached', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase('this.data', el, attrs, () => true, undefined, detached);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
@@ -657,6 +853,266 @@ describe('ContextedBase', () => {
             expect(handler.isDirty).toBe(false);
         });
 
+        // R7-1 (fixed): setInputValue stores a structuredClone of the incoming value for non-ref
+        // inputs, so the cached baseline is a snapshot instead of the parent's LIVE reference —
+        // an in-place mutation now compares deep-unequal and is delivered. The 'deep-equal new
+        // object is not delivered' half below is by design and still holds.
+        it('delivers an in-place mutation of the same object reference (R7-1)', () => {
+            const shared = { x: 1 };
+            const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+            const mockBinder = createMockContextBinder({ myProp: undefined });
+            handler.entityChangeReturnValue = mockBinder;
+            handler.commitReturnValue = 'entity-1';
+            handler.exposedIsEntityDataDirty = true;
+
+            const execExpr = jest.fn().mockReturnValue(shared);
+            handler.bind(undefined, execExpr);
+            handler.commit();
+
+            const delivered = (mockBinder.context as any).myProp;
+            expect(delivered).toEqual({ x: 1 });
+            expect(delivered).not.toBe(shared);      // nb-in delivers a structuredClone snapshot
+
+            shared.x = 2;                            // in-place mutation of the SAME reference
+            handler.bind(undefined, execExpr);
+            expect(handler.exposedContextInputsWithChangedValue!.has('myProp')).toBe(true);
+            handler.commit();
+
+            expect((mockBinder.context as any).myProp.x).toBe(2);
+            expect((mockBinder.context as any).myProp).not.toBe(shared);
+            expect(shared.x).toBe(2);
+        });
+
+        // Trade-off of the R7-1 fix: the stored clone is both the comparison baseline and the
+        // object handed to the child, so a child-side edit makes the baseline disagree with the
+        // (unchanged) parent value and the next cycle re-delivers it, reverting that edit.
+        it('hands the child the cached comparison baseline, so a child-side edit is reverted (R7-1)', () => {
+            const parentValue = { x: 1 };
+            const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+            const mockBinder = createMockContextBinder({ myProp: undefined });
+            handler.entityChangeReturnValue = mockBinder;
+            handler.commitReturnValue = 'entity-1';
+            handler.exposedIsEntityDataDirty = true;
+
+            const execExpr = jest.fn().mockReturnValue(parentValue);
+            handler.bind(undefined, execExpr);
+            handler.commit();
+
+            const delivered = (mockBinder.context as any).myProp;
+            expect(handler.exposedContextInputValues!.get('myProp')).toBe(delivered);
+
+            delivered.x = 99;                        // the child edits its own copy
+            handler.bind(undefined, execExpr);       // parent value itself did not change
+            expect(handler.exposedContextInputsWithChangedValue!.has('myProp')).toBe(true);
+            handler.commit();
+
+            expect((mockBinder.context as any).myProp.x).toBe(1);
+        });
+
+        // Clone failures are now detected in setInputValue instead of commit: the diagnostic
+        // repeats every cycle (so a later, cloneable value would still be delivered — R7-4) and
+        // undefined is delivered, replacing whatever the child held.
+        // R9-2: an expression that mints a fresh Invalid Date per evaluation used to re-deliver the input on
+        // every cycle (Invalid Date never deep-equalled Invalid Date). The file-level JSON polyfill turns a
+        // Date into a string, so this test installs a same-realm clone that keeps Date instances.
+        describe('fresh Invalid Date inputs (R9-2)', () => {
+            const sameRealmClone = (value: any): any => {
+                if (value instanceof Date) {
+                    return new Date(value.getTime());
+                }
+                if (Array.isArray(value)) {
+                    return value.map(sameRealmClone);
+                }
+                if ((value !== null) && (typeof value === 'object')) {
+                    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sameRealmClone(item)]));
+                }
+                return value;
+            };
+
+            let original: any;
+
+            beforeEach(() => {
+                original = globalThis.structuredClone;
+                (globalThis as any).structuredClone = sameRealmClone;
+            });
+
+            afterEach(() => {
+                (globalThis as any).structuredClone = original;
+            });
+
+            function createDateInputHandler(evaluate: () => any) {
+                const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+                const mockBinder = createMockContextBinder({ myProp: undefined });
+                handler.entityChangeReturnValue = mockBinder;
+                handler.commitReturnValue = 'entity-1';
+                handler.exposedIsEntityDataDirty = true;
+
+                const execExpr = jest.fn(evaluate);
+                handler.bind(undefined, execExpr);
+                handler.commit();
+
+                return { handler, mockBinder, execExpr };
+            }
+
+            it('does not re-deliver a freshly minted Invalid Date that is still invalid', () => {
+                const { handler, mockBinder, execExpr } = createDateInputHandler(() => ({ d: new Date('invalid') }));
+                const firstDelivery = (mockBinder.context as any).myProp;
+                expect(isNaN(firstDelivery.d.getTime())).toBe(true);
+
+                for (let cycle = 0; cycle < 3; cycle++) {
+                    handler.bind(undefined, execExpr);
+                    expect(handler.exposedContextInputsWithChangedValue!.size).toBe(0);
+                    handler.commit();
+                }
+
+                expect((mockBinder.context as any).myProp).toBe(firstDelivery);
+                expect(mockBinder.inputsRefreshIsDone).toHaveBeenCalledTimes(1);
+            });
+
+            it('delivers once the Invalid Date becomes a valid one', () => {
+                let timestamp = NaN;
+                const { handler, mockBinder, execExpr } = createDateInputHandler(() => ({ d: new Date(timestamp) }));
+
+                timestamp = 0;
+                handler.bind(undefined, execExpr);
+                expect(handler.exposedContextInputsWithChangedValue!.has('myProp')).toBe(true);
+                handler.commit();
+
+                expect((mockBinder.context as any).myProp.d.getTime()).toBe(0);
+            });
+        });
+
+        it('logs every cycle and clears the child value when the input cannot be cloned (R7-1/R7-4)', () => {
+            const original = globalThis.structuredClone;
+            (globalThis as any).structuredClone = (value: any) => {
+                if ((value !== null) && (typeof value === 'object') && ('v' in value)) {
+                    throw new Error('could not be cloned');
+                }
+                return JSON.parse(JSON.stringify(value));
+            };
+
+            try {
+                const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+                const mockBinder = createMockContextBinder({ myProp: { keepMe: 1 } });
+                handler.entityChangeReturnValue = mockBinder;
+                handler.commitReturnValue = 'entity-1';
+                handler.exposedIsEntityDataDirty = true;
+
+                const execExpr = jest.fn().mockReturnValue({ v: 5 });
+                handler.bind(undefined, execExpr);
+                handler.commit();
+
+                // the child's own initial value is replaced by undefined, not left alone
+                expect((mockBinder.context as any).myProp).toBeUndefined();
+                const errorsAfterFirstBind = consoleSpy.mock.calls.length;
+                expect(errorsAfterFirstBind).toBeGreaterThan(0);
+                expect(String(consoleSpy.mock.calls[errorsAfterFirstBind - 1]))
+                    .toContain('object cannot be cloned');
+
+                handler.bind(undefined, execExpr);
+                expect(consoleSpy.mock.calls.length).toBeGreaterThan(errorsAfterFirstBind);
+            } finally {
+                (globalThis as any).structuredClone = original;
+            }
+        });
+
+        // The clone condition is !Helpers.isPrimitive(value): every non-primitive is cloned, including
+        // functions (which cannot be cloned) and null-prototype objects (which Helpers.isObject
+        // covered too, but an instanceof-based check would have let through by reference).
+        describe('clone condition: every non-primitive nb-in value is cloned', () => {
+            it('does not deliver a function through nb-in and points to nb-in-ref', () => {
+                const callback = () => 1;
+                const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+                const mockBinder = createMockContextBinder({ myProp: undefined });
+                handler.entityChangeReturnValue = mockBinder;
+                handler.commitReturnValue = 'entity-1';
+                handler.exposedIsEntityDataDirty = true;
+
+                handler.bind(undefined, jest.fn().mockReturnValue(callback));
+                handler.commit();
+
+                expect((mockBinder.context as any).myProp).toBeUndefined();
+                expect(consoleSpy.mock.calls.some(call => String(call).includes('object cannot be cloned, try to use nb-in-ref'))).toBe(true);
+            });
+
+            it('delivers a function through nb-in-ref by reference', () => {
+                const callback = () => 1;
+                const handler = createHandlerWithIn('this.data', {}, { 'my-ref': 'this.refValue' });
+                const mockBinder = createMockContextBinder({ myRef: undefined });
+                handler.entityChangeReturnValue = mockBinder;
+                handler.commitReturnValue = 'entity-1';
+                handler.exposedIsEntityDataDirty = true;
+
+                handler.bind(undefined, jest.fn().mockReturnValue(callback));
+                handler.commit();
+
+                expect((mockBinder.context as any).myRef).toBe(callback);
+                expect(consoleSpy).not.toHaveBeenCalled();
+            });
+
+            it('clones a null-prototype object instead of passing it by reference', () => {
+                const dictionary = Object.assign(Object.create(null), { a: 1 });
+                const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+                const mockBinder = createMockContextBinder({ myProp: undefined });
+                handler.entityChangeReturnValue = mockBinder;
+                handler.commitReturnValue = 'entity-1';
+                handler.exposedIsEntityDataDirty = true;
+
+                const execExpr = jest.fn().mockReturnValue(dictionary);
+                handler.bind(undefined, execExpr);
+                handler.commit();
+
+                const delivered = (mockBinder.context as any).myProp;
+                expect(delivered).not.toBe(dictionary);
+                expect(delivered.a).toBe(1);
+
+                // the baseline is a snapshot, so an in-place mutation is delivered (R7-1 semantics)
+                dictionary.a = 2;
+                handler.bind(undefined, execExpr);
+                handler.commit();
+
+                expect((mockBinder.context as any).myProp.a).toBe(2);
+                expect((mockBinder.context as any).myProp).not.toBe(dictionary);
+            });
+        });
+
+        it('delivers a new, deep-unequal object (the only way to push an input) (R7-1)', () => {
+            const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+            const mockBinder = createMockContextBinder({ myProp: undefined });
+            handler.entityChangeReturnValue = mockBinder;
+            handler.commitReturnValue = 'entity-1';
+            handler.exposedIsEntityDataDirty = true;
+
+            const execExpr = jest.fn().mockReturnValue({ x: 1 });
+            handler.bind(undefined, execExpr);
+            handler.commit();
+            expect((mockBinder.context as any).myProp.x).toBe(1);
+
+            execExpr.mockReturnValue({ x: 3 });      // new reference, deep-unequal
+            handler.bind(undefined, execExpr);
+            handler.commit();
+            expect((mockBinder.context as any).myProp.x).toBe(3);
+        });
+
+        it('known gap: a new object with identical contents is NOT delivered (R7-1, documented half)', () => {
+            const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+            const mockBinder = createMockContextBinder({ myProp: undefined });
+            handler.entityChangeReturnValue = mockBinder;
+            handler.commitReturnValue = 'entity-1';
+            handler.exposedIsEntityDataDirty = true;
+
+            const execExpr = jest.fn().mockReturnValue({ x: 1 });
+            handler.bind(undefined, execExpr);
+            handler.commit();
+            const firstDelivered = (mockBinder.context as any).myProp;
+
+            execExpr.mockReturnValue({ x: 1 });      // different reference, deep-EQUAL
+            handler.bind(undefined, execExpr);
+            expect(handler.exposedContextInputsWithChangedValue!.has('myProp')).toBe(false);
+            handler.commit();
+            expect((mockBinder.context as any).myProp).toBe(firstDelivered);
+        });
+
         it('marks dirty when value differs from contextInputValues entry', () => {
             const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
             const mockBinder = createMockContextBinder({ myProp: 'initial' });
@@ -681,7 +1137,7 @@ describe('ContextedBase', () => {
         it('preserves previousEntityData/currentEntityData on partial dispose', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase('this.data', el, attrs, () => true, undefined, detached);
             const ctx1 = { prop: 'v1' };
             const mockBinder1 = createMockContextBinder(ctx1);
@@ -761,6 +1217,110 @@ describe('ContextedBase', () => {
             handler.commit();
 
             expect(ctx['myProp']).toBe(99);
+        });
+    });
+
+    // --- R6-2: single-bind (#) inputs and context re-instantiation ---
+
+    describe('single-bind inputs across context re-instantiation (R6-2)', () => {
+        it('delivers a #-bound input to every re-instantiated context', () => {
+            const handler = createHandlerWithIn('this.view', { cfg: '#this.cfg' });
+            const ctxA: Record<string, any> = {};
+            const ctxB: Record<string, any> = {};
+            const ctxA2: Record<string, any> = {};
+            const execExpr = jest.fn().mockReturnValue({ x: 1 });
+
+            handler.entityChangeReturnValue = createMockContextBinder(ctxA);
+            handler.commitReturnValue = 'entity-a';
+            handler.bind(undefined, execExpr);
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            expect(ctxA['cfg']).toEqual({ x: 1 });
+
+            // container name changed: the old context is disposed and a new one instantiated
+            handler.entityChangeReturnValue = createMockContextBinder(ctxB);
+            handler.commitReturnValue = 'entity-b';
+            handler.bind(undefined, execExpr);
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            // before the fix the # expression key was still cached on the handler,
+            // so the new context never received the input
+            expect(ctxB['cfg']).toEqual({ x: 1 });
+
+            // and back again (a -> b -> a)
+            handler.entityChangeReturnValue = createMockContextBinder(ctxA2);
+            handler.commitReturnValue = 'entity-a';
+            handler.bind(undefined, execExpr);
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            expect(ctxA2['cfg']).toEqual({ x: 1 });
+        });
+
+        it('evaluates a #-bound input only once while the context stays the same', () => {
+            const handler = createHandlerWithIn('this.view', { cfg: '#this.cfg' });
+            const ctx: Record<string, any> = {};
+            const execExpr = jest.fn().mockReturnValue({ x: 1 });
+
+            handler.entityChangeReturnValue = createMockContextBinder(ctx);
+            handler.commitReturnValue = 'entity-a';
+            handler.bind(undefined, execExpr);
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            expect(ctx['cfg']).toEqual({ x: 1 });
+            expect(execExpr).toHaveBeenCalledTimes(1);
+
+            // same context: the # input stays frozen, no matter what the expression would yield now
+            execExpr.mockReturnValue({ x: 99 });
+            handler.bind(undefined, execExpr);
+            handler.commit();
+            handler.bind(undefined, execExpr);
+            handler.commit();
+
+            expect(ctx['cfg']).toEqual({ x: 1 });
+            expect(execExpr).toHaveBeenCalledTimes(1);
+        });
+
+        it('retries a #-bound input that is undefined when the context is re-instantiated', () => {
+            const handler = createHandlerWithIn('this.view', { cfg: '#this.cfg' });
+            const ctxA: Record<string, any> = {};
+            const ctxB: Record<string, any> = {};
+            const execExpr = jest.fn().mockReturnValue({ x: 1 });
+
+            handler.entityChangeReturnValue = createMockContextBinder(ctxA);
+            handler.commitReturnValue = 'entity-a';
+            handler.bind(undefined, execExpr);
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            expect(ctxA['cfg']).toEqual({ x: 1 });
+
+            // the new context is created while the expression still yields undefined
+            execExpr.mockReturnValue(undefined);
+            handler.entityChangeReturnValue = createMockContextBinder(ctxB);
+            handler.commitReturnValue = 'entity-b';
+            handler.bind(undefined, execExpr);
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+
+            expect(ctxB['cfg']).toBeUndefined();
+
+            // # freezes on the first non-undefined result, so the value must still land later
+            execExpr.mockReturnValue({ x: 7 });
+            handler.bind(undefined, execExpr);
+            handler.commit();
+
+            expect(ctxB['cfg']).toEqual({ x: 7 });
+
+            // ...and stay frozen from then on
+            execExpr.mockReturnValue({ x: 8 });
+            handler.bind(undefined, execExpr);
+            handler.commit();
+
+            expect(ctxB['cfg']).toEqual({ x: 7 });
         });
     });
 });

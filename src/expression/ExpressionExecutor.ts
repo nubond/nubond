@@ -29,8 +29,10 @@ export class ExpressionExecutor {
                 if (this._showDebugInfo()) {
                     throw ex;
                 } else {
+                    compiledFn = () => undefined;
+                    this._compiledFnCache.set(expressionKey, compiledFn);
+                    
                     Console.error(element, `expression "${expression}" compilation error: ${ex}`);
-                    this._compiledFnCache.set(expressionKey, () => undefined);
                 }
             }
         }
@@ -46,6 +48,7 @@ export class ExpressionExecutor {
         }
     }
 
+    //TODO: late transformer addition with duplicated name as variables or repeats will brake compilation, think of solution
     private compileFunction(expression: string | null | undefined, paramNames: Array<string>, element: Element,
                             multiStatementExpression: boolean = false): (...args: any) => any {
         try {

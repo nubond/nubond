@@ -43,12 +43,13 @@ describe('Templates', () => {
         expect(console.error).toHaveBeenCalled();
     });
 
-    it('should apply HTML sanitizer when provided', () => {
-        const sanitizer = (html: string) => html.replace(/<script[^>]*>.*?<\/script>/gi, '');
+    it('should not apply the HTML sanitizer to inline content', () => {
+        const sanitizer = jest.fn((html: string) => html.replace(/<script[^>]*>.*?<\/script>/gi, ''));
         templates.add('sanitized', '<div>safe</div><script>evil()</script>', () => sanitizer);
 
         const node = templates.get('sanitized');
         expect(node).toBeDefined();
+        expect(sanitizer).not.toHaveBeenCalled();
     });
 
     it('should clone the template node on get', () => {
@@ -77,15 +78,36 @@ describe('Templates', () => {
         expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('not ready'));
     });
 
-    it('should invoke the sanitizer function on the content', () => {
+    it('should not invoke the sanitizer function on inline content', () => {
         const sanitizer = jest.fn((html: string) => html.replace('evil', 'safe'));
         templates.add('san-verify', '<div>evil content</div>', () => sanitizer);
 
-        expect(sanitizer).toHaveBeenCalledWith('<div>evil content</div>');
+        expect(sanitizer).not.toHaveBeenCalled();
 
         const node = templates.get('san-verify') as DocumentFragment;
         expect(node).toBeDefined();
+        expect((node.firstChild as HTMLElement).textContent).toBe('evil content');
+    });
+
+    it('should invoke the sanitizer function on fetched content', async () => {
+        (globalThis as any).fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            text: () => Promise.resolve('<div>evil content</div>')
+        });
+
+        const sanitizer = jest.fn((html: string) => html.replace('evil', 'safe'));
+        templates.add('san-fetched', '/evil.html', () => sanitizer);
+        templates.tryPrepare('san-fetched', jest.fn());
+
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+
+        expect(sanitizer).toHaveBeenCalledWith('<div>evil content</div>');
+
+        const node = templates.get('san-fetched') as DocumentFragment;
+        expect(node).toBeDefined();
         expect((node.firstChild as HTMLElement).textContent).toBe('safe content');
+
+        (globalThis as any).fetch = undefined;
     });
 
     describe('tryPrepare', () => {

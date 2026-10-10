@@ -177,7 +177,7 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
     public commit(): boolean {
         let wasDirty = false;
 
-        if (this._isEntityDataDirty) {
+        if (this._isEntityDataDirty && this._isVisible) {
             this._currentEntityData = this.onCommit(this._currentEntityData);
 
             if (!Helpers.isUndefined(this._currentEntityData)) {           
@@ -195,6 +195,7 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
                             this.contextInputValues = new Map<string, any>();
                             this.contextInputsWithChangedValue = new Set<string>();
 
+                            this.prepareInputs();
                             this.bindInputs(this._executionParams!, this._executeExpression!);
                         }
 
@@ -207,8 +208,10 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
                     }
                 }
             } else {
-                this.disposeProtected(true);
-                wasDirty = true;
+                if (this._previousEntityData !== this._currentEntityData) {
+                    this.disposeProtected(true);
+                    wasDirty = true;
+                }
             }
             
             this._isEntityDataDirty = false;
@@ -234,19 +237,10 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
         if (this._isInputsDirty) {
             if (Helpers.isObject(this.contextBinder)) {
                 for (const name of this.contextInputsWithChangedValue!) {
-                    const ref = this.nExpression!.nInExpression!.get(name)!.ref;
-                    const value = this.contextInputValues!.get(name);
-                    const useStructureClone = Helpers.isObject(value) && !ref;
-
                     try {
-                        (<{[key: string]: any}>this.contextBinder!.context)[name] = useStructureClone
-                                                                                        ? structuredClone(value) 
-                                                                                        : value;
+                        (<{[key: string]: any}>this.contextBinder!.context)[name] = this.contextInputValues!.get(name);
                     } catch(ex) {
-                        Console.error(this.nativeElement,
-                                      useStructureClone 
-                                        ? `input set error, if object cannot be cloned, try to use nb-in-ref:name instead of nb-in:name, error: ${ex}`
-                                        : `input set error: ${ex}`);
+                        Console.error(this.nativeElement, `${name} input set error: ${ex}`);
                     }
                 }
 
@@ -288,23 +282,56 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
     protected onDispose(): void {
     }
 
+    protected prepareInputs(): void {
+        for (const [key, value] of this.nExpression!.nInExpression!) {
+            this.resetExpressionExecutionState(value.nExpression, `${Constants.IN_HANDLER_ATTRIBUTE_NAME}:${key}`);
+        }
+    }
+
     protected bindInputs(executionParams: ExecutionParams | undefined, executeExpression: (expression: string | null | undefined, 
-                                                                                         executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
+                                                                                           executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         for (const [key, value] of this.nExpression!.nInExpression!) {
             this.processExpressionExecution(value.nExpression, `${Constants.IN_HANDLER_ATTRIBUTE_NAME}:${key}`,
                                             expression => executeExpression(expression, executionParams), 
-                                            data => this.setInputValue!(key, data));
+                                            data => this.setInputValue!(key, data, value.ref));
         }
 
         return executionParams;
     }
 
-    protected setInputValue(propertyName: string, propertyValue: any): void {
-        if (!Helpers.equals(propertyValue, this.contextInputValues!.has(propertyName)
-                                                        ? this.contextInputValues!.get(propertyName)
-                                                        : (<{[key: string]: any}>this.contextBinder!.context)[propertyName])) {
-            this.contextInputValues!.set(propertyName, propertyValue);
-            this.contextInputsWithChangedValue!.add(propertyName);
+    protected setInputValue(name: string, value: any, ref: boolean): void {
+        let oldValue = undefined;
+        if (this.contextInputValues!.has(name)) {
+            oldValue = this.contextInputValues!.get(name);
+        } else {
+            const contextValue = (<{[key: string]: any}>this.contextBinder!.context)[name];
+            if (!Helpers.isPrimitive(contextValue) && !ref) {
+                try {
+                    oldValue = structuredClone(contextValue);
+                } catch(ex) {
+                    Console.warn(this.nativeElement, `${name} input initial value cannot be cloned, error: ${ex}`);
+                }
+            } else {
+                oldValue = contextValue;
+            }
+
+            this.contextInputValues!.set(name, oldValue);
+        }
+
+        let newValue = undefined;
+        if (!Helpers.isPrimitive(value) && !ref) {
+            try {
+                newValue = structuredClone(value);
+            } catch(ex) {//TODO: log exception only one time if each binding structuredClone fails?
+                Console.error(this.nativeElement, `${name} input set error, object cannot be cloned, try to use nb-in-ref:name instead of nb-in:name, error: ${ex}`);
+            }
+        } else {
+            newValue = value;
+        }
+
+        if (!Helpers.equals(newValue, oldValue)) {
+            this.contextInputValues!.set(name, newValue);
+            this.contextInputsWithChangedValue!.add(name);
             this._isInputsDirty = true;
         }
     }

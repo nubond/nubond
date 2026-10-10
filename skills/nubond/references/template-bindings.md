@@ -102,10 +102,10 @@ context as `this`. Compiled functions are cached per expression + param-name set
 Both replace the element's children. With `showDebugInfo: true` a warning is logged if the element had
 meaningful original children.
 
-> **Caveat:** the "previously written" sentinel starts as `''`, so a **first** value that stringifies to
-> `''` is considered already-written and the DOM write is skipped — the element's original children stay
-> visible. `<span nb-value="this.name">Loading…</span>` with `name` still `undefined` renders
-> `Loading…` as if it were data. Leave these elements empty.
+> **Authored children are replaced on the first commit** — also when the first value is empty (`''`,
+> `undefined`, `null`). The one exception is a `#` binding that has not resolved yet:
+> `<span nb-value="#this.name">Loading…</span>` keeps `Loading…` until `name` is first
+> non-`undefined`, because a one-time expression writes nothing before it has a value.
 
 Both run the result through `Helpers.stringify`:
 
@@ -158,16 +158,31 @@ put `nb-value` on a component tag: value and component are both *content* handle
 
 In the **simple** and **array** forms the expression result is stringified and applied as a class name,
 and the handler remembers what it applied last — when the value changes, the previous class is removed
-and the new one added. The **conditional** form adds/removes each key by the truthiness of its value.
+and the new one added. In the array form a class stays for as long as *any* entry still yields it
+(a `#` entry included). The **conditional** form adds/removes each key by the truthiness of its value.
 
 The conditional form is **not a JS object literal**:
 - **Keys are taken literally, quotes included** — `{'text-muted': x}` toggles a class named
   `'text-muted'` *with the quotes*. Write hyphenated keys bare: `{text-muted: x}`.
 - **Entries are separated by `;`** — `{a: x, b: y}` is a syntax error on every pass, and since the
-  whole binding fails, *neither* class is applied.
+  whole binding fails, *neither* class is applied. The array form has the same separator:
+  `[this.a, this.b]` is **one** entry whose comma operator yields only `this.b`, silently.
+- **A key may appear once** — a duplicate keeps the first entry and logs
+  `duplicated class name (<name>) found.`
 
-Static `class="..."` markup is read at bind time and preserved; nuBond merges its own classes into that
-list. SVG elements are handled via `getAttribute`/`setAttribute('class')`. On commit the handler
+**Classes authored in the markup belong to the markup.** The element's `class="…"` list is
+snapshotted when the element is built, and `nb-class` never removes those classes:
+
+- simple/array forms: a bound value that moves away from an authored class leaves it in place,
+  silently (`class="x static" nb-class="this.a"` going `x → y` gives `static x y`);
+- conditional form: a key naming an authored class is a template error —
+  `class="highlight" nb-class="{highlight: this.on; extra: this.on}"` logs
+  `conditional class expression can't mutate static (highlight) class.` and binds only `extra`.
+
+So toggle only classes that are *not* in the `class` attribute. (`element.classes.remove()` /
+`toggle()` from `ElementManipulations` can still remove an authored class.)
+
+SVG elements are handled via `getAttribute`/`setAttribute('class')`. On commit the handler
 assigns `className` **wholesale** from its own list, so a class added to a bound element by hand
 (`classList.add`) is wiped by the next commit — use `element.classes.add()` from an injected
 `ElementManipulations`, or mark the element with a `data-*` attribute instead.
@@ -180,8 +195,12 @@ assigns `className` **wholesale** from its own list, so a class added to a bound
 removes it — which is why `element.styles.set('color', null)` resets a style.
 
 **Property names must be kebab-case** — they are passed to `setProperty` verbatim, so
-`nb-style="backgroundColor: 'red'"` is a silent no-op. Write `background-color:`. `!important` in a
-value is also silently ignored (no priority argument is passed).
+`nb-style="backgroundColor: 'red'"` is a silent no-op. Write `background-color:`.
+
+A value ending in `!important` is applied with that priority —
+`nb-style="color: this.accent + ' !important'"`. The flag is matched case-insensitively and the space
+before it is optional; `! important` (whitespace inside the flag) is not recognized and the
+declaration is dropped.
 
 A literal `;` inside an entry is escaped as `\;` — e.g. `nb-style="background: url('a\;b.png')"`.
 Each entry carries its own prefix: `nb-class="[this.a; #this.b]"` is legal.
@@ -220,8 +239,10 @@ kebab/camel spellings of one property) keep the **first** and log
 **Guard rails** (rejected with an error pointing at the dedicated handler): `nb-attr:class`,
 `nb-attr:style`, `nb-attr:` targeting a framework `nb-*` attribute, `nb-prop:className`,
 `nb-prop:classList`, `nb-prop:style`, `nb-prop:textContent`, `nb-prop:innerText`,
-`nb-prop:innerHTML`, `nb-prop:outerHTML`. Event-handler attributes are **not** guarded:
-`nb-attr:onclick` binds silently — use `nb-event:` instead.
+`nb-prop:innerHTML`, `nb-prop:outerHTML`. Event-handler attributes are **not** rejected:
+`nb-attr:onclick` still binds. With `showDebugInfo` on, any `nb-attr:` target starting with `on` logs
+a warning (`… looks like an HTML Event Attribute, event subscription should be done via nb-event`) —
+a plain name check, so `nb-attr:once` warns as well. Use `nb-event:` instead.
 
 **A component's inputs are not properties of its host element.** Feed a component with
 `nb-in:value`, not `nb-prop:value` — the latter sets a property on the custom element, which the
@@ -247,43 +268,81 @@ component context never sees.
 **Hidden ≠ removed.** `nb-if`/`nb-switch` toggle the `nb-hidden` class (`display: none !important`);
 the element stays in the DOM. Child containers/components hidden this way have their change detection
 **disabled** while hidden and re-enabled when shown, and their `nb-in` inputs are **not refreshed**
-while hidden.
+while hidden. A detection request made meanwhile (a `detect()` call, a `@Detector()` write) is
+remembered and runs when the element is shown again.
+
+Several visibility handlers may sit on one element (`nb-if` + `nb-repeat`, `nb-if` + `nb-switch`,
+`nb-repeat` + `nb-switch`): each holds its own claim on the hidden class, and the element is visible
+only while none of them wants it hidden.
 
 **Hidden is cheap.** A hidden element still runs its own handlers (something has to decide to show
 it again), but its **children are not evaluated at all** — and are not even tree-built until the first
 time it is shown. An `nb-case` the switch did not pick runs only a reduced sequence (its container /
-component bookkeeping). So "render every variant and switch between them" costs about one expression
-per hidden branch, and each branch keeps its own DOM and state between visits. The flip side:
-`nb-switch` really does render every case it has shown, so a component placed in several cases (or in
-a repeat of switches) exists as **several live instances** — `querySelector` can find a hidden copy,
-and service subscriptions fire on every copy. Take the visible one, and have off-screen instances
-skip expensive work.
+component bookkeeping). A component or container on the hidden element *itself* is **not constructed**
+until the element is first shown — no context, no template, no first pass:
+
+```html
+<my-panel nb-case="@b"></my-panel>                 <!-- built when the switch first picks @b -->
+<my-panel nb-if="this.open"></my-panel>            <!-- built when open first turns true -->
+<my-row nb-repeat="this.rows"></my-row>            <!-- nothing built while rows is empty -->
+```
+
+So "render every variant and switch between them" costs about one expression per hidden branch, and
+each branch keeps its own DOM and state between visits once it has been shown. What follows from that:
+
+- **A hidden entity's constructor runs on first show, not at startup.** Whatever it does there
+  (subscribing to a service, registering itself) starts then, so an instance that has never been
+  shown misses events fired earlier — pass such state through an input or read it on construction.
+  `onContainerAttached` likewise fires on first show for a container that starts hidden.
+- **The build cost lands on first show** — when the tab, dialog or case is first opened.
+- **Built entities are kept, and a hidden container is frozen.** While an `nb-container` element is
+  hidden, a change of its name — a swap, emptying it, a `%slot` route change — is deferred until the
+  element is shown again; no `onDispose`/`onContainerDetached` runs meanwhile. Hiding, emptying and
+  re-showing under the same name therefore brings back the *same instance* with its old state.
+- **Shown cases stay alive.** A component placed in several cases (or in a repeat of switches) exists
+  as several live instances once each has been shown — `querySelector` can find a hidden copy, and
+  service subscriptions fire on every copy. Take the visible one, and have off-screen instances skip
+  expensive work.
+- **Only nuBond-driven hiding counts.** Content hidden by CSS, a closed `popover`/`<dialog>` or a
+  collapsed third-party control is built eagerly; put heavy content under an `nb-if` bound to the
+  open state.
 
 `nb-if` coerces with `!!`, so any truthy value shows the element.
 
 Third-party components that count or index their children (menus, tab lists, listboxes) still see
 hidden elements. Where that matters, drive membership with a filtered array in TypeScript instead.
 
-### Switch matching is stringified string equality
+### Switch matching is type-strict
 
-Both the switch value and each case value go through `Helpers.stringify`, then are compared with
-`===`. That is why constant cases work naturally across types:
+The switch value and each case value are compared with `===` after one normalization step:
+
+- **Primitives** (string, number, boolean, bigint, symbol, `null`, `undefined`) are compared as they
+  are, so the **type matters**: `5` does not match `'5'`, `true` does not match `'true'`, and an
+  `undefined`/`null` switch value does not match an empty-string case — it falls to `nb-default`.
+- **Objects, arrays, functions and `NaN`** are compared by their `Helpers.stringify` text (JSON for
+  objects/arrays, `''` for functions, `'NaN'`). Deep-equal objects match — and so does a string case
+  holding the same text. Avoid switching on objects.
+
+`@` constants are typed, which is what makes constant cases line up:
 
 ```html
-<div nb-switch="this.index">    <span nb-case="@0">…</span>      <!-- "0" === "0" -->
-<div nb-switch="item.isDraft">  <span nb-case="@true">…</span>   <!-- "true" === "true" -->
+<div nb-switch="this.index">    <span nb-case="@0">…</span>      <!-- number 0 === 0 -->
+<div nb-switch="item.isDraft">  <span nb-case="@true">…</span>   <!-- boolean true === true -->
 <div nb-switch="this.status">   <span nb-case="@active">…</span> <!-- "active" === "active" -->
 ```
 
-Objects compare by their `JSON.stringify` output — avoid switching on objects.
+The trap is a **string** switch value that looks numeric — router state, an `<input>` value, a URL
+parameter. `nb-case="@5"` is the number `5` and will not match the string `'5'`; write
+`nb-case="'5'"` (or convert the switch value: `nb-switch="+this.router.state.id"`).
 
 **A switch with no matching case and no `nb-default` hides the switch element itself.** Add an
 `nb-default` if the container must stay visible.
 
 ### Switch as if/else
 
-Because matching is stringified, switching on a boolean is the idiomatic two-branch construct — and
-**`!!` matters**, since `undefined` stringifies to `''` and would match neither branch:
+`@true`/`@false` are booleans, so switching on a boolean is the idiomatic two-branch construct — and
+**`!!` matters**: matching is type-strict, so `undefined` (or any other non-boolean) matches neither
+branch:
 
 ```html
 <div nb-switch="!!this.selectionData?.selectionStarted">
@@ -307,18 +366,20 @@ Supported sources and what `item` is:
 | `Map` | `[key, value]` pair | `.size` |
 | Object | the property **value** (iterates enumerable names) | number of props |
 | Number `N` | `index + 1` (1-based), repeats `⌊N⌋` times | `⌊N⌋` |
-| `null` / `undefined` / number `< 1` | `undefined` (element hidden) | `-1` |
+| `null` / `undefined` / number `< 1` / `NaN` / `±Infinity` | `undefined` (element hidden) | `-1` |
 
 `index` is always 0-based. Iterating a plain object logs a low-performance warning when
 `showDebugInfo` is on.
 
-> **Guard numeric sources.** `Infinity` (e.g. `total / size` with `size = 0`) or a huge number makes
-> the clone loop run synchronously without end and freezes the tab. Clamp before repeating a number.
+> **Guard numeric sources.** A non-finite count (`total / size` with `size = 0`) is treated as
+> empty, but a huge *finite* number still runs the clone loop synchronously and freezes the tab.
+> Clamp before repeating a number.
 
 > **An empty repeat still evaluates its element.** With nothing to show, the original element is
 > hidden, but its *own* bindings (`nb-attr`, `nb-class`, `nb-event` subscriptions, …) still run once
 > per pass with `item` undefined. Every expression on a repeated element must tolerate that:
-> `item?.label`, not `item.label`, or the console fills with execution errors.
+> `item?.label`, not `item.label`, or the console fills with execution errors. (A component or
+> container on the repeated element is the exception — none is instantiated for an empty repeat.)
 
 ```html
 <li nb-repeat="this.items" nb-value="`${index + 1}/${count}: ${item.title}`"></li>
@@ -329,10 +390,12 @@ Supported sources and what `item` is:
 ```
 
 A prefix whose generated names (`outerItem`, `outerIndex`, `outerCount`) collide with a registered
-transformer is rejected with an error. The prefix is used **verbatim** (already lowercased by the HTML
-parser) with a PascalCased suffix and gets no kebab→camel conversion or identifier validation:
-`nb-repeat:outer-list` yields the parameter `outer-listItem`, which is not a valid identifier and
-breaks **every expression in that subtree**. Keep it a single lowercase word (`nb-repeat:outer`).
+transformer is rejected with an error naming that transformer. The prefix is used **verbatim** (already
+lowercased by the HTML parser) with a PascalCased suffix and gets no kebab→camel conversion, and it
+must be a valid identifier: `nb-repeat:outer-list` logs
+`repeat prefix 'outer-list' name cannot be created, it is not a valid identifier.` and the repeat
+does not run — the element renders once, with no loop variables. Keep it a single lowercase word
+(`nb-repeat:outer`).
 
 ### How repeat actually works — index-positional, not keyed
 
@@ -363,8 +426,9 @@ Consequences that matter at scale:
   array when the view changes rather than filtering inside the template.
 
 For large or frequently reordered collections, do the filtering/slicing/sorting in TypeScript and hand
-the template a ready array. Don't filter with `nb-if` on the repeated element itself — two visibility
-handlers on one element desync; put the `nb-if` on a child of the row if you must.
+the template a ready array. An `nb-if` on the repeated element itself does work as a per-row filter
+(`<li nb-repeat="this.items" nb-if="item?.visible">`), but filtered rows stay in the DOM and every
+row is still bound on each pass — fine for short lists, wasteful for long ones.
 
 ## Events
 
@@ -392,15 +456,25 @@ yourself when something meaningful changed. If the expression evaluates to a `Pr
 deferred until it settles (and only then) — so `return this.load().then(...)` updates the UI without a
 manual `detect()`. A `#`-prefixed handler unsubscribes only after its promise **fulfils**.
 
-> **Catch inside async handlers.** A rejected promise returned from an `nb-event` expression is not
-> handled by nuBond — it surfaces as a global `unhandledrejection`, and a `#` handler whose promise
-> rejects stays subscribed.
+> **Rejections are logged, not thrown.** A rejected promise returned from an `nb-event` expression is
+> caught and reported as `<event> event promise error: …`, and the pass still runs. A `#` handler
+> whose promise rejects stays subscribed — one-time means one *successful* completion — so it can be
+> retried, and it can also run more than once if events arrive before the first promise settles.
 
-The debounce suffix is everything after the **first** `:` in the event segment, parsed with
-`parseInt`; a non-numeric suffix logs `'<name>' event has wrong debounce data` (under
-`showDebugInfo` only) and the event is subscribed without debouncing. Consequently **an event name
-cannot itself contain `:`** — `nb-event:plugin:ready` subscribes to `plugin`. Re-dispatch such events
-under a colon-free name.
+**Debounce and namespaced event names.** The debounce is read from the **last** `:` segment, and only
+when that segment parses as a number; otherwise the `:` is part of the event name:
+
+| Attribute | Event | Debounce |
+|---|---|---|
+| `nb-event:input:300` | `input` | 300 ms |
+| `nb-event:plugin:ready` | `plugin:ready` | — |
+| `nb-event:plugin:ready:250` | `plugin:ready` | 250 ms |
+| `nb-event:click:abc` | `click:abc` (literal) | — |
+| `nb-event:click:` | `click:` (literal) | — |
+
+The last two rows are the trap: a mistyped or empty debounce is indistinguishable from a namespaced
+name, so it is **not an error** — nothing is logged at any `showDebugInfo` setting and the handler
+simply never fires.
 
 Subscriptions are re-created whenever the surrounding execution params change (e.g. loop variables in
 an `nb-repeat`), so a handler always closes over the current `item`/`index` — but see the repeat note
@@ -444,9 +518,9 @@ pass, per row.
 | `nb-bound` | Runs **exactly once**, on the element's first bind. Params: `element`, `nativeElement`. |
 
 `nb-bound` is implicitly single-bound — the framework prefixes the expression with `#` if you didn't —
-and it runs exactly once even if the result is `undefined` (no retry). Do not write `nb-bound="@…"`:
-the forced `#` turns it into `#@…`, which never compiles. It is the idiomatic way to capture a
-DOM/custom-element reference:
+and it runs exactly once even if the result is `undefined` (no retry). A leading `@` is left alone, so
+`nb-bound="@text"` is an inert constant: nothing is evaluated and no method is called. It is the
+idiomatic way to capture a DOM/custom-element reference:
 ```html
 <fluent-text-input nb-bound="this.textInput = nativeElement"></fluent-text-input>
 ```
@@ -458,8 +532,8 @@ Pair it with a property setter when you need to react to the capture (see `patte
 |---|---|
 | `nb-container="@Name"` | Renders a registered container (case-insensitive). `%slot` binds to a route slot. The expression's result is stringified and used as the name, so it can be dynamic. |
 | `<my-component>` | Components render via their custom element tag. |
-| `nb-in:name` | Input to a child container/component. Objects are **deep-cloned** (`structuredClone`). |
-| `nb-in-ref:name` | Input **by reference** — for class instances, functions, DOM nodes, anything not cloneable. |
+| `nb-in:name` | Input to a child container/component. Every non-primitive value is **deep-cloned** (`structuredClone`). |
+| `nb-in-ref:name` | Input **by reference** — required for functions, class instances, DOM nodes, anything not cloneable. |
 | `nb-aspect:name` | Attaches an aspect, optionally with data. |
 | `nb-template="@name"` | Injects a globally registered template. The value is a static `@name`, not an expression — it cannot be dynamic. |
 
@@ -467,11 +541,25 @@ Pair it with a property setter when you need to react to the capture (see `patte
 - Kebab → camel: `nb-in:some-name` sets `someName` on the child.
 - Updates are gated by **deep equality** — a new object with identical contents does not trigger an
   update or `onInputsRefreshDone()`.
-- **In-place mutation is never delivered** — the comparison keeps the parent's object reference, so a
-  mutated object is compared against itself. Push a new, deep-unequal object.
-- A non-cloneable `nb-in` value logs `input set error … try to use nb-in-ref` **once** and that
-  object is never retried — the child keeps its own value. Use `nb-in-ref` for anything carrying functions,
-  DOM nodes or class instances you need intact (`structuredClone` drops prototypes).
+- **In-place mutation: delivered by `nb-in`, not by `nb-in-ref`.** `nb-in` compares a fresh clone
+  against the previous clone, so `this.cfg.x = 2` in the parent reaches the child on the parent's next
+  pass. `nb-in-ref` compares the shared object with itself: nothing is delivered, the child's data is
+  already current but its DOM stays stale until it runs a pass of its own. For `nb-in-ref`, assign a
+  new reference when the child must re-render.
+- **Inputs are read-only for the child.** The object the child receives is the framework's comparison
+  baseline; a child that edits it gets the parent's value delivered again on the parent's next pass,
+  which reverts the edit. Copy before modifying.
+- **Cloning happens every pass**, changed or not — keep `nb-in` values small plain data and pass
+  large or rich objects with `nb-in-ref`.
+- **A non-cloneable `nb-in` value is not delivered.** Anything `structuredClone` rejects — a bare
+  function, a DOM node, an object carrying either — logs
+  `<name> input set error, object cannot be cloned, try to use nb-in-ref…` on every pass and sets the
+  child's property to `undefined` (replacing the child's own default). A class instance clones without
+  complaint but arrives as a plain object without its methods. Use `nb-in-ref` for all of these.
+- `Set`s of objects and `Map`s with object keys never deep-equal their own clone, so through `nb-in`
+  they are re-delivered on every pass. Pass arrays or plain objects, or use `nb-in-ref`.
+- A `#`-bound input is delivered once per child *instance*: when an `nb-container` swaps to another
+  container, the new context receives it again.
 - `nb-in:x` and `nb-in-ref:x` on one element share a key space: the `nb-in` one wins and the other is
   rejected with `multiple handlers for one in (x) are not supported`.
 - An input update triggers change detection on the child. A container/component that declares
@@ -479,7 +567,9 @@ Pair it with a property setter when you need to react to the capture (see `patte
   moment after it enters the DOM, its own bindings, including its `nb-event`s, are not live yet.
   Don't drive it synchronously right after it appears.
 
-Setting a container expression to an empty/unknown name disposes the current child context.
+Setting a container expression to an empty/unknown name disposes the current child context — while
+the container element is visible. If it is hidden at that moment, the change is deferred until it is
+shown again (see "Hidden is cheap" above). An empty name is a stable state: it costs nothing per pass.
 
 ## Content projection
 

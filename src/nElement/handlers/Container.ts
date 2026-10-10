@@ -119,7 +119,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
                             result = new TemplateEntityContextData(context!, contextBinderData!);                    
                             this._previousContextName = this._currentContextName;
                         } else {
-                            Console.error(this.nativeElement, `invalid operation: Container '${this._currentContextName}' meta data is not found.`);
+                            Console.error(this.nativeElement, `invalid operation: Container '${this._currentContextName}' meta data is not found or container is not ready.`);
                         }
                     } else {
                         if (Environment.containers.tryPrepare(this._currentContextName, () => {
@@ -148,8 +148,10 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
                 result = entityData;
             }
         } else {
-            this._nElementProjection!.cleanUp();
-            this.disposeInternal(true);
+            if (this._previousContextName !== this._currentContextName) {
+                this._nElementProjection!.cleanUp();
+                this.disposeInternal(true);
+            }
         }
 
         return result;

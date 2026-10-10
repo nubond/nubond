@@ -30,7 +30,7 @@ class ConditionExpressionData implements IClassesBindings<Map<string, IExpressio
 
     public readonly rawExpression = new Map<string, IExpressionDetails>();
 
-    constructor(nativeElement: Element, rawExpression: string) {
+    constructor(nativeElement: Element, rawExpression: string, staticClassNames: Set<string>) {
         const splittedExpressions = Helpers.split(rawExpression.substring(1, rawExpression.length - 1), ';', '\\');
         if (splittedExpressions.length > 0) {
             for (var el of splittedExpressions) {
@@ -41,12 +41,20 @@ class ConditionExpressionData implements IClassesBindings<Map<string, IExpressio
                     const className = rawClassName.trim();
 
                     if (className.length > 0) {
-                        this.rawExpression.set(className, new ExpressionDetails(el.substring(firstSeparatorIndex + 1)));   
+                        if (!this.rawExpression.has(className)) {
+                            if (!staticClassNames.has(className)) {
+                                this.rawExpression.set(className, new ExpressionDetails(el.substring(firstSeparatorIndex + 1)));
+                            } else {
+                                Console.error(nativeElement, `conditional class expression can't mutate static (${className}) class.`);
+                            }
+                        } else {
+                            Console.error(nativeElement, `duplicated class name (${className}) found.`);
+                        }
                     } else {
-                        Console.error(nativeElement, `class name can't be empty`);
+                        Console.error(nativeElement, `class name can't be empty.`);
                     }
                 } else {
-                    Console.error(nativeElement, `incorrect conditional class expression, expected: {class-name1: condition1; class-name2: condition2}. To escape ';' character use '\\;'`);
+                    Console.error(nativeElement, `incorrect conditional class expression, expected: {class-name1: condition1; class-name2: condition2}. To escape ';' character use '\\;'.`);
                 }
             }
         } else {
@@ -102,8 +110,11 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
     private readonly _getHideClassName: () => string;
     private readonly _setClassName: (className: string) => void;
 
-    private _previousClassNames: Array<string>;
-    private _classNames: Array<string>;
+    private readonly _hiddenBy = new Set<string>();
+
+    private _staticClassNames: Set<string> | undefined;
+    private _previousClassNames: Array<string>; //TODO: to Set?
+    private _classNames: Array<string>; //TODO: to Set?
 
     public readonly nExpression: IClassesBindings<IExpressionDetails> | 
                                  IClassesBindings<Array<IExpressionDetails>> | 
@@ -141,18 +152,17 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
             };
         }
 
-        if (className.length > 0) {
-            this._previousClassNames = className.split(/\s+/).filter(el => el.length > 0);
-        } else {
-            this._previousClassNames = [];
-        }
+        this._previousClassNames = className.length > 0 ? className.split(/\s+/).filter(el => el.length > 0) : [];
+        this._classNames = this._previousClassNames.slice();
 
         const expression = <string | undefined>attributes.get(Constants.CLASS_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this.hasNExpression = true;
 
+            this._staticClassNames = new Set(this._classNames);
+
             if (ConditionExpressionData.isThisType(expression!)) {
-                this.nExpression = new ConditionExpressionData(nativeElement, expression!);
+                this.nExpression = new ConditionExpressionData(nativeElement, expression!, this._staticClassNames);
             } else if (ArrayExpressionData.isThisType(expression!)) {
                 this.nExpression = new ArrayExpressionData(nativeElement, expression!);
             } else {
@@ -161,8 +171,6 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
         } else {
             this.hasNExpression = false;
         }
-
-        this._classNames = this._previousClassNames.slice();
     }
 
     public has(className: string): boolean {
@@ -188,29 +196,24 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
         }
     }
 
-    public toggle(className: string, targetExpression?: IExpressionPreviousValue<string>): void {
-        if (!Helpers.isUndefined(targetExpression)) {
-            if (Helpers.isString(targetExpression!.previousValue) && (targetExpression!.previousValue !== className)) {
-                this.remove(targetExpression!.previousValue!);
-            }
-
-            targetExpression!.previousValue = className;
-            this.add(className);
+    public toggle(className: string): void {
+        if (this.has(className)) {
+            this.remove(className);
         } else {
-            if (this.has(className)) {
-                this.remove(className);
-            } else {
-                this.add(className);
-            }
+            this.add(className);
         }
     }
     
-    public show(): void {
-        this.remove(this._getHideClassName());
+    public show(requestingHandlerName: string): void {
+        this._hiddenBy.delete(requestingHandlerName);
+        if (this._hiddenBy.size === 0) {
+            this.remove(this._getHideClassName());
+        }
     }
 
-    public hide(): void  {
+    public hide(requestingHandlerName: string): void  {
         this.add(this._getHideClassName());
+        this._hiddenBy.add(requestingHandlerName);
     }
 
     public bind(executionParams: ExecutionParams | undefined,
@@ -222,15 +225,34 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
                     const currentExpressionDetails = <IExpressionDetails & IExpressionPreviousValue<string>>this.nExpression!.rawExpression;
                     this.processExpressionExecution(currentExpressionDetails, Constants.CLASS_HANDLER_ATTRIBUTE_NAME, 
                                                     expression => executeExpression(expression, executionParams), 
-                                                    data => this.toggle(Helpers.stringify(data), currentExpressionDetails));
+                                                    data => this.toggleInternal(Helpers.stringify(data), currentExpressionDetails, 
+                                                                                className => !this._staticClassNames!.has(className)));
                 break;
                 case 'array':
                     const arrayExpressions = <Array<IExpressionDetails>>this.nExpression!.rawExpression;
+                    const arrayExpressionsWithValues = new Map<IExpressionDetails & IExpressionPreviousValue<string>, string>();
+                    const arrayExpressionsValues = new Set<string>();
+
                     for (let index = 0; index < arrayExpressions.length; index++) {
                         const currentExpressionDetails = <IExpressionDetails & IExpressionPreviousValue<string>>arrayExpressions[index];
                         this.processExpressionExecution(currentExpressionDetails, `[${Constants.CLASS_HANDLER_ATTRIBUTE_NAME}]:${index}`, 
                                                         expression => executeExpression(expression, executionParams), 
-                                                        data => this.toggle(Helpers.stringify(data), currentExpressionDetails));
+                                                        data => {
+                                                            const value = Helpers.stringify(data);
+
+                                                            arrayExpressionsWithValues.set(currentExpressionDetails, value);
+                                                            arrayExpressionsValues.add(value);
+                                                        }, 
+                                                        () => {
+                                                            if (Helpers.isString(currentExpressionDetails.previousValue)) {
+                                                                arrayExpressionsValues.add(currentExpressionDetails.previousValue!);   
+                                                            }
+                                                        });
+                    }
+
+                    for (const [key, value] of arrayExpressionsWithValues) {
+                        this.toggleInternal(value, key, className => !arrayExpressionsValues.has(className) && 
+                                                                     !this._staticClassNames!.has(className));
                     }
                 break;
                 case 'condition':
@@ -278,5 +300,15 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
         }
 
         return wasDirty;
+    }
+
+    protected toggleInternal(className: string, targetExpression: IExpressionPreviousValue<string>, classNameRemovalAllowed: (className: string) => boolean): void {
+        if (Helpers.isString(targetExpression.previousValue) && (targetExpression.previousValue !== className) && 
+            classNameRemovalAllowed(targetExpression.previousValue!)) {
+            this.remove(targetExpression.previousValue!);
+        }
+
+        targetExpression.previousValue = className;
+        this.add(className);
     }
 }

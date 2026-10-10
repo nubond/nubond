@@ -201,7 +201,7 @@ export function Container<T extends IContextConstructor>(htmlTemplateOrPathOrPro
                     if (Helpers.isUndefined(contextConfig)) {
                         contextConfig = <IContextConfig>el;
                     } else {
-                        Console.error(target, `${Constants.DISPLAY_NAME}: wrong container initialization meta data detected: multiple container context configs found.`);
+                        Console.error(target, `Wrong container initialization meta data detected: multiple container context configs found.`);
                         return target;
                     }
                 }

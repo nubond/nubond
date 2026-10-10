@@ -34,7 +34,9 @@ export class Bound extends Base implements IHandler<IExpressionDetails> {
             this._getElementManipulations = getElementManipulations;
 
             this.hasNExpression = true;
-            this.nExpression = new ExpressionDetails(expression!.startsWith('#') ? expression! : `#${expression!}`);
+            this.nExpression = new ExpressionDetails((expression!.startsWith(Constants.SINGLE_BIND_PREFIX_CHAR) || expression!.startsWith(Constants.CONSTANT_BIND_PREFIX_CHAR)) 
+                                                                                        ? expression! 
+                                                                                        : `${Constants.SINGLE_BIND_PREFIX_CHAR}${expression!}`);
         } else {
             this.hasNExpression = false;
         }

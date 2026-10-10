@@ -18,7 +18,7 @@ describe('Attributes handler', () => {
     describe('constructor & expression parsing', () => {
         it('should detect attribute bindings', () => {
             const el = createElementWithAttrs({ 'data-id': 'ctx.id', 'data-name': 'ctx.name' });
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.hasNExpression).toBe(true);
             expect(handler.nExpression).toBeDefined();
@@ -28,7 +28,7 @@ describe('Attributes handler', () => {
         it('should have no expression when no nb attributes', () => {
             const el = document.createElement('div');
             el.setAttribute('id', 'myId');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.hasNExpression).toBe(false);
         });
@@ -37,7 +37,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             el.setAttribute('id', 'myId');
             el.setAttribute('class', 'myClass');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has('id')).toBe(true);
             expect(handler.get('id')).toBe('myId');
@@ -48,7 +48,7 @@ describe('Attributes handler', () => {
         it('should check if attribute exists', () => {
             const el = document.createElement('div');
             el.setAttribute('role', 'button');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has('role')).toBe(true);
             expect(handler.has('nonexistent')).toBe(false);
@@ -57,7 +57,7 @@ describe('Attributes handler', () => {
         it('should get attribute value', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'hello');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.get('title')).toBe('hello');
         });
@@ -66,7 +66,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             el.setAttribute('id', 'test');
             el.setAttribute('data-x', 'y');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const all = handler.getAll();
             expect(all.size).toBe(2);
@@ -75,7 +75,7 @@ describe('Attributes handler', () => {
         it('should return a frozen Map from getAll()', () => {
             const el = document.createElement('div');
             el.setAttribute('id', 'test');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const all = handler.getAll();
             expect(Object.isFrozen(all)).toBe(true);
@@ -85,7 +85,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             el.setAttribute('data-x', '1');
             el.setAttribute('data-y', '2');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const all = handler.getAll('data', false);
             expect(Object.isFrozen(all)).toBe(true);
@@ -95,7 +95,7 @@ describe('Attributes handler', () => {
     describe('set/remove', () => {
         it('should set an attribute value', () => {
             const el = document.createElement('div');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.set('data-custom', 'value');
             expect(handler.has('data-custom')).toBe(true);
@@ -105,7 +105,7 @@ describe('Attributes handler', () => {
         it('should remove an attribute', () => {
             const el = document.createElement('div');
             el.setAttribute('data-x', 'y');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.remove('data-x');
             expect(handler.has('data-x')).toBe(false);
@@ -114,7 +114,7 @@ describe('Attributes handler', () => {
         it('should allow setting a plain attribute that collides with a system handler name', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}value`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             //a plain HTML attribute literally named 'value' must be settable even when nb-value is bound
             expect(() => handler.set('value', 'newVal')).not.toThrow();
@@ -125,7 +125,7 @@ describe('Attributes handler', () => {
         it('should still throw when setting the fully-prefixed system attribute name', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}value`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(() => handler.set(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}value`, 'newVal')).toThrow(/system/);
         });
@@ -134,7 +134,7 @@ describe('Attributes handler', () => {
     describe('bind', () => {
         it('should bind expression to attributes', () => {
             const el = createElementWithAttrs({ 'data-id': 'ctx.id' });
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.bind(undefined, () => '42');
             handler.commit();
@@ -144,7 +144,7 @@ describe('Attributes handler', () => {
 
         it('should return executionParams', () => {
             const el = createElementWithAttrs({ 'data-x': 'ctx.x' });
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const params = { a: 1 } as any;
             expect(handler.bind(params, () => 'v')).toBe(params);
@@ -154,7 +154,7 @@ describe('Attributes handler', () => {
     describe('commit', () => {
         it('should apply attribute changes to DOM', () => {
             const el = document.createElement('div');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.set('title', 'hello');
             handler.commit();
@@ -165,7 +165,7 @@ describe('Attributes handler', () => {
         it('should remove attribute from DOM when undefined', () => {
             const el = document.createElement('div');
             el.setAttribute('data-test', 'value');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.set('data-test', undefined as any);
             handler.commit();
@@ -178,7 +178,7 @@ describe('Attributes handler', () => {
     describe('markAsReady', () => {
         it('should set the ready attribute on the element', () => {
             const el = document.createElement('div');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.markAsReady(Constants.IF_HANDLER_ATTRIBUTE_NAME);
             handler.commit();
@@ -192,14 +192,14 @@ describe('Attributes handler', () => {
         it('should return true for system attributes with isSystem=true', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has(Constants.VALUE_HANDLER_ATTRIBUTE_NAME, true)).toBe(true);
         });
 
         it('should return false for non-existent system attributes with isSystem=true', () => {
             const el = document.createElement('div');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has('nonexistent', true)).toBe(false);
         });
@@ -210,7 +210,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
             el.setAttribute(Constants.VALUE_HANDLER_ATTRIBUTE_NAME, 'plain');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             //removing the plain 'value' attribute must not throw even though nb-value is bound
             expect(() => handler.remove(Constants.VALUE_HANDLER_ATTRIBUTE_NAME)).not.toThrow();
@@ -220,7 +220,7 @@ describe('Attributes handler', () => {
         it('should still throw when removing the fully-prefixed system attribute name', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(() => handler.remove(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`)).toThrow(/system/);
         });
@@ -263,7 +263,7 @@ describe('Attributes handler', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}class`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.hasNExpression).toBe(false);
             expect(consoleSpy).toHaveBeenCalled();
@@ -274,7 +274,7 @@ describe('Attributes handler', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}style`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.hasNExpression).toBe(false);
             expect(consoleSpy).toHaveBeenCalled();
@@ -286,7 +286,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             // nb-attr:nb-value → attributeName becomes 'nb-value' which is in KNOWN_HANDLERS_SET
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.hasNExpression).toBe(false);
             expect(consoleSpy).toHaveBeenCalled();
@@ -298,7 +298,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             // nb-attr:nb-event:click → attributeName 'nb-event:click' starts with known prefix 'nb-event'
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}click`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(consoleSpy).toHaveBeenCalled();
             consoleSpy.mockRestore();
@@ -308,7 +308,7 @@ describe('Attributes handler', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(consoleSpy).toHaveBeenCalled();
             consoleSpy.mockRestore();
@@ -321,7 +321,7 @@ describe('Attributes handler', () => {
             // This is tricky since setAttribute overwrites, but the code iterates attributes
             // We'll test the "incorrect binding" path instead
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, '');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             // Empty value on a known handler that requires value should error
             expect(consoleSpy).toHaveBeenCalled();
@@ -332,7 +332,7 @@ describe('Attributes handler', () => {
             // Handlers like case, default, bound, template that work without explicit value
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME}`, '');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             // Should not error — default is a known handler without value
             expect(handler.has(Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME, true)).toBe(true);
@@ -342,7 +342,7 @@ describe('Attributes handler', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}if${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`, '');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
             
             // Ready attributes should not produce error
             expect(consoleSpy).not.toHaveBeenCalled();
@@ -354,7 +354,7 @@ describe('Attributes handler', () => {
         it('should find system attributes by prefix with isPrefixRequired=true', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}click`, 'ctx.onClick()');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has(Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME, true, true)).toBe(true);
         });
@@ -362,7 +362,7 @@ describe('Attributes handler', () => {
         it('should find system attributes by prefix with isPrefixRequired=false (exact match)', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has(Constants.VALUE_HANDLER_ATTRIBUTE_NAME, true, true, false)).toBe(true);
         });
@@ -371,7 +371,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             el.setAttribute(`data${Constants.META_VALUE_SEPARATOR}id`, 'test');
             el.setAttribute(`data${Constants.META_VALUE_SEPARATOR}name`, 'test2');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has('data', false, true)).toBe(true);
         });
@@ -379,7 +379,7 @@ describe('Attributes handler', () => {
         it('should find non-system attributes by prefix with isPrefixRequired=false', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'test');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has('title', false, true, false)).toBe(true);
         });
@@ -389,7 +389,7 @@ describe('Attributes handler', () => {
         it('should get system attribute by prefix returning [key, value] tuple', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}click`, 'ctx.onClick()');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const result = handler.get(Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME, true, true);
             expect(Array.isArray(result)).toBe(true);
@@ -398,7 +398,7 @@ describe('Attributes handler', () => {
 
         it('should return undefined for system prefix when not found', () => {
             const el = document.createElement('div');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const result = handler.get('nonexistent', true, true);
             expect(result).toBeUndefined();
@@ -407,7 +407,7 @@ describe('Attributes handler', () => {
         it('should get system attribute by prefix with isPrefixRequired=false', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const result = handler.get(Constants.VALUE_HANDLER_ATTRIBUTE_NAME, true, true, false);
             expect(Array.isArray(result)).toBe(true);
@@ -416,7 +416,7 @@ describe('Attributes handler', () => {
         it('should get non-system attribute by prefix returning [key, value] tuple', () => {
             const el = document.createElement('div');
             el.setAttribute(`data${Constants.META_VALUE_SEPARATOR}id`, 'test');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const result = handler.get('data', false, true);
             expect(Array.isArray(result)).toBe(true);
@@ -425,7 +425,7 @@ describe('Attributes handler', () => {
 
         it('should return undefined for non-system prefix when not found', () => {
             const el = document.createElement('div');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const result = handler.get('nonexistent', false, true);
             expect(result).toBeUndefined();
@@ -434,7 +434,7 @@ describe('Attributes handler', () => {
         it('should get non-system attribute by prefix with isPrefixRequired=false', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'test');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const result = handler.get('title', false, true, false);
             expect(Array.isArray(result)).toBe(true);
@@ -446,7 +446,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}click`, 'ctx.onClick()');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}input`, 'ctx.onInput()');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const all = handler.getAll(Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME, true);
             expect(all.size).toBe(2);
@@ -457,7 +457,7 @@ describe('Attributes handler', () => {
             el.setAttribute(`data${Constants.META_VALUE_SEPARATOR}id`, 'a');
             el.setAttribute(`data${Constants.META_VALUE_SEPARATOR}name`, 'b');
             el.setAttribute('title', 'c');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const all = handler.getAll('data', false);
             expect(all.size).toBe(2);
@@ -467,7 +467,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             el.setAttribute('data', 'exact');
             el.setAttribute(`data${Constants.META_VALUE_SEPARATOR}id`, 'prefixed');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const all = handler.getAll('data', false, false);
             expect(all.size).toBe(2);
@@ -476,7 +476,7 @@ describe('Attributes handler', () => {
         it('should get all system attributes without prefix', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.x');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const all = handler.getAll(undefined, true);
             expect(all.size).toBeGreaterThanOrEqual(1);
@@ -487,7 +487,7 @@ describe('Attributes handler', () => {
         it('should not mark dirty when setting same value', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'hello');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             // commit to clear dirty
             handler.commit();
@@ -498,7 +498,7 @@ describe('Attributes handler', () => {
 
         it('should not mark dirty when removing non-existent attribute', () => {
             const el = document.createElement('div');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.remove('nonexistent');
             expect(handler.isDirty).toBe(false);
@@ -507,7 +507,7 @@ describe('Attributes handler', () => {
         it('should delete attribute when set to null', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'hello');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.set('title', null);
             expect(handler.has('title')).toBe(false);
@@ -518,7 +518,7 @@ describe('Attributes handler', () => {
         it('should remove attributes from DOM that were deleted', () => {
             const el = document.createElement('div');
             el.setAttribute('data-x', 'y');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.commit(); // initial sync
             handler.remove('data-x');
@@ -530,7 +530,7 @@ describe('Attributes handler', () => {
         it('should sync existing attribute value changes', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'old');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.commit(); // initial sync
             handler.set('title', 'new');
@@ -544,7 +544,7 @@ describe('Attributes handler', () => {
         it('should get non-system attribute by exact name without prefix', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'test-title');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.get('title')).toBe('test-title');
         });
@@ -552,7 +552,7 @@ describe('Attributes handler', () => {
         it('should has non-system attribute by exact name without prefix', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'test-title');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.has('title')).toBe(true);
             expect(handler.has('nonexistent')).toBe(false);
@@ -562,7 +562,7 @@ describe('Attributes handler', () => {
             const el = document.createElement('div');
             el.setAttribute('title', 'test-title');
             el.setAttribute('data-x', 'val');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             const all = handler.getAll();
             expect(all.size).toBeGreaterThanOrEqual(2);
@@ -573,7 +573,7 @@ describe('Attributes handler', () => {
         it('should bind expressions and set attributes on commit', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}data-id`, 'ctx.id');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             expect(handler.hasNExpression).toBe(true);
 
@@ -587,7 +587,7 @@ describe('Attributes handler', () => {
         it('should not be dirty after binding same value twice', () => {
             const el = document.createElement('div');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}data-id`, 'ctx.id');
-            const handler = new Attributes(el);
+            const handler = new Attributes(el, () => false);
 
             handler.bind(undefined, () => '42');
             handler.commit();
@@ -606,6 +606,71 @@ describe('Attributes handler', () => {
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, 'ctx.y');
             // Since setAttribute overwrites, we can't easily create duplicate DOM attributes
             // But we can test the "no hasAttributes" branch
+            consoleSpy.mockRestore();
+        });
+    });
+
+    describe('R2-6: nb-attr:on* HTML event-attribute warning', () => {
+        const attrPrefix = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}`;
+
+        it('should warn for an on* attribute name when showDebugInfo is on', () => {
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+            const el = document.createElement('div');
+            el.setAttribute(`${attrPrefix}onclick`, 'ctx.x');
+            new Attributes(el, () => true);
+
+            expect(consoleSpy).toHaveBeenCalled();
+            expect(consoleSpy.mock.calls[0].join(' ')).toContain('onclick');
+            consoleSpy.mockRestore();
+        });
+
+        it('should stay silent when showDebugInfo is off', () => {
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+            const el = document.createElement('div');
+            el.setAttribute(`${attrPrefix}onclick`, 'ctx.x');
+            new Attributes(el, () => false);
+
+            expect(consoleSpy).not.toHaveBeenCalled();
+            consoleSpy.mockRestore();
+        });
+
+        it('should still create the binding — the on* check warns, it does not reject', () => {
+            const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+            const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+            const el = document.createElement('div');
+            el.setAttribute(`${attrPrefix}onclick`, 'ctx.x');
+            const handler = new Attributes(el, () => true);
+
+            expect(handler.hasNExpression).toBe(true);
+            expect(handler.nExpression!.has('onclick')).toBe(true);
+            expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+            handler.bind(undefined, () => 'doSomething()');
+            handler.commit();
+            expect(el.getAttribute('onclick')).toBe('doSomething()');
+
+            consoleErrorSpy.mockRestore();
+            consoleWarnSpy.mockRestore();
+        });
+
+        it('should not warn for attribute names that do not start with "on"', () => {
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+            const el = document.createElement('div');
+            el.setAttribute(`${attrPrefix}data-id`, 'ctx.x');
+            new Attributes(el, () => true);
+
+            expect(consoleSpy).not.toHaveBeenCalled();
+            consoleSpy.mockRestore();
+        });
+
+        it('should warn for any on*-shaped name — the check is a name heuristic, not an event lookup', () => {
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+            const el = document.createElement('div');
+            el.setAttribute(`${attrPrefix}once`, 'ctx.x');
+            const handler = new Attributes(el, () => true);
+
+            expect(consoleSpy).toHaveBeenCalled();
+            expect(handler.nExpression!.has('once')).toBe(true);
             consoleSpy.mockRestore();
         });
     });

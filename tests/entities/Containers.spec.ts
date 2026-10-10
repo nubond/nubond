@@ -82,13 +82,14 @@ describe('Containers', () => {
         expect(containers.instantiateContext('nonexistent')).toBeUndefined();
     });
 
-    it('should apply HTML sanitizer', () => {
+    it('should not apply the HTML sanitizer to an inline template', () => {
         class MyCtx implements IContext {}
-        const sanitizer = (html: string) => html.replace(/<script[^>]*>.*?<\/script>/gi, '');
+        const sanitizer = jest.fn((html: string) => html.replace(/<script[^>]*>.*?<\/script>/gi, ''));
 
         containers.add('sanitized', MyCtx as any, [],
             '<div>safe</div>', mockBinderCreator, () => sanitizer);
         expect(containers.has('sanitized')).toBe(true);
+        expect(sanitizer).not.toHaveBeenCalled();
     });
 
     it('should log error and return undefined for instantiateBinder when template is not ready', () => {

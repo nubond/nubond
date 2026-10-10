@@ -262,6 +262,61 @@ describe('Constants', () => {
         it('should contain display: none', () => {
             expect(Constants.DEFAULT_PROCESSING_HIDE_STYLE).toContain('display: none');
         });
+
+        // R6-3: the rules used to be wrapped in `* { … }` and relied on native CSS Nesting,
+        // so a parser without nesting support dropped the whole sheet and the desugared
+        // `* [nb-if]…` form never matched a top-level element of a shadow root.
+        it('should parse into flat rules in a parser without CSS-nesting support (R6-3)', () => {
+            const style = document.createElement('style');
+            style.textContent = Constants.DEFAULT_PROCESSING_HIDE_STYLE;
+            document.head.appendChild(style);
+
+            try {
+                expect(style.sheet).not.toBeNull();
+
+                const rules = Array.from(style.sheet!.cssRules) as CSSStyleRule[];
+                expect(rules.length).toBe(2);
+                for (const rule of rules) {
+                    expect(rule.selectorText).toContain('[nb-');
+                    expect(rule.style.getPropertyValue('display')).toBe('none');
+                }
+            } finally {
+                style.remove();
+            }
+        });
+
+        it('should hide a top-level element of a shadow root until it is marked ready (R6-3)', () => {
+            const families = [Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME, Constants.IF_HANDLER_ATTRIBUTE_NAME,
+                              Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, Constants.COMPONENT_MARKER_ATTRIBUTE_NAME,
+                              Constants.REPEAT_HANDLER_ATTRIBUTE_NAME, Constants.SWITCH_HANDLER_ATTRIBUTE_NAME];
+
+            for (const family of families) {
+                for (const prefix of ['nb', 'data-nb']) {
+                    const attributeName = `${prefix}-${family}`;
+                    const readyAttributeName = `${attributeName}-${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+                    const selector = `[${attributeName}]:not([${readyAttributeName}])`;
+
+                    expect(Constants.DEFAULT_PROCESSING_HIDE_STYLE).toContain(selector);
+
+                    // a direct child of a ShadowRoot has no element ancestor inside its own tree
+                    const host = document.createElement('div');
+                    document.body.appendChild(host);
+                    const shadowRoot = host.attachShadow({ mode: 'open' });
+                    const topLevel = document.createElement('div');
+                    topLevel.setAttribute(attributeName, 'expression');
+                    shadowRoot.appendChild(topLevel);
+
+                    try {
+                        expect(topLevel.matches(selector)).toBe(true);
+
+                        topLevel.setAttribute(readyAttributeName, '');
+                        expect(topLevel.matches(selector)).toBe(false);
+                    } finally {
+                        host.remove();
+                    }
+                }
+            }
+        });
     });
 
     describe('changeCompliancyWithW3C', () => {

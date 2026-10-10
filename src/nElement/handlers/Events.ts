@@ -37,8 +37,8 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
     private readonly _nativeElement: HTMLElement;
     private readonly _requestDetectChanges: (() => void);
 
-    private readonly _subscriptionData = new Map<string, () => void>();
-    private readonly _unSubscribedData = new Set<string>();
+    private readonly _subscribed = new Map<string, () => void>();
+    private readonly _unsubscribed = new Set<string>();
 
     private previousExecutionParams: ExecutionParams | undefined;
 
@@ -48,7 +48,7 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
     public readonly isDirty = false;
 
     constructor(nativeElement: Element, attributes: Attributes, getElementManipulations: () => ElementManipulations,
-                requestDetectChanges: () => void, getShowDebugInfo: () => boolean) {
+                requestDetectChanges: () => void) {
         super();
         
         this._nativeElement = <HTMLElement>nativeElement;
@@ -66,17 +66,14 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
                         let eventName: string;
                         let debounce: number | undefined;
                         
-                        const debounceDataStart = rawEventName.indexOf(Constants.META_VALUE_SEPARATOR);
-                        if (debounceDataStart > 0) {
-                            eventName = rawEventName.substring(0, debounceDataStart);
-
-                            const rawDebounce = parseInt(rawEventName.substring(debounceDataStart + Constants.META_VALUE_SEPARATOR.length), 10);
+                        const debounceDataStartIndex = rawEventName.lastIndexOf(Constants.META_VALUE_SEPARATOR);
+                        if (debounceDataStartIndex > 0) {
+                            const rawDebounce = parseInt(rawEventName.substring(debounceDataStartIndex + Constants.META_VALUE_SEPARATOR.length), 10);
                             if (Helpers.isNumber(rawDebounce) && !isNaN(rawDebounce)) {
+                                eventName = rawEventName.substring(0, debounceDataStartIndex);
                                 debounce = rawDebounce;
-                            } else {
-                                if (getShowDebugInfo()) {
-                                    Console.error(nativeElement, `'${eventName}' event has wrong debounce data (${rawDebounce}) and will not be debounced`);
-                                }
+                            } else { //event name itself contains META_VALUE_SEPARATOR as a part of name
+                                eventName = rawEventName;
                             }
                         } else {
                             eventName = rawEventName;
@@ -138,12 +135,11 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
                 handleSubscription = true;
 
                 for (const [key, data] of this.nExpression!) {
-                    if (!this._unSubscribedData.has(key)) {
-                        const unsubscribeFn = this._subscriptionData.get(key);
+                    if (!this._unsubscribed.has(key)) {
+                        const unsubscribeFn = this._subscribed.get(key);
                         if (Helpers.isFunction(unsubscribeFn)) {
                             unsubscribeFn!();
-                            this._unSubscribedData.delete(key);
-                            this._subscriptionData.delete(key)
+                            this._subscribed.delete(key)
                         }
                     }
                 }
@@ -166,54 +162,54 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
     }
     
     public dispose(): void {
-        for (const [key, unsubscribeFn] of this._subscriptionData) {
+        for (const [key, unsubscribeFn] of this._subscribed) {
             if (Helpers.isFunction(unsubscribeFn)) {
                 unsubscribeFn!();
             }
         }
 
-        this._unSubscribedData.clear();
-        this._subscriptionData.clear();
+        this._unsubscribed.clear();
+        this._subscribed.clear();
     }
 
     private handleSubscription<K extends keyof HTMLElementEventMap>(key: K | string, data: IEventsBindings, executionParams: ExecutionParams | undefined, 
                                                                     executeExpression: (expression: string | null | undefined,
                                                                     executionParams: ExecutionParams | undefined) => any) {
-        if (!this._subscriptionData.has(key)) { 
+        if (!this._subscribed.has(key) && !this._unsubscribed.has(key)) { 
             const nativeUnSubscribe = this.subscribe(key, (evt: Event) => {
-                const unSubscribe = (permanent?: boolean) => {
-                    if (!this._unSubscribedData.has(key)) {
+                const unSubscribe = () => {
+                    if (!this._unsubscribed.has(key) && (this._subscribed.get(key) === nativeUnSubscribe)) {
                         nativeUnSubscribe();
-
-                        if (Helpers.isBoolean(permanent) && permanent) {
-                            this._unSubscribedData.add(key);
-                        }
+                        this._subscribed.delete(key);
+                        this._unsubscribed.add(key);
                     }
                 };
 
                 const extendedExecParams = ExpressionExecParamsHelper.createOrExtendEventExecParams(this._nativeElement, 
                                                                                                     this._getElementManipulations(), evt,
-                                                                                                    () => unSubscribe(true), executionParams);
+                                                                                                    () => unSubscribe(), executionParams);
                 const result = executeExpression(data.nExpression.expression, extendedExecParams);
 
                 if (result instanceof Promise) {
                     result.then(() => {
                         if (data.nExpression.isSingleBinded) {
-                            unSubscribe(true);
+                            unSubscribe();
                         }                  
+                    }).catch(error => {
+                        Console.error(this._nativeElement, `${key} event promise error: ${error}`);
                     }).finally(() => {
                         this._requestDetectChanges();
                     });
                 } else {
                     if (data.nExpression.isSingleBinded) {
-                        unSubscribe(true);
+                        unSubscribe();
                     }
 
                     this._requestDetectChanges();
                 }
             }, undefined, data.debounce);
 
-            this._subscriptionData.set(key, nativeUnSubscribe);
+            this._subscribed.set(key, nativeUnSubscribe);
         }
     }
 }

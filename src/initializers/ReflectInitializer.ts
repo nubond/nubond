@@ -15,6 +15,7 @@ export class ReflectInitializer {
         if (!Helpers.isUndefined(document)) {
             const that = this;
 
+            //TODO: reflect-metadata walks the prototype chain of the target, think if this is needed
             if (!Helpers.isFunction((<any>Reflect).getMetadata)) {
                 Object.defineProperty(Reflect, 'getMetadata', {
                     value: function (metadataKey: any, target: any, propertyKey?: string | symbol): any {

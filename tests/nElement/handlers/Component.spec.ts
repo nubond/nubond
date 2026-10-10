@@ -48,7 +48,7 @@ describe('Component handler', () => {
     function createComponentHandler(tagName: string) {
         const el = document.createElement(tagName);
         (el as any).$bind = jest.fn();
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Component(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                       mockGetEventDispatcher, mockIsVisible);
         return { el, attrs, handler };
@@ -60,7 +60,7 @@ describe('Component handler', () => {
 
     it('should have no expression for unregistered element', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Component(el, attrs, mockGetManipulations, mockGetSubscriptions, 
                                       mockGetEventDispatcher, mockIsVisible);
 
@@ -122,7 +122,7 @@ describe('Component handler', () => {
             const env1 = mockComponentsEnv({ has: true, isReady: true });
             const el = document.createElement('my-widget');
             (el as any).$bind = jest.fn();
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Component(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                           mockGetEventDispatcher, mockIsVisible);
 

@@ -82,7 +82,7 @@ describe('Aspects handler', () => {
 
     it('should have no expression when no aspect attributes', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                     mockGetEventDispatcher, mockDetectChanges);
 
@@ -91,7 +91,7 @@ describe('Aspects handler', () => {
 
     it('isDirty should be false initially', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                     mockGetEventDispatcher, mockDetectChanges);
 
@@ -100,7 +100,7 @@ describe('Aspects handler', () => {
 
     it('should return executionParams from bind when no expression', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el);
+        const attrs = new Attributes(el, () => false);
         const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                     mockGetEventDispatcher, mockDetectChanges);
 
@@ -116,7 +116,7 @@ describe('Aspects handler', () => {
             const { aspects, mockAspectInstance } = mockAspectsEnv({ has: true });
 
             const el = createElementWithAspect('my-aspect', 'ctx.value');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -138,7 +138,7 @@ describe('Aspects handler', () => {
                 `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ASPECT_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}my-aspect`,
                 ''
             );
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -158,7 +158,7 @@ describe('Aspects handler', () => {
                 `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ASPECT_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}`,
                 'ctx.x'
             );
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -180,7 +180,7 @@ describe('Aspects handler', () => {
             const consoleSpy = jest.spyOn(Console, 'error').mockImplementation(() => {});
 
             const el = createElementWithAspect('broken-aspect', 'ctx.x');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -196,7 +196,7 @@ describe('Aspects handler', () => {
             const { aspects, mockAspectInstance } = mockAspectsEnv({ has: true });
 
             const el = createElementWithAspect('my-aspect', 'ctx.value');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -222,7 +222,7 @@ describe('Aspects handler', () => {
                 `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ASPECT_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}my-aspect`,
                 ''
             );
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -237,7 +237,7 @@ describe('Aspects handler', () => {
             const { aspects, mockAspectInstance } = mockAspectsEnv({ has: true });
 
             const el = createElementWithAspect('my-aspect', 'ctx.value');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -249,7 +249,7 @@ describe('Aspects handler', () => {
 
         it('commit should return false when not dirty', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -265,7 +265,7 @@ describe('Aspects handler', () => {
             const consoleSpy = jest.spyOn(Console, 'error').mockImplementation(() => {});
 
             const el = createElementWithAspect('unknown', 'ctx.x');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -285,7 +285,7 @@ describe('Aspects handler', () => {
             mockAspectsEnv({ has: true });
 
             const el = createElementWithAspect('my-aspect', 'ctx.x');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -303,7 +303,7 @@ describe('Aspects handler', () => {
             });
 
             const el = createElementWithAspect('styled', 'ctx.x');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -327,14 +327,14 @@ describe('Aspects handler', () => {
             mockAspectsEnv(envOpts);
 
             const el1 = createElementWithAspect('styled', 'ctx.a');
-            const handler1 = new Aspects(el1, new Attributes(el1), mockGetManipulations, mockGetSubscriptions,
+            const handler1 = new Aspects(el1, new Attributes(el1, () => false), mockGetManipulations, mockGetSubscriptions,
                                          mockGetEventDispatcher, mockDetectChanges);
 
             // Re-mock so instantiate returns a fresh aspect for the second handler
             mockAspectsEnv(envOpts);
 
             const el2 = createElementWithAspect('styled', 'ctx.b');
-            const handler2 = new Aspects(el2, new Attributes(el2), mockGetManipulations, mockGetSubscriptions,
+            const handler2 = new Aspects(el2, new Attributes(el2, () => false), mockGetManipulations, mockGetSubscriptions,
                                          mockGetEventDispatcher, mockDetectChanges);
 
             expect(document.adoptedStyleSheets.filter(s => s === cssSheet).length).toBeGreaterThanOrEqual(1);
@@ -365,7 +365,7 @@ describe('Aspects handler', () => {
             mockAdoptedStylesEnv(adoptedCssSheet);
 
             const el = createElementWithAspect('fancy', 'ctx.y');
-            const attrs = new Attributes(el);
+            const attrs = new Attributes(el, () => false);
             const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
                                         mockGetEventDispatcher, mockDetectChanges);
 
@@ -376,6 +376,161 @@ describe('Aspects handler', () => {
 
             expect(document.adoptedStyleSheets).not.toContain(ownCssSheet);
             expect(document.adoptedStyleSheets).not.toContain(adoptedCssSheet);
+        });
+    });
+
+    // ───── R3-5: declared-order adoption with more than one adopted style ─────
+
+    describe('R3-5: adopted stylesheets are adopted in declared order', () => {
+        /**
+         * Per-name sheets, so more than one adopted style can be told apart. Names listed in
+         * `deferred` only complete when the returned `flush` is called, which is how the
+         * out-of-order case is driven; names listed in `missing` make tryPrepare return false
+         * without ever calling back, the way an unregistered adopted-style name does. The
+         * module-level mockAdoptedStylesEnv returns one sheet for every name and always calls
+         * back synchronously, which cannot express any of these.
+         */
+        function mockPerNameAdoptedStyles(sheets: Map<string, CSSStyleSheet>,
+                                          deferred: Array<string> = [],
+                                          missing: Array<string> = []) {
+            const pending: Array<() => void> = [];
+            const adoptedStyles = {
+                tryPrepare: jest.fn().mockImplementation((name: string, cb: (asyncCallBack: boolean) => void) => {
+                    if (missing.indexOf(name) >= 0) {
+                        return false;
+                    }
+
+                    if (deferred.indexOf(name) >= 0) {
+                        pending.push(() => cb(true));
+                    } else {
+                        cb(false);
+                    }
+                    return true;
+                }),
+                get: jest.fn().mockImplementation((name: string) => sheets.get(name)),
+            };
+
+            (Environment as any)._adoptedStyles = adoptedStyles;
+            Object.defineProperty(Environment, 'adoptedStyles', { get: () => adoptedStyles, configurable: true });
+
+            return { flush: () => { const queued = [...pending]; pending.length = 0; queued.forEach(el => el()); } };
+        }
+
+        function buildHandler(): Aspects {
+            const el = createElementWithAspect('fancy', 'ctx.y');
+            return new Aspects(el, new Attributes(el, () => false), mockGetManipulations, mockGetSubscriptions,
+                               mockGetEventDispatcher, mockDetectChanges);
+        }
+
+        it('should adopt every declared stylesheet, not only one of them', () => {
+            const sheetA = new CSSStyleSheet();
+            const sheetB = new CSSStyleSheet();
+
+            mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [undefined, ['a', 'b']] });
+            mockPerNameAdoptedStyles(new Map([['a', sheetA], ['b', sheetB]]));
+
+            const handler = buildHandler();
+
+            expect(document.adoptedStyleSheets).toContain(sheetA);
+            expect(document.adoptedStyleSheets).toContain(sheetB);
+            expect(document.adoptedStyleSheets.indexOf(sheetA)).toBeLessThan(document.adoptedStyleSheets.indexOf(sheetB));
+
+            handler.dispose();
+
+            expect(document.adoptedStyleSheets).not.toContain(sheetA);
+            expect(document.adoptedStyleSheets).not.toContain(sheetB);
+        });
+
+        it('should keep declared order when the first declared style completes last', () => {
+            const sheetA = new CSSStyleSheet();
+            const sheetB = new CSSStyleSheet();
+
+            mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [undefined, ['a', 'b']] });
+            //'a' is declared first but resolves after 'b' — completion order must not decide cascade order
+            const { flush } = mockPerNameAdoptedStyles(new Map([['a', sheetA], ['b', sheetB]]), ['a']);
+
+            buildHandler();
+            flush();
+
+            expect(document.adoptedStyleSheets.indexOf(sheetA)).toBeLessThan(document.adoptedStyleSheets.indexOf(sheetB));
+        });
+
+        it('should adopt the aspect own style before the adopted ones', () => {
+            const ownSheet = new CSSStyleSheet();
+            const sheetA = new CSSStyleSheet();
+
+            mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [ownSheet, ['a']] });
+            mockPerNameAdoptedStyles(new Map([['a', sheetA]]));
+
+            buildHandler();
+
+            expect(document.adoptedStyleSheets.indexOf(ownSheet)).toBeLessThan(document.adoptedStyleSheets.indexOf(sheetA));
+        });
+
+        it('should still adopt a ready style declared before an unregistered one', () => {
+            // tryPrepare returns false for an unregistered name and never calls back, so the
+            // completion gate has to be re-evaluated from that fallback too - otherwise the
+            // sheets already collected are never pushed.
+            const sheetA = new CSSStyleSheet();
+
+            mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [undefined, ['a', 'missing']] });
+            mockPerNameAdoptedStyles(new Map([['a', sheetA]]), [], ['missing']);
+
+            const handler = buildHandler();
+
+            expect(document.adoptedStyleSheets).toContain(sheetA);
+            // adopted and refcounted exactly once - the gate must not run twice
+            expect((handler as any)._adoptedCssStyleSheet.filter((el: any) => el === sheetA).length).toBe(1);
+
+            handler.dispose();
+
+            expect(document.adoptedStyleSheets).not.toContain(sheetA);
+        });
+
+        it('should adopt an async style declared before an unregistered one once it lands', () => {
+            const sheetA = new CSSStyleSheet();
+
+            mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [undefined, ['a', 'missing']] });
+            const { flush } = mockPerNameAdoptedStyles(new Map([['a', sheetA]]), ['a'], ['missing']);
+
+            const handler = buildHandler();
+            expect(document.adoptedStyleSheets).not.toContain(sheetA);
+
+            flush();
+
+            expect(document.adoptedStyleSheets).toContain(sheetA);
+            expect((handler as any)._adoptedCssStyleSheet.filter((el: any) => el === sheetA).length).toBe(1);
+        });
+
+        it('should adopt nothing and not throw when every name is unregistered', () => {
+            mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [undefined, ['m1', 'm2']] });
+            mockPerNameAdoptedStyles(new Map(), [], ['m1', 'm2']);
+
+            expect(() => buildHandler()).not.toThrow();
+            expect(document.adoptedStyleSheets.length).toBe(0);
+        });
+
+        it('should adopt once and still release on dispose when two names resolve to one sheet', () => {
+            // Repeated names cannot reach the handler — the aspect metadata dedupes them at
+            // registration (see the Aspects entity spec). Case variants can, because that
+            // filter is case-sensitive while adopted-style lookup is not, so two declared
+            // names resolve to the same sheet. The sheet is adopted once (indexOf guard) but
+            // the usage count is incremented once per declared name; dispose decrements once
+            // per name too, so the asymmetry is only apparent. Pinned because "fixing" the
+            // double count on one side alone would strand the sheet in adoptedStyleSheets.
+            const sheet = new CSSStyleSheet();
+
+            mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [undefined, ['Shared', 'shared']] });
+            mockPerNameAdoptedStyles(new Map([['Shared', sheet], ['shared', sheet]]));
+
+            const handler = buildHandler();
+
+            expect(document.adoptedStyleSheets.filter(el => el === sheet).length).toBe(1);
+            expect((handler as any)._adoptedCssStyleSheet.length).toBe(2);
+
+            handler.dispose();
+
+            expect(document.adoptedStyleSheets).not.toContain(sheet);
         });
     });
 });
