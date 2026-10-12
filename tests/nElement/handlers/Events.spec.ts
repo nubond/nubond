@@ -365,61 +365,125 @@ describe('Events handler', () => {
         });
     });
 
-    describe('bind re-subscription on changed executionParams', () => {
-        it('should re-subscribe when executionParams change', () => {
-            const el = createElementWithEvents({ 'click': 'this.onClick()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+    // performance-enhancement.md 1.3: the template handler subscribes once, on the first bind, and the
+    // listener reads the latest execution params at event time. Before, bind() deep-compared the params
+    // every cycle and tore the listeners down and re-added them on any difference.
+    describe('one subscription per event - execution params are read at event time (1.3)', () => {
+        beforeEach(() => {
+            if (!Environment.router) {
+                Environment.setupRouter(undefined);
+            }
+        });
 
+        function createClickHandler(eventName: string = 'click') {
+            const el = createElementWithEvents({ [eventName]: 'this.onClick(item)' });
+            const attrs = new Attributes(el, () => false);
+            const addSpy = jest.spyOn(el, 'addEventListener');
+            const removeSpy = jest.spyOn(el, 'removeEventListener');
+            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
             const exec = jest.fn().mockReturnValue(undefined);
 
-            // First bind
-            handler.bind(undefined, exec);
+            return { el, handler, exec, addSpy, removeSpy };
+        }
+
+        it('should keep the same subscription when executionParams change', () => {
+            const { handler, exec, addSpy, removeSpy } = createClickHandler();
+
+            handler.bind(new ExecutionParams(['item'], [1]), exec);
             const firstUnSubscribe = handler['_subscribed'].get('click');
             expect(firstUnSubscribe).toBeDefined();
 
-            // Second bind with different params — should unsubscribe and re-subscribe
-            const newParams = { different: true } as any;
-            handler.bind(newParams, exec);
-            // Should still be subscribed, with a freshly created subscription
-            expect(handler['_subscribed'].has('click')).toBe(true);
-            expect(handler['_subscribed'].get('click')).not.toBe(firstUnSubscribe);
-        });
+            handler.bind(new ExecutionParams(['item'], [2]), exec);
+            handler.bind(new ExecutionParams(['item', 'index'], [3, 0]), exec);
 
-        it('should skip already-unsubscribed events during re-subscription', () => {
-            const el = createElementWithEvents({ 'click': 'this.onClick()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
-
-            const exec = jest.fn().mockReturnValue(undefined);
-
-            // First bind
-            handler.bind(undefined, exec);
-
-            // Manually unsubscribe
-            const unsub = handler['_subscribed'].get('click');
-            if (unsub) unsub();
-
-            // Second bind with different params
-            handler.bind({ x: 1 } as any, exec);
-            // click was already unsubscribed, skip unsubscribe, re-subscribe
-            expect(handler['_subscribed'].has('click')).toBe(true);
+            expect(handler['_subscribed'].get('click')).toBe(firstUnSubscribe);
+            expect(addSpy).toHaveBeenCalledTimes(1);
+            expect(removeSpy).not.toHaveBeenCalled();
         });
 
         it('should not re-subscribe when executionParams are equal', () => {
-            const el = createElementWithEvents({ 'click': 'this.onClick()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
-
-            const exec = jest.fn().mockReturnValue(undefined);
+            const { handler, exec } = createClickHandler();
             const subscribeSpy = jest.spyOn(handler, 'subscribe');
 
             handler.bind(undefined, exec);
             expect(subscribeSpy).toHaveBeenCalledTimes(1);
 
-            // Same params → no re-subscription
             handler.bind(undefined, exec);
             expect(subscribeSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('should run the handler with the params of the latest bind', () => {
+            const { el, handler, exec } = createClickHandler();
+
+            handler.bind(new ExecutionParams(['item'], ['first']), exec);
+            handler.bind(new ExecutionParams(['item'], ['second']), exec);
+            el.dispatchEvent(new Event('click'));
+
+            expect(exec).toHaveBeenCalledTimes(1);
+            expect(getExecutionParam(exec.mock.calls[0][1], 'item')).toBe('second');
+
+            handler.bind(undefined, exec);
+            el.dispatchEvent(new Event('click'));
+
+            // the scope param is gone, only the event params are left
+            expect(exec.mock.calls[1][1].names).not.toContain('item');
+        });
+
+        // bugs.md L-25: a deep-equal but different object used to keep the old closure, so the handler
+        // received an object that is no longer in the current data (indexOf -> -1).
+        it('should hand over the current object when a param is replaced by a deep-equal one (L-25)', () => {
+            const { el, handler, exec } = createClickHandler();
+            const original = { id: 1, name: 'row' };
+            const replacement = { id: 1, name: 'row' };
+
+            handler.bind(new ExecutionParams(['item'], [original]), exec);
+            handler.bind(new ExecutionParams(['item'], [replacement]), exec);
+            el.dispatchEvent(new Event('click'));
+
+            expect(getExecutionParam(exec.mock.calls[0][1], 'item')).toBe(replacement);
+        });
+
+        // bugs.md L-10: a param holding a fresh closure never compared equal, so every cycle removed
+        // and re-added the DOM listener.
+        it('should leave the DOM listener alone when a param is a new function on every cycle (L-10)', () => {
+            const { el, handler, exec, addSpy, removeSpy } = createClickHandler();
+
+            for (let cycle = 0; cycle < 5; cycle++) {
+                handler.bind(new ExecutionParams(['item'], [() => cycle]), exec);
+            }
+
+            expect(addSpy).toHaveBeenCalledTimes(1);
+            expect(removeSpy).not.toHaveBeenCalled();
+
+            el.dispatchEvent(new Event('click'));
+            expect(getExecutionParam(exec.mock.calls[0][1], 'item')()).toBe(4);
+        });
+
+        // bugs.md L-24: the teardown on a param change cleared the debounce timer, so an event that
+        // was captured but not yet delivered was dropped.
+        it('should still deliver a pending debounced event after the params change (L-24)', () => {
+            jest.useFakeTimers();
+
+            try {
+                const { el, handler, exec } = createClickHandler(`input${Constants.META_VALUE_SEPARATOR}100`);
+                const event = new Event('input');
+
+                handler.bind(new ExecutionParams(['item'], ['first']), exec);
+                el.dispatchEvent(event);
+                jest.advanceTimersByTime(50);
+
+                handler.bind(new ExecutionParams(['item'], ['second']), exec);
+                expect(exec).not.toHaveBeenCalled();
+
+                jest.advanceTimersByTime(60);
+
+                expect(exec).toHaveBeenCalledTimes(1);
+                // the debounced handler reads the params when it runs, not when the event was captured
+                expect(getExecutionParam(exec.mock.calls[0][1], 'item')).toBe('second');
+                expect(getExecutionParam(exec.mock.calls[0][1], Constants.EVENT_EXECUTION_PARAM_NAME)).toBe(event);
+            } finally {
+                jest.useRealTimers();
+            }
         });
     });
 
@@ -632,7 +696,10 @@ describe('Events handler', () => {
         });
     });
 
-    describe('R2-4: stale unSubscribe from a replaced subscription generation', () => {
+    // R2-4 was about unSubscribe closures surviving a param-change re-subscription ("generations").
+    // Since 1.3 there is one subscription for the life of the handler, so there are no generations
+    // left: an injected unSubscribe always belongs to the live subscription until dispose.
+    describe('R2-4: the injected unSubscribe and the single template subscription', () => {
         function captureInjectedUnSubscribe(): { el: Element, handler: Events, exec: jest.Mock, last: () => (() => void) } {
             const el = createElementWithEvents({ 'click': 'this.onClick(unSubscribe)' });
             const attrs = new Attributes(el, () => false);
@@ -646,52 +713,48 @@ describe('Events handler', () => {
             return { el, handler, exec, last: () => injected! };
         }
 
-        it('leaves the current subscription alone when a stale unSubscribe is called', () => {
+        // Behaviour change with 1.3: before, a param change replaced the subscription and made an
+        // unSubscribe kept from an earlier dispatch inert. It now stays valid.
+        it('an unSubscribe kept from an earlier dispatch still unsubscribes after the params change', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
             handler.bind(new ExecutionParams(['a'], [1]), exec);
             el.dispatchEvent(new Event('click'));
-            const staleUnSubscribe = last();
+            const keptUnSubscribe = last();
 
-            // A param change tears the first subscription down and creates a new one
             handler.bind(new ExecutionParams(['a'], [2]), exec);
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(2);
+            expect(getExecutionParam(exec.mock.calls[1][1], 'a')).toBe(2);
 
-            // The unsubscribe handed out by the *previous* generation is inert
-            staleUnSubscribe();
-            expect(handler['_unsubscribed'].has('click')).toBe(false);
-            expect(handler['_subscribed'].has('click')).toBe(true);
+            keptUnSubscribe();
+            expect(handler['_unsubscribed'].has('click')).toBe(true);
+            expect(handler['_subscribed'].has('click')).toBe(false);
 
             el.dispatchEvent(new Event('click'));
-            expect(exec).toHaveBeenCalledTimes(3);
-            expect(getExecutionParam(exec.mock.calls[2][1], 'a')).toBe(2);
+            expect(exec).toHaveBeenCalledTimes(2);
         });
 
-        it('keeps the current subscription reachable by the next teardown and by dispose', () => {
+        it('dispose removes the listener and an unSubscribe kept from before it becomes inert', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
             handler.bind(new ExecutionParams(['a'], [1]), exec);
-            el.dispatchEvent(new Event('click'));
-            const staleUnSubscribe = last();
-
             handler.bind(new ExecutionParams(['a'], [2]), exec);
-            staleUnSubscribe();
-
-            // The next param change still re-creates the subscription with the fresh params
-            handler.bind(new ExecutionParams(['a'], [3]), exec);
             el.dispatchEvent(new Event('click'));
-            expect(getExecutionParam(exec.mock.calls[1][1], 'a')).toBe(3);
+            const keptUnSubscribe = last();
 
-            // ...and dispose still owns that listener
             handler.dispose();
             el.dispatchEvent(new Event('click'));
-            expect(exec).toHaveBeenCalledTimes(2);
+            expect(exec).toHaveBeenCalledTimes(1);
             expect(handler['_subscribed'].size).toBe(0);
+            expect(handler['_unsubscribed'].size).toBe(0);
+
+            // after dispose the kept closure no longer matches a live subscription
+            keptUnSubscribe();
             expect(handler['_unsubscribed'].size).toBe(0);
         });
 
-        it('still unsubscribes permanently when the injected unSubscribe is called in its own generation', () => {
+        it('still unsubscribes permanently when the injected unSubscribe is called', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
             handler.bind(new ExecutionParams(['a'], [1]), exec);

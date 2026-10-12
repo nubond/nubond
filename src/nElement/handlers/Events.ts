@@ -40,7 +40,7 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
     private readonly _subscribed = new Map<string, () => void>();
     private readonly _unsubscribed = new Set<string>();
 
-    private previousExecutionParams: ExecutionParams | undefined;
+    private _executionParams: ExecutionParams | undefined;
 
     public readonly nExpression: Map<string, EventsBindings> | undefined;
     public readonly hasNExpression: boolean;
@@ -126,30 +126,13 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
                 executeExpression: (expression: string | null | undefined, 
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
-            let handleSubscription = false;
+            this._executionParams = executionParams;
 
             if (this._isFirstBind) {
                 this._isFirstBind = false;
-                handleSubscription = true;
-            } else if (!Helpers.equals(this.previousExecutionParams, executionParams)) {
-                handleSubscription = true;
-
+                
                 for (const [key, data] of this.nExpression!) {
-                    if (!this._unsubscribed.has(key)) {
-                        const unsubscribeFn = this._subscribed.get(key);
-                        if (Helpers.isFunction(unsubscribeFn)) {
-                            unsubscribeFn!();
-                            this._subscribed.delete(key)
-                        }
-                    }
-                }
-            }
-            
-            if (handleSubscription) {
-                this.previousExecutionParams = executionParams;
-
-                for (const [key, data] of this.nExpression!) {
-                    this.handleSubscription(key, data, executionParams, executeExpression);
+                    this.handleSubscription(key, data, executeExpression);
                 }
             }
         }
@@ -172,9 +155,8 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
         this._subscribed.clear();
     }
 
-    private handleSubscription<K extends keyof HTMLElementEventMap>(key: K | string, data: IEventsBindings, executionParams: ExecutionParams | undefined, 
-                                                                    executeExpression: (expression: string | null | undefined,
-                                                                    executionParams: ExecutionParams | undefined) => any) {
+    private handleSubscription<K extends keyof HTMLElementEventMap>(key: K | string, data: IEventsBindings, 
+                                                                    executeExpression: (expression: string | null | undefined, executionParams: ExecutionParams | undefined) => any) {
         if (!this._subscribed.has(key) && !this._unsubscribed.has(key)) { 
             const nativeUnSubscribe = this.subscribe(key, (evt: Event) => {
                 const unSubscribe = () => {
@@ -187,7 +169,7 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
 
                 const extendedExecParams = ExpressionExecParamsHelper.createOrExtendEventExecParams(this._nativeElement, 
                                                                                                     this._getElementManipulations(), evt,
-                                                                                                    () => unSubscribe(), executionParams);
+                                                                                                    () => unSubscribe(), this._executionParams);
                 const result = executeExpression(data.nExpression.expression, extendedExecParams);
 
                 if (result instanceof Promise) {

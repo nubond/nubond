@@ -1129,6 +1129,171 @@ describe('ContextedBase', () => {
             handler.bind(undefined, execExpr);
             expect(handler.isDirty).toBe(true);
         });
+
+        // setInputValue compares the LIVE value against the stored clone first and clones only when
+        // that reports a difference; the clone is then compared again, because some values never equal
+        // their own clone (a class instance loses its prototype) and a failed clone yields undefined.
+        // The file-level JSON polyfill drops prototypes and throws for a function, like structuredClone.
+        describe('compare before clone: an unchanged nb-in value is not cloned again', () => {
+            class Model {
+                public x = 1;
+                public describe(): string { return `x=${this.x}`; }
+            }
+
+            let cloneSpy: jest.SpyInstance;
+
+            beforeEach(() => {
+                cloneSpy = jest.spyOn(globalThis as any, 'structuredClone');
+            });
+
+            afterEach(() => {
+                cloneSpy.mockRestore();
+            });
+
+            function createInputHandler(evaluate: () => any, childInitialValue?: any) {
+                const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
+                const mockBinder = createMockContextBinder({ myProp: childInitialValue });
+                handler.entityChangeReturnValue = mockBinder;
+                handler.commitReturnValue = 'entity-1';
+                handler.exposedIsEntityDataDirty = true;
+
+                const execExpr = jest.fn(evaluate);
+                const cycle = () => {
+                    handler.bind(undefined, execExpr);
+                    return handler.commit();
+                };
+
+                return { handler, mockBinder, cycle };
+            }
+
+            it('clones a plain object once and never again while it stays unchanged', () => {
+                const value = { a: 1, nested: { list: [1, 2] } };
+                const { mockBinder, cycle } = createInputHandler(() => value);
+
+                expect(cycle()).toBe(true);
+                expect(cloneSpy).toHaveBeenCalledTimes(1);
+
+                for (let index = 0; index < 3; index++) {
+                    expect(cycle()).toBe(false);
+                }
+
+                expect(cloneSpy).toHaveBeenCalledTimes(1);
+                expect(mockBinder.inputsRefreshIsDone).toHaveBeenCalledTimes(1);
+            });
+
+            it('does not clone a fresh object that is deep-equal to the stored one', () => {
+                const { mockBinder, cycle } = createInputHandler(() => ({ a: 1 }));
+
+                cycle();
+                const firstDelivered = (mockBinder.context as any).myProp;
+
+                for (let index = 0; index < 3; index++) {
+                    expect(cycle()).toBe(false);
+                }
+
+                expect(cloneSpy).toHaveBeenCalledTimes(1);
+                expect((mockBinder.context as any).myProp).toBe(firstDelivered);
+            });
+
+            it('clones and delivers again once the object changes', () => {
+                const value = { a: 1 };
+                const { mockBinder, cycle } = createInputHandler(() => value);
+
+                cycle();
+                cycle();
+                value.a = 2;
+                expect(cycle()).toBe(true);
+
+                expect(cloneSpy).toHaveBeenCalledTimes(2);
+                expect((mockBinder.context as any).myProp).toEqual({ a: 2 });
+                expect((mockBinder.context as any).myProp).not.toBe(value);
+            });
+
+            it('delivers an unchanged class instance once, although it never equals its own clone', () => {
+                const model = new Model();
+                const { mockBinder, cycle } = createInputHandler(() => model);
+
+                expect(cycle()).toBe(true);
+
+                for (let index = 0; index < 3; index++) {
+                    expect(cycle()).toBe(false);
+                }
+
+                expect(mockBinder.inputsRefreshIsDone).toHaveBeenCalledTimes(1);
+                expect((mockBinder.context as any).myProp).toEqual({ x: 1 });
+            });
+
+            it('delivers an in-place mutation of a class instance', () => {
+                const model = new Model();
+                const { mockBinder, cycle } = createInputHandler(() => model);
+
+                cycle();
+                model.x = 2;
+                expect(cycle()).toBe(true);
+
+                expect((mockBinder.context as any).myProp).toEqual({ x: 2 });
+                expect(mockBinder.inputsRefreshIsDone).toHaveBeenCalledTimes(2);
+            });
+
+            it('never delivers an uncloneable value to a child that holds nothing', () => {
+                const callback = () => 1;
+                const { handler, mockBinder, cycle } = createInputHandler(() => callback);
+
+                cycle();    // builds the entity, which is a change on its own
+                expect(handler.exposedContextInputsWithChangedValue!.size).toBe(0);
+
+                for (let index = 0; index < 3; index++) {
+                    expect(cycle()).toBe(false);
+                    expect(handler.exposedContextInputsWithChangedValue!.size).toBe(0);
+                }
+
+                expect(mockBinder.inputsRefreshIsDone).not.toHaveBeenCalled();
+                expect((mockBinder.context as any).myProp).toBeUndefined();
+                expect(consoleSpy.mock.calls.filter(call => String(call).includes('object cannot be cloned')).length).toBe(4);
+            });
+
+            it('clears the child value once, not on every cycle, when the value cannot be cloned', () => {
+                const callback = () => 1;
+                const { mockBinder, cycle } = createInputHandler(() => callback, { keepMe: 1 });
+
+                expect(cycle()).toBe(true);
+                expect((mockBinder.context as any).myProp).toBeUndefined();
+
+                for (let index = 0; index < 3; index++) {
+                    expect(cycle()).toBe(false);
+                }
+
+                expect(mockBinder.inputsRefreshIsDone).toHaveBeenCalledTimes(1);
+            });
+
+            it('delivers a cloneable value that follows an uncloneable one', () => {
+                let value: any = () => 1;
+                const { mockBinder, cycle } = createInputHandler(() => value);
+
+                cycle();
+                cycle();
+                value = { a: 1 };
+                expect(cycle()).toBe(true);
+
+                expect((mockBinder.context as any).myProp).toEqual({ a: 1 });
+            });
+
+            // bugs.md L-50: Helpers.equals(Object.create(null), null) is true, so the first compare
+            // reports "unchanged". Flip this test when Helpers.equals is fixed.
+            it('known gap: null followed by an empty null-prototype object is not delivered (L-50)', () => {
+                let value: any = null;
+                const { mockBinder, cycle } = createInputHandler(() => value, 'initial');
+
+                cycle();
+                expect((mockBinder.context as any).myProp).toBeNull();
+
+                value = Object.create(null);
+                expect(cycle()).toBe(false);
+
+                expect((mockBinder.context as any).myProp).toBeNull();
+                expect(cloneSpy).not.toHaveBeenCalled();
+            });
+        });
     });
 
     // --- disposeProtected (partial=false via second commit) ---

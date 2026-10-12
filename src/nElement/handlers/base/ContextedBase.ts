@@ -318,21 +318,27 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
             this.contextInputValues!.set(name, oldValue);
         }
 
-        let newValue = undefined;
-        if (!Helpers.isPrimitive(value) && !ref) {
-            try {
-                newValue = structuredClone(value);
-            } catch(ex) {//TODO: log exception only one time if each binding structuredClone fails?
-                Console.error(this.nativeElement, `${name} input set error, object cannot be cloned, try to use nb-in-ref:name instead of nb-in:name, error: ${ex}`);
-            }
-        } else {
-            newValue = value;
-        }
+        if (!Helpers.equals(oldValue, value)) {//initial check
+            let diffFound = true;
+            let newValue = undefined;
 
-        if (!Helpers.equals(newValue, oldValue)) {
-            this.contextInputValues!.set(name, newValue);
-            this.contextInputsWithChangedValue!.add(name);
-            this._isInputsDirty = true;
+            if (!Helpers.isPrimitive(value) && !ref) {
+                try {
+                    newValue = structuredClone(value);
+                    diffFound = !Helpers.equals(oldValue, newValue);//check for classes and objects that lose proper prototype structure due to structuredClone
+                } catch(ex) {//TODO: log exception only one time if each binding structuredClone fails?
+                    diffFound = oldValue !== newValue; //no need to !Helpers.equals, just check with default value
+                    Console.error(this.nativeElement, `${name} input set error, object cannot be cloned, try to use nb-in-ref:name instead of nb-in:name, error: ${ex}`);
+                }
+            } else {
+                newValue = value;
+            }
+
+            if (diffFound) {
+                this.contextInputValues!.set(name, newValue);
+                this.contextInputsWithChangedValue!.add(name);
+                this._isInputsDirty = true;
+            }
         }
     }
 

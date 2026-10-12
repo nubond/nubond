@@ -1102,6 +1102,79 @@ describe('ContextBinder', () => {
         });
     });
 
+    // Whole-tree counterpart of the 1.3 tests in tests/nElement/handlers/Events.spec.ts: an nb-event
+    // handler reads the scope of the latest cycle, so it sees the objects that are in the data now.
+    describe('1.3: nb-event handlers run with the scope of the latest cycle', () => {
+        function bindTree(html: string, context: any): { binder: ContextBinder; root: Element } {
+            const root = document.createElement('div');
+            root.innerHTML = html;
+
+            const binder = createBinder();
+            binder.bind(root, context, true, false);
+
+            return { binder, root };
+        }
+
+        function createListContext(): any {
+            return {
+                items: [{ id: 1, name: 'a' }, { id: 2, name: 'b' }, { id: 3, name: 'c' }],
+                removed: [] as Array<number>,
+                remove(item: any): void {
+                    const index = this.items.indexOf(item);
+
+                    this.removed.push(index);
+                    if (index >= 0) {
+                        this.items.splice(index, 1);
+                    }
+                }
+            };
+        }
+
+        const LIST = '<ul><li nb-repeat="this.items" nb-event:click="this.remove(item)" nb-value="item.name"></li></ul>';
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+        });
+
+        // bugs.md L-25: after the rows were replaced by deep-equal copies the handler kept the old
+        // objects, so indexOf() returned -1 and nothing was removed.
+        it('should remove the clicked row after the items were replaced by deep-equal copies (L-25)', () => {
+            const context = createListContext();
+            const { binder, root } = bindTree(LIST, context);
+
+            context.items = context.items.map((item: any) => ({ ...item }));
+            binder.detectChanges();
+            jest.runAllTimers();
+
+            (root.querySelectorAll('li')[1] as HTMLElement).click();
+            jest.runAllTimers();
+
+            expect(context.removed).toEqual([1]);
+            expect(context.items.map((item: any) => item.id)).toEqual([1, 3]);
+            expect(Array.from(root.querySelectorAll('li')).map(element => element.textContent)).toEqual(['a', 'c']);
+        });
+
+        it('should hand a row the item it currently shows after the list was reordered', () => {
+            const context = createListContext();
+            const { binder, root } = bindTree(LIST, context);
+
+            context.items.reverse();
+            binder.detectChanges();
+            jest.runAllTimers();
+
+            // the first row now shows 'c'
+            (root.querySelectorAll('li')[0] as HTMLElement).click();
+            jest.runAllTimers();
+
+            expect(context.items.map((item: any) => item.id)).toEqual([2, 1]);
+            expect(Array.from(root.querySelectorAll('li')).map(element => element.textContent)).toEqual(['b', 'a']);
+        });
+    });
+
     describe('R2-5: single-bind nb-repeat and the enclosing scope', () => {
         // Whole-tree counterpart of the unit tests in tests/nElement/handlers/Repeat.spec.ts.
         // Only the repeatIndex 0 handler takes the single-bind skip path, so the pre-fix
