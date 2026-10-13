@@ -51,9 +51,9 @@ export class Injectables {
 
         this._data.set(constructor, new InjectableMetaData(constructor, [], instance));
 
-        const that = this;
-        return function() {
-            that._data.delete(constructor);
+        const data = this._data;
+        return function () {
+            data.delete(constructor);
         };
     }
 
@@ -66,9 +66,9 @@ export class Injectables {
 
         this._data.set(injectable, new InjectableMetaData(injectable, dependencies, singleton));
 
-        const that = this;
-        return function() {
-            that._data.delete(injectable);
+        const data = this._data;
+        return function () {
+            data.delete(injectable);
         };
     }
 

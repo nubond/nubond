@@ -1,39 +1,26 @@
 import { ExpressionExecParamsHelper, ExecutionParams } from '../../src/expression/ExpressionExecParamsHelper';
 
-// Mock Environment.transformers
+// ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
+function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
+    const params = new ExecutionParams();
+    names.forEach((name, index) => params.add(name, values[index]));
+    return params;
+}
+
+// Mock Environment (only the router is read here - transformers are no longer part of the params)
 jest.mock('../../src/Environment', () => ({
     Environment: {
-        transformers: {
-            instances: [['myFn'], [() => 'transformed']] as [string[], ((...args: any) => any)[]]
-        },
         router: { isConfigured: false }
     }
 }));
 
 describe('ExpressionExecParamsHelper', () => {
-    describe('createOrExtendExecParams', () => {
-        it('should create new params with transformer functions', () => {
-            const result = ExpressionExecParamsHelper.createOrExtendExecParams();
-            expect(result).toBeInstanceOf(ExecutionParams);
-            expect(result.names).toContain('myFn');
-            expect(result.values.length).toBe(1);
-        });
-
-        it('should extend existing params with transformer functions', () => {
-            const existing = new ExecutionParams(['existingParam'], ['existingValue']);
-            const result = ExpressionExecParamsHelper.createOrExtendExecParams(existing);
-
-            expect(result.names).toContain('existingParam');
-            expect(result.names).toContain('myFn');
-            expect(result.values).toContain('existingValue');
-        });
-
-        it('should not mutate original params', () => {
-            const existing = new ExecutionParams(['a'], [1]);
-            ExpressionExecParamsHelper.createOrExtendExecParams(existing);
-
-            expect(existing.names).toEqual(['a']);
-            expect(existing.values).toEqual([1]);
+    describe('transformers are not part of the params', () => {
+        // The transformer tail used to be appended to a fresh copy of the params on every
+        // evaluation (createOrExtendExecParams, removed). Transformers are now the parameters of
+        // the outer compiled function (ExpressionExecutor.compileFunction), so no helper adds them.
+        it('should no longer expose createOrExtendExecParams', () => {
+            expect((ExpressionExecParamsHelper as any).createOrExtendExecParams).toBeUndefined();
         });
     });
 
@@ -72,7 +59,7 @@ describe('ExpressionExecParamsHelper', () => {
         });
 
         it('should extend existing params', () => {
-            const existing = new ExecutionParams(['myParam'], ['myValue']);
+            const existing = createParams(['myParam'], ['myValue']);
             const result = ExpressionExecParamsHelper.createOrExtendRepeatParams(
                 'item1', 2, 10, identityNameResolver, existing
             );
@@ -82,7 +69,7 @@ describe('ExpressionExecParamsHelper', () => {
         });
 
         it('should replace existing loop params if they already exist', () => {
-            const existing = new ExecutionParams(['item', 'index', 'count'], ['old', 0, 1]);
+            const existing = createParams(['item', 'index', 'count'], ['old', 0, 1]);
             const result = ExpressionExecParamsHelper.createOrExtendRepeatParams(
                 'new', 5, 10, identityNameResolver, existing
             );
@@ -124,7 +111,7 @@ describe('ExpressionExecParamsHelper', () => {
             const manipulations = {} as any;
             const event = new Event('click');
             const unsub = jest.fn();
-            const existing = new ExecutionParams(['myParam'], ['myValue']);
+            const existing = createParams(['myParam'], ['myValue']);
 
             const result = ExpressionExecParamsHelper.createOrExtendEventExecParams(
                 nativeElement, manipulations, event, unsub, existing
@@ -205,7 +192,7 @@ describe('ExpressionExecParamsHelper', () => {
         it('should extend existing params for bound exec', () => {
             const nativeElement = document.createElement('div');
             const manipulations = {} as any;
-            const existing = new ExecutionParams(['existingKey'], ['existingVal']);
+            const existing = createParams(['existingKey'], ['existingVal']);
 
             const result = ExpressionExecParamsHelper.createOrExtendBoundExecParams(
                 nativeElement, manipulations, existing
@@ -233,7 +220,7 @@ describe('ExpressionExecParamsHelper', () => {
         });
 
         it('should extend existing params', () => {
-            const existing = new ExecutionParams(['existing'], [99]);
+            const existing = createParams(['existing'], [99]);
             const vars = new Map<string, any>();
             vars.set('newVar', 'val');
 
@@ -244,11 +231,10 @@ describe('ExpressionExecParamsHelper', () => {
         });
 
         it('should replace an existing param with the same name (no duplicates)', () => {
-            // A nested nb-var must shadow an outer var with the same name. The helper splices
-            // the existing entry out before pushing the new one so the value used at evaluation
-            // time (the LAST occurrence in `values`) reflects the new binding without leaving
-            // stale entries behind.
-            const existing = new ExecutionParams(['x', 'y'], [1, 2]);
+            // A nested nb-var must shadow an outer var with the same name. The helper replaces the
+            // value in place (ExecutionParams.addOrReplace), so the name keeps its position and no
+            // stale entry is left behind.
+            const existing = createParams(['x', 'y'], [1, 2]);
             const vars = new Map<string, any>();
             vars.set('x', 99);
 
@@ -267,7 +253,7 @@ describe('ExpressionExecParamsHelper', () => {
         });
 
         it('should not mutate the input params when replacing a name', () => {
-            const existing = new ExecutionParams(['x'], [1]);
+            const existing = createParams(['x'], [1]);
             const vars = new Map<string, any>();
             vars.set('x', 999);
 
@@ -278,7 +264,7 @@ describe('ExpressionExecParamsHelper', () => {
         });
 
         it('should keep names and values index-aligned when replacing multiple existing entries', () => {
-            const existing = new ExecutionParams(['a', 'b', 'c'], ['A', 'B', 'C']);
+            const existing = createParams(['a', 'b', 'c'], ['A', 'B', 'C']);
             const vars = new Map<string, any>();
             vars.set('b', 'B2');
             vars.set('a', 'A2');
@@ -301,10 +287,104 @@ describe('ExpressionExecParamsHelper', () => {
     });
 
     describe('ExecutionParams', () => {
+        it('should start empty', () => {
+            const params = new ExecutionParams();
+
+            expect(params.names).toEqual([]);
+            expect(params.values).toEqual([]);
+            expect(params.identity).toBe('');
+        });
+
         it('should store names and values', () => {
-            const params = new ExecutionParams(['a', 'b'], [1, 2]);
+            const params = createParams(['a', 'b'], [1, 2]);
             expect(params.names).toEqual(['a', 'b']);
             expect(params.values).toEqual([1, 2]);
+        });
+
+        it('add should append in call order and keep names and values index-aligned', () => {
+            const params = new ExecutionParams();
+
+            params.add('first', 1);
+            params.add('second', undefined);
+            params.add('third', null);
+
+            expect(params.names).toEqual(['first', 'second', 'third']);
+            expect(params.values).toEqual([1, undefined, null]);
+        });
+
+        it('addOrReplace should replace the value in place and keep the position', () => {
+            const params = createParams(['a', 'b', 'c'], ['A', 'B', 'C']);
+
+            params.addOrReplace('b', 'B2');
+
+            expect(params.names).toEqual(['a', 'b', 'c']);
+            expect(params.values).toEqual(['A', 'B2', 'C']);
+        });
+
+        it('addOrReplace should append a name that is not there yet', () => {
+            const params = createParams(['a'], ['A']);
+
+            params.addOrReplace('b', 'B');
+
+            expect(params.names).toEqual(['a', 'b']);
+            expect(params.values).toEqual(['A', 'B']);
+        });
+
+        it('clone should copy names, values and identity without sharing the arrays', () => {
+            const original = createParams(['a', 'b'], [1, 2]);
+            const copy = original.clone();
+
+            expect(copy).not.toBe(original);
+            expect(copy.names).toEqual(['a', 'b']);
+            expect(copy.values).toEqual([1, 2]);
+            expect(copy.identity).toBe(original.identity);
+
+            copy.add('c', 3);
+            copy.addOrReplace('a', 100);
+
+            expect(original.names).toEqual(['a', 'b']);
+            expect(original.values).toEqual([1, 2]);
+        });
+
+        describe('identity (the scope part of the compiled-function cache key)', () => {
+            it('should be the same for the same names in the same order, whatever the values', () => {
+                expect(createParams(['a', 'b'], [1, 2]).identity)
+                    .toBe(createParams(['a', 'b'], ['x', {}]).identity);
+            });
+
+            it('should not change when a value is replaced', () => {
+                const params = createParams(['a', 'b'], [1, 2]);
+                const before = params.identity;
+
+                params.addOrReplace('a', 100);
+
+                expect(params.identity).toBe(before);
+            });
+
+            it('should change when a name is added', () => {
+                const params = createParams(['a'], [1]);
+                const before = params.identity;
+
+                params.add('b', 2);
+
+                expect(params.identity).not.toBe(before);
+            });
+
+            it('should differ for the same names in a different order', () => {
+                expect(createParams(['a', 'b'], [1, 2]).identity)
+                    .not.toBe(createParams(['b', 'a'], [2, 1]).identity);
+            });
+
+            // The positional signature of the compiled function is exactly the names list, so two
+            // different lists must never share an identity.
+            it.each([
+                [['ab', 'c'], ['a', 'bc']],
+                [['a', 'b'], ['ab']],
+                [['a', 'b', 'ab'], ['ab', 'a', 'b']],
+            ])('should differ for %j and %j', (first, second) => {
+                expect(createParams(first, first.map(() => 0)).identity)
+                    .not.toBe(createParams(second, second.map(() => 0)).identity);
+            });
         });
     });
 });

@@ -67,14 +67,23 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
                 if (Environment.components.isReady(this._currentComponentName)) {
                     const contextBinder = Environment.components.instantiateBinder(this._currentComponentName);
                     if (!Helpers.isUndefined(contextBinder)) {
-                        const context = Environment.components.instantiateContext(this._currentComponentName, 
+                        try {
+                            const context = Environment.components.instantiateContext(this._currentComponentName, 
                                                                                   this.nativeElement!,
                                                                                   new ChangeDetector(() => contextBinder!.detectChanges()),
                                                                                   this._getElementManipulations!(),
                                                                                   this._getElementSubscriptions!(),
-                                                                                  this._getEventDispatcher!());   
-                        result = new ComponentContextEntityData(context!, contextBinder!);                    
-                        this._previousComponentName = this._currentComponentName;
+                                                                                  this._getEventDispatcher!());
+                            if (!Helpers.isUndefined(context)) {
+                                result = new ComponentContextEntityData(context!, contextBinder!);                    
+                                this._previousComponentName = this._currentComponentName;
+                            } else {
+                                contextBinder!.dispose();
+                            }
+                        } catch (ex) {
+                            contextBinder!.dispose();
+                            throw ex;
+                        }
                     } else {
                         this.disposeInternal(true);
                         Console.error(this.nativeElement, `invalid operation: Component '${this.nativeElement!.tagName}' meta data is not found.`);

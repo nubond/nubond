@@ -134,11 +134,11 @@ export class Switch extends Base implements IHandler<IExpressionDetails>, IVisib
     public addCase(childCase: Case): () => void {
         this._cases!.push(childCase);
 
-        const that = this;
+        const cases = this._cases;
         return function (): void {
-            const expectedFnIndex = that._cases!.indexOf(childCase);
+            const expectedFnIndex = cases!.indexOf(childCase);
             if (expectedFnIndex >= 0) {
-                that._cases!.splice(expectedFnIndex, 1);
+                cases!.splice(expectedFnIndex, 1);
             }
         };
     }

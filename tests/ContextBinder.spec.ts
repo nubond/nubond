@@ -1927,6 +1927,307 @@ describe('ContextBinder', () => {
             root.remove();
         });
     });
+
+    describe('2.1-2.3: expression pipeline - transformers and scope names in a live tree', () => {
+        // Whole-tree counterpart of the unit tests in tests/expression/ExpressionExecutor.spec.ts.
+        // Transformers are the parameters of an outer compiled function and the scope names
+        // (nb-var / nb-repeat) those of an inner one, so a scope name shadows a transformer of the
+        // same name instead of being a duplicate formal parameter (bugs.md R7-6).
+        let errorSpy: jest.SpyInstance;
+        let registered: number;
+
+        // Every ExpressionExecutor (one per binder) subscribes to Environment.transformers.onAdded
+        // to drop its compiled functions when the transformer set grows.
+        function subscriptionCount(): number {
+            const callBacks = (Environment.transformers as any)._onAddedCallBackEvent._callBacks;
+            return Array.isArray(callBacks) ? callBacks.length : callBacks.size;
+        }
+
+        function renderOf(root: Element): string {
+            return Array.from(root.querySelectorAll('[data-out]'))
+                        .map(element => element.textContent)
+                        .join(' | ');
+        }
+
+        function bindTree(html: string, context: any): { binder: ContextBinder; root: Element } {
+            const root = document.createElement('div');
+            root.innerHTML = html;
+
+            const binder = createBinder();
+            binder.bind(root, context, true, false);
+
+            return { binder, root };
+        }
+
+        function nextCycle(binder: ContextBinder): void {
+            binder.detectChanges();
+            jest.runAllTimers();
+        }
+
+        // Registers through the public API (so onAdded is raised and the live executors drop their
+        // compiled functions); afterEach takes the entries out of the Environment singleton again.
+        function registerLate(name: string, transform: (...args: Array<any>) => any): void {
+            class LateTransformer { transform(...args: Array<any>) { return transform(...args); } }
+
+            Environment.addTransformer(name, LateTransformer as any, []);
+            registered++;
+        }
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+            errorSpy = jest.spyOn(Console, 'error').mockImplementation(() => {});
+            registered = 0;
+        });
+
+        afterEach(() => {
+            const transformers = Environment.transformers as any;
+            for (let i = 0; i < registered; i++) {
+                transformers._namesSet.delete((transformers._names.pop() as string).toLowerCase());
+                transformers._functions.pop();
+            }
+
+            errorSpy.mockRestore();
+            jest.useRealTimers();
+        });
+
+        it('should keep an nb-var scope alive when a transformer with the same name is registered later (R7-6)', () => {
+            const context: any = { label: 'first' };
+            const { binder, root } = bindTree(
+                '<section nb-var:late-label="this.label">' +
+                '<span data-out nb-value="lateLabel"></span>' +
+                '</section>', context);
+
+            expect(renderOf(root)).toBe('first');
+
+            registerLate('lateLabel', () => 'transformer');
+            context.label = 'second';
+            nextCycle(binder);
+
+            // pre-fix: 'first' forever, plus a compilation SyntaxError (duplicate parameter) per cycle
+            expect(renderOf(root)).toBe('second');
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should keep an nb-repeat:prefix scope alive when a transformer named like its item is registered later (R7-6)', () => {
+            const context: any = { rows: ['x', 'y'] };
+            const { binder, root } = bindTree(
+                '<span nb-repeat:late="this.rows" data-out nb-value="lateItem + lateIndex"></span>', context);
+
+            expect(renderOf(root)).toBe('x0 | y1');
+
+            registerLate('lateItem', () => 'transformer');
+            context.rows = ['z'];
+            nextCycle(binder);
+
+            expect(renderOf(root)).toBe('z0');
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should pick up a transformer registered after the tree was bound', () => {
+            const context: any = { value: 'abc' };
+            const { binder, root } = bindTree(
+                '<span data-out nb-value="typeof lateUpper === \'function\' ? lateUpper(this.value) : \'none\'"></span>', context);
+
+            expect(renderOf(root)).toBe('none');
+
+            registerLate('lateUpper', (value: string) => value.toUpperCase());
+            nextCycle(binder);
+
+            expect(renderOf(root)).toBe('ABC');
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        // The compiled-function cache key identifies a scope by its names. Two scopes of ONE binder
+        // that hold different name lists must not share a compiled function, or the positional
+        // values of one are read through the parameter list of the other.
+        it('should not mix up two scopes whose names concatenate to the same text', () => {
+            const { root } = bindTree(
+                '<section nb-var:a="1" nb-var:b="2" nb-var:ab="3">' +
+                '<span data-out nb-value="ab"></span>' +
+                '</section>' +
+                '<section nb-var:ab="10" nb-var:a="20" nb-var:b="30">' +
+                '<span data-out nb-value="ab"></span>' +
+                '</section>', {});
+
+            expect(renderOf(root)).toBe('3 | 10');
+        });
+
+        describe('the executor subscription on the transformer registry', () => {
+            it('should take one subscription per binder and release it on dispose, bound or not', () => {
+                const before = subscriptionCount();
+
+                const neverBound = createBinder();
+                const { binder } = bindTree('<span nb-value="this.value"></span>', { value: 1 });
+                expect(subscriptionCount()).toBe(before + 2);
+
+                neverBound.dispose();
+                binder.dispose();
+                expect(subscriptionCount()).toBe(before);
+
+                // a second dispose is a no-op
+                binder.dispose();
+                expect(subscriptionCount()).toBe(before);
+            });
+
+            it('should release the subscriptions of nested containers when they are swapped and when the host is disposed', () => {
+                Environment.addContainer('pipelineSwapA', class { } as any, [], '<span data-out>a</span>', undefined);
+                Environment.addContainer('pipelineSwapB', class { } as any, [], '<span data-out>b</span>', undefined);
+
+                const before = subscriptionCount();
+                const context = { name: 'pipelineSwapA' };
+                const { binder, root } = bindTree('<div nb-container="this.name"></div>', context);
+                jest.runAllTimers();
+
+                for (let i = 0; i < 6; i++) {
+                    context.name = i % 2 === 0 ? 'pipelineSwapB' : 'pipelineSwapA';
+                    nextCycle(binder);
+                }
+
+                expect(renderOf(root)).toBe('a');
+                expect(subscriptionCount()).toBe(before + 2);        // host + the one live container
+
+                binder.dispose();
+                jest.runAllTimers();
+                expect(subscriptionCount()).toBe(before);
+            });
+
+            // The binder of a container / component / app is created BEFORE its context
+            // (instantiateBinder, then instantiateContext). When the context constructor throws the
+            // binder used to be abandoned without dispose(), leaving its subscription - and its
+            // executor - in the Environment singleton for the life of the page, one more on every
+            // attempt. The three creation sites now dispose the binder on failure.
+            describe('a context constructor that throws leaves no subscription behind', () => {
+                let attempts: number;
+                let ready: boolean;
+
+                class Throwing { constructor() { attempts++; if (!ready) { throw new Error('boom'); } } }
+
+                function reported(text: string): boolean {
+                    return errorSpy.mock.calls.some(call => call.some((part: any) => String(part).includes(text)));
+                }
+
+                beforeAll(() => {
+                    Environment.addContainer('pipelineThrowing', Throwing as any, [], '<span data-out>built</span>', undefined);
+                    Environment.addComponent('pipeline-throwing', Throwing as any, [], undefined as any, '<span>built</span>',
+                                             undefined, undefined, undefined);
+                });
+
+                beforeEach(() => {
+                    attempts = 0;
+                    ready = false;
+                });
+
+                it('container (expression-driven name, so the creation is attempted again on every pass)', () => {
+                    const before = subscriptionCount();
+                    const { binder, root } = bindTree('<div nb-container="this.name"></div>', { name: 'pipelineThrowing' });
+                    jest.runAllTimers();
+
+                    for (let cycle = 1; cycle <= 3; cycle++) {
+                        nextCycle(binder);
+                        expect(subscriptionCount()).toBe(before + 1);        // the host only
+                    }
+                    expect(attempts).toBe(4);
+
+                    // the same container is built as soon as its constructor stops throwing
+                    ready = true;
+                    nextCycle(binder);
+                    expect(renderOf(root)).toBe('built');
+                    expect(subscriptionCount()).toBe(before + 2);
+
+                    binder.dispose();
+                    jest.runAllTimers();
+                    expect(subscriptionCount()).toBe(before);
+                });
+
+                it('component', () => {
+                    const before = subscriptionCount();
+                    const { binder } = bindTree('<pipeline-throwing></pipeline-throwing><pipeline-throwing></pipeline-throwing>', {});
+                    jest.runAllTimers();
+
+                    for (let cycle = 1; cycle <= 3; cycle++) {
+                        nextCycle(binder);
+                        expect(subscriptionCount()).toBe(before + 1);        // the host only
+                    }
+                    expect(attempts).toBeGreaterThanOrEqual(2);
+
+                    binder.dispose();
+                    jest.runAllTimers();
+                    expect(subscriptionCount()).toBe(before);
+                });
+
+                it('application root, and the same class can be bound once its constructor works (bugs.md L-41)', () => {
+                    const before = subscriptionCount();
+                    const root = document.createElement('div');
+                    root.innerHTML = '<span data-out nb-value="1 + 1"></span>';
+                    document.body.appendChild(root);
+
+                    // its own class: an injectable can be registered only once, and Throwing already
+                    // is (container + component above)
+                    class ThrowingRoot { constructor() { attempts++; if (!ready) { throw new Error('boom'); } } }
+
+                    try { Environment.addApp(root, ThrowingRoot as any, []); } catch { /* reported either way, see below */ }
+                    jest.runAllTimers();
+                    expect(subscriptionCount()).toBe(before);
+
+                    ready = true;
+                    errorSpy.mockClear();
+                    Environment.addApp(root, ThrowingRoot as any, []);
+                    jest.runAllTimers();
+
+                    expect(errorSpy).not.toHaveBeenCalled();
+                    expect(renderOf(root)).toBe('2');
+                    expect(subscriptionCount()).toBe(before + 1);
+
+                    (Environment as any)._elementsToContextsMapping.get(root).dispose();
+                    jest.runAllTimers();
+                    expect(subscriptionCount()).toBe(before);
+                    root.remove();
+                });
+
+                // The failure must stay visible to the developer. Before the binder was disposed on
+                // failure the exception escaped: a container / component logged
+                // "handler ... commit error: Error: boom" on every pass (NElement's commit catch) and
+                // addApp threw to its caller.
+                describe('the failure is reported', () => {
+                    it('container', () => {
+                        const { binder } = bindTree('<div nb-container="@pipelineThrowing"></div>', {});
+                        jest.runAllTimers();
+
+                        expect(attempts).toBe(1);
+                        expect(reported('boom')).toBe(true);
+
+                        binder.dispose();
+                        jest.runAllTimers();
+                    });
+
+                    it('component', () => {
+                        const { binder } = bindTree('<pipeline-throwing></pipeline-throwing>', {});
+                        jest.runAllTimers();
+
+                        expect(attempts).toBe(1);
+                        expect(reported('boom')).toBe(true);
+
+                        binder.dispose();
+                        jest.runAllTimers();
+                    });
+
+                    it('application root (logged or thrown)', () => {
+                        const root = document.createElement('div');
+                        document.body.appendChild(root);
+
+                        class ThrowingRoot { constructor() { throw new Error('boom'); } }
+
+                        let thrown: unknown;
+                        try { Environment.addApp(root, ThrowingRoot as any, []); } catch (ex) { thrown = ex; }
+                        jest.runAllTimers();
+
+                        expect((thrown !== undefined) || reported('boom')).toBe(true);
+                        root.remove();
+                    });
+                });
+            });
+        });
+    });
 });
 
 describe('RootContextBinder', () => {

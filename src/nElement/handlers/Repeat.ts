@@ -94,20 +94,18 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
                     isValidPrefix = false;
                     Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is not a valid identifier.`);
                 } else {
-                    const [transformerNames, _] = Environment.transformers.instances;
-
                     const itemPrefixed = this.getContextParameterName(Constants.ITEM_EXECUTION_PARAM_NAME, prefix);
-                    if (transformerNames.indexOf(itemPrefixed) >= 0) {
+                    if (Environment.transformers.names.indexOf(itemPrefixed) >= 0) {
                         isValidPrefix = false;
                         Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${itemPrefixed} transformer.`);
                     } else {
                         const indexPrefixed = this.getContextParameterName(Constants.INDEX_EXECUTION_PARAM_NAME, prefix);
-                        if (transformerNames.indexOf(indexPrefixed) >= 0) {
+                        if (Environment.transformers.names.indexOf(indexPrefixed) >= 0) {
                             isValidPrefix = false;
                             Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${indexPrefixed} transformer.`);
                         } else {
                             const totalCountPrefixed = this.getContextParameterName(Constants.TOTAL_COUNT_EXECUTION_PARAM_NAME, prefix);
-                            if (transformerNames.indexOf(totalCountPrefixed) >= 0) {
+                            if (Environment.transformers.names.indexOf(totalCountPrefixed) >= 0) {
                                 isValidPrefix = false;
                                 Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${totalCountPrefixed} transformer.`);
                             }

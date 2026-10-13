@@ -111,14 +111,14 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
 
         this._nativeElement.addEventListener(eventName, listener, options);
         
-        const that = this;
+        const nativeElement = this._nativeElement;
         return function (): void {
             if (Helpers.isNumber(debounceTimeout)) {
                 clearTimeout(debounceTimeout);
                 debounceTimeout = undefined;
             }
 
-            that._nativeElement.removeEventListener(eventName, listener, options);
+            nativeElement.removeEventListener(eventName, listener, options);
         };
     }
     

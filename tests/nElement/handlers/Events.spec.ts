@@ -4,6 +4,13 @@ import { Constants } from '../../../src/Constants';
 import { Environment } from '../../../src/Environment';
 import { ExecutionParams } from '../../../src/expression/ExpressionExecParamsHelper';
 
+// ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
+function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
+    const params = new ExecutionParams();
+    names.forEach((name, index) => params.add(name, values[index]));
+    return params;
+}
+
 // Mock ElementManipulations
 jest.mock('../../../src/models/injections/ElementManipulations', () => ({
     ElementManipulations: jest.fn().mockImplementation(() => ({})),
@@ -389,12 +396,12 @@ describe('Events handler', () => {
         it('should keep the same subscription when executionParams change', () => {
             const { handler, exec, addSpy, removeSpy } = createClickHandler();
 
-            handler.bind(new ExecutionParams(['item'], [1]), exec);
+            handler.bind(createParams(['item'], [1]), exec);
             const firstUnSubscribe = handler['_subscribed'].get('click');
             expect(firstUnSubscribe).toBeDefined();
 
-            handler.bind(new ExecutionParams(['item'], [2]), exec);
-            handler.bind(new ExecutionParams(['item', 'index'], [3, 0]), exec);
+            handler.bind(createParams(['item'], [2]), exec);
+            handler.bind(createParams(['item', 'index'], [3, 0]), exec);
 
             expect(handler['_subscribed'].get('click')).toBe(firstUnSubscribe);
             expect(addSpy).toHaveBeenCalledTimes(1);
@@ -415,8 +422,8 @@ describe('Events handler', () => {
         it('should run the handler with the params of the latest bind', () => {
             const { el, handler, exec } = createClickHandler();
 
-            handler.bind(new ExecutionParams(['item'], ['first']), exec);
-            handler.bind(new ExecutionParams(['item'], ['second']), exec);
+            handler.bind(createParams(['item'], ['first']), exec);
+            handler.bind(createParams(['item'], ['second']), exec);
             el.dispatchEvent(new Event('click'));
 
             expect(exec).toHaveBeenCalledTimes(1);
@@ -436,8 +443,8 @@ describe('Events handler', () => {
             const original = { id: 1, name: 'row' };
             const replacement = { id: 1, name: 'row' };
 
-            handler.bind(new ExecutionParams(['item'], [original]), exec);
-            handler.bind(new ExecutionParams(['item'], [replacement]), exec);
+            handler.bind(createParams(['item'], [original]), exec);
+            handler.bind(createParams(['item'], [replacement]), exec);
             el.dispatchEvent(new Event('click'));
 
             expect(getExecutionParam(exec.mock.calls[0][1], 'item')).toBe(replacement);
@@ -449,7 +456,7 @@ describe('Events handler', () => {
             const { el, handler, exec, addSpy, removeSpy } = createClickHandler();
 
             for (let cycle = 0; cycle < 5; cycle++) {
-                handler.bind(new ExecutionParams(['item'], [() => cycle]), exec);
+                handler.bind(createParams(['item'], [() => cycle]), exec);
             }
 
             expect(addSpy).toHaveBeenCalledTimes(1);
@@ -468,11 +475,11 @@ describe('Events handler', () => {
                 const { el, handler, exec } = createClickHandler(`input${Constants.META_VALUE_SEPARATOR}100`);
                 const event = new Event('input');
 
-                handler.bind(new ExecutionParams(['item'], ['first']), exec);
+                handler.bind(createParams(['item'], ['first']), exec);
                 el.dispatchEvent(event);
                 jest.advanceTimersByTime(50);
 
-                handler.bind(new ExecutionParams(['item'], ['second']), exec);
+                handler.bind(createParams(['item'], ['second']), exec);
                 expect(exec).not.toHaveBeenCalled();
 
                 jest.advanceTimersByTime(60);
@@ -718,11 +725,11 @@ describe('Events handler', () => {
         it('an unSubscribe kept from an earlier dispatch still unsubscribes after the params change', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
-            handler.bind(new ExecutionParams(['a'], [1]), exec);
+            handler.bind(createParams(['a'], [1]), exec);
             el.dispatchEvent(new Event('click'));
             const keptUnSubscribe = last();
 
-            handler.bind(new ExecutionParams(['a'], [2]), exec);
+            handler.bind(createParams(['a'], [2]), exec);
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(2);
             expect(getExecutionParam(exec.mock.calls[1][1], 'a')).toBe(2);
@@ -738,8 +745,8 @@ describe('Events handler', () => {
         it('dispose removes the listener and an unSubscribe kept from before it becomes inert', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
-            handler.bind(new ExecutionParams(['a'], [1]), exec);
-            handler.bind(new ExecutionParams(['a'], [2]), exec);
+            handler.bind(createParams(['a'], [1]), exec);
+            handler.bind(createParams(['a'], [2]), exec);
             el.dispatchEvent(new Event('click'));
             const keptUnSubscribe = last();
 
@@ -757,7 +764,7 @@ describe('Events handler', () => {
         it('still unsubscribes permanently when the injected unSubscribe is called', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
-            handler.bind(new ExecutionParams(['a'], [1]), exec);
+            handler.bind(createParams(['a'], [1]), exec);
             el.dispatchEvent(new Event('click'));
             last()();
 
@@ -765,7 +772,7 @@ describe('Events handler', () => {
             expect(handler['_subscribed'].has('click')).toBe(false);
 
             // A param change must not resurrect a permanently unsubscribed event
-            handler.bind(new ExecutionParams(['a'], [2]), exec);
+            handler.bind(createParams(['a'], [2]), exec);
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(1);
             expect(handler['_subscribed'].has('click')).toBe(false);

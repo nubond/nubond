@@ -17,14 +17,15 @@ describe('Transformers', () => {
         jest.restoreAllMocks();
     });
 
-    it('should add a transformer and expose it via instances', () => {
+    it('should add a transformer and expose it via names / functions', () => {
         class MyTransformer implements ITransformerContext {
             transform(value: string) { return value.toUpperCase(); }
         }
 
         transformers.add('upper', MyTransformer as any, []);
 
-        const [names, fns] = transformers.instances;
+        const names = transformers.names;
+        const fns = transformers.functions;
         expect(names).toContain('upper');
         expect(fns.length).toBe(1);
     });
@@ -36,7 +37,7 @@ describe('Transformers', () => {
 
         transformers.add('double', MyTransformer as any, []);
 
-        const [, fns] = transformers.instances;
+        const fns = transformers.functions;
         const result = fns[0](5);
         expect(result).toBe(10);
     });
@@ -99,7 +100,7 @@ describe('Transformers', () => {
         injectables.register(DepService as any, []);
         transformers.add('addHundred', MyTransformer as any, [DepService as any]);
 
-        const [, fns] = transformers.instances;
+        const fns = transformers.functions;
         const result = fns[0](5);
         expect(result).toBe(105);
     });
@@ -115,7 +116,7 @@ describe('Transformers', () => {
         transformers.add('inc', T1 as any, []);
         transformers.add('dbl', T2 as any, []);
 
-        const [names] = transformers.instances;
+        const names = transformers.names;
         expect(names).toContain('inc');
         expect(names).toContain('dbl');
     });
@@ -131,7 +132,7 @@ describe('Transformers', () => {
         transformers.add('myTransformer', T1 as any, []);
         transformers.add('myTransformer', T2 as any, []);
 
-        const [names] = transformers.instances;
+        const names = transformers.names;
         expect(names.filter(n => n === 'myTransformer').length).toBe(1);
     });
 
@@ -139,35 +140,89 @@ describe('Transformers', () => {
         class T implements ITransformerContext { transform() { return null; } }
         transformers.add('element', T as any, []);
         expect(console.error).toHaveBeenCalled();
-        expect(transformers.instances[0]).not.toContain('element');
+        expect(transformers.names).not.toContain('element');
     });
 
     it('should reject reserved name "data"', () => {
         class T implements ITransformerContext { transform() { return null; } }
         transformers.add('data', T as any, []);
         expect(console.error).toHaveBeenCalled();
-        expect(transformers.instances[0]).not.toContain('data');
+        expect(transformers.names).not.toContain('data');
     });
 
     it('should reject reserved name "count"', () => {
         class T implements ITransformerContext { transform() { return null; } }
         transformers.add('count', T as any, []);
         expect(console.error).toHaveBeenCalled();
-        expect(transformers.instances[0]).not.toContain('count');
+        expect(transformers.names).not.toContain('count');
     });
 
-    it('should not add to instances when reserved name is used', () => {
+    it('should not add to names / functions when reserved name is used', () => {
         class T implements ITransformerContext { transform() { return null; } }
         transformers.add('item', T as any, []);
-        const [names, fns] = transformers.instances;
+        const names = transformers.names;
+        const fns = transformers.functions;
         expect(names.length).toBe(0);
         expect(fns.length).toBe(0);
     });
 
+    describe('onAdded', () => {
+        // ExpressionExecutor subscribes here to drop its compiled functions: a compiled expression
+        // is bound to the transformer set it was compiled against.
+        class T implements ITransformerContext { transform() { return null; } }
+
+        it('should notify with the name after a transformer was added', () => {
+            const callBack = jest.fn();
+            transformers.onAdded(callBack);
+
+            transformers.add('upper', T as any, []);
+
+            expect(callBack).toHaveBeenCalledTimes(1);
+            expect(callBack).toHaveBeenCalledWith('upper');
+        });
+
+        it('should notify when the transformer is already visible in names and functions', () => {
+            let seen: Array<any> = [];
+            transformers.onAdded(name => seen = [transformers.names.indexOf(name), transformers.functions.length, transformers.has(name)]);
+
+            transformers.add('upper', T as any, []);
+
+            expect(seen).toEqual([0, 1, true]);
+        });
+
+        it.each([
+            ['a duplicate name', 'upper'],
+            ['a duplicate name in another case', 'UPPER'],
+            ['a reserved name', 'item'],
+            ['an invalid identifier', 'my-transformer'],
+        ])('should not notify when the registration is rejected (%s)', (_reason, name) => {
+            transformers.add('upper', T as any, []);
+
+            const callBack = jest.fn();
+            transformers.onAdded(callBack);
+            transformers.add(name, T as any, []);
+
+            expect(callBack).not.toHaveBeenCalled();
+        });
+
+        it('should stop notifying after the returned unsubscribe function was called', () => {
+            const kept = jest.fn();
+            const dropped = jest.fn();
+            transformers.onAdded(kept);
+            const unSubscribe = transformers.onAdded(dropped);
+
+            unSubscribe();
+            transformers.add('upper', T as any, []);
+
+            expect(kept).toHaveBeenCalledTimes(1);
+            expect(dropped).not.toHaveBeenCalled();
+        });
+    });
+
     describe('#8: transformer names must be valid identifiers', () => {
-        // Every registered transformer name is appended as a formal parameter to EVERY compiled
-        // expression in the application (ExpressionExecParamsHelper.createOrExtendExecParams), and
-        // the body is compiled in strict mode. One bad name therefore fails compilation of every
+        // Every registered transformer name is a formal parameter of the outer function of EVERY
+        // compiled expression in the application (ExpressionExecutor.compileFunction), and the
+        // body is compiled in strict mode. One bad name therefore fails compilation of every
         // expression app-wide, so registration has to be refused.
         const invalidNames = [
             'my-transformer',                                                  // the originally reported case
@@ -187,7 +242,8 @@ describe('Transformers', () => {
                 `${Constants.DISPLAY_NAME}: `,
                 expect.stringContaining(`'${name}' is not a valid identifier`)
             );
-            const [names, fns] = transformers.instances;
+            const names = transformers.names;
+            const fns = transformers.functions;
             expect(names.length).toBe(0);
             expect(fns.length).toBe(0);
         });
@@ -198,7 +254,7 @@ describe('Transformers', () => {
 
             transformers.add(name, T as any, []);
 
-            expect(transformers.instances[0]).toContain(name);
+            expect(transformers.names).toContain(name);
         });
 
         it('should not disturb an already-registered transformer when a later one is rejected', () => {
@@ -208,7 +264,8 @@ describe('Transformers', () => {
             transformers.add('good', Good as any, []);
             transformers.add('let', Bad as any, []);
 
-            const [names, fns] = transformers.instances;
+            const names = transformers.names;
+            const fns = transformers.functions;
             expect(names).toEqual(['good']);
             expect(fns.length).toBe(1);
         });

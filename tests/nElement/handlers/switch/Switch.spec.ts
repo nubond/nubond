@@ -280,6 +280,47 @@ describe('Switch handler', () => {
             remove(); // first removal
             remove(); // second removal — index < 0, should not throw
         });
+
+        // The removal function must take out its own case whatever was removed before it; a
+        // position captured at addCase() time goes stale as soon as an earlier case is removed.
+        function addCases(): { handler: Switch; cases: Array<any>; removals: Array<() => void> } {
+            const { attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(attrs, classes);
+            const cases = ['first', 'second', 'third'].map(name =>
+                ({ name, isDirty: false, bind: jest.fn(), commit: jest.fn(), isVisible: false } as any));
+
+            return { handler, cases, removals: cases.map(el => handler.addCase(el)) };
+        }
+
+        function registered(handler: Switch): Array<string> {
+            return (handler as any)._cases.map((el: any) => el.name);
+        }
+
+        it('should remove the right cases when they are removed in registration order', () => {
+            const { handler, removals } = addCases();
+
+            removals[0]();
+            removals[1]();
+
+            expect(registered(handler)).toEqual(['third']);
+        });
+
+        it('should not remove another case when a removal function is called twice', () => {
+            const { handler, removals } = addCases();
+
+            removals[0]();
+            removals[0]();
+
+            expect(registered(handler)).toEqual(['second', 'third']);
+        });
+
+        it('should end up empty when every case is removed in registration order', () => {
+            const { handler, removals } = addCases();
+
+            removals.forEach(remove => remove());
+
+            expect(registered(handler)).toEqual([]);
+        });
     });
 
     describe('setDefault removal', () => {

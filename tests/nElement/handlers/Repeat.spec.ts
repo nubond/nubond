@@ -5,6 +5,13 @@ import { Constants } from '../../../src/Constants';
 import { Environment } from '../../../src/Environment';
 import { ExecutionParams } from '../../../src/expression/ExpressionExecParamsHelper';
 
+// ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
+function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
+    const params = new ExecutionParams();
+    names.forEach((name, index) => params.add(name, values[index]));
+    return params;
+}
+
 describe('Repeat handler', () => {
     const hideClassName = 'nb-hidden';
 
@@ -678,7 +685,7 @@ describe('Repeat handler', () => {
     });
 
     describe('prefix conflict with transformer', () => {
-        // `instances` returns ReadonlyArrays; reach for the live mutable arrays via the private fields
+        // `names` / `functions` are ReadonlyArrays; reach for the live mutable arrays via the private fields
         // so these tests can install and tear down a fake transformer entry without polluting the
         // Environment singleton across tests.
         const getMutableTransformerArrays = () => ({
@@ -799,7 +806,7 @@ describe('Repeat handler', () => {
         // createOrExtendRepeatParams builds that snapshot by COPYING the incoming outer
         // params, the snapshot also pinned the enclosing nb-repeat / nb-var values.
         function outerParams(label: string): ExecutionParams {
-            return new ExecutionParams(['label'], [label]);
+            return createParams(['label'], [label]);
         }
 
         function valueOf(params: ExecutionParams | undefined, name: string): any {

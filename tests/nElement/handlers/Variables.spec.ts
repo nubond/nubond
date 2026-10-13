@@ -4,6 +4,13 @@ import { Constants } from '../../../src/Constants';
 import { Environment } from '../../../src/Environment';
 import { ExecutionParams } from '../../../src/expression/ExpressionExecParamsHelper';
 
+// ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
+function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
+    const params = new ExecutionParams();
+    names.forEach((name, index) => params.add(name, values[index]));
+    return params;
+}
+
 describe('Variables handler', () => {
     function createElementWithVars(vars: Record<string, string>): Element {
         const el = document.createElement('div');
@@ -69,7 +76,7 @@ describe('Variables handler', () => {
         const attrs = new Attributes(el, () => false);
         const handler = new Variables(el, attrs);
 
-        const params = new ExecutionParams(['existing'], [true]);
+        const params = createParams(['existing'], [true]);
         const result = handler.bind(params, () => undefined)!;
 
         expect(result).not.toBe(params);
@@ -161,7 +168,7 @@ describe('Variables handler', () => {
                 expect(handler.nExpression!.has('mytransformer')).toBe(false);
             } finally {
                 // Cleanup: pop both the names array and the internal Set so other tests are unaffected.
-                // `instances` returns ReadonlyArrays; reach for the live arrays via the private fields.
+                // `names` / `functions` are ReadonlyArrays; reach for the live arrays via the private fields.
                 const transformerNames = (Environment.transformers as any)._names as Array<string>;
                 const transformerFns = (Environment.transformers as any)._functions as Array<(...args: any[]) => any>;
                 transformerNames.pop();

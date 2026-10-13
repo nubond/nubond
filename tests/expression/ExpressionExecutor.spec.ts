@@ -1,12 +1,21 @@
 import { ExpressionExecutor } from '../../src/expression/ExpressionExecutor';
 import { ExecutionParams } from '../../src/expression/ExpressionExecParamsHelper';
+import { Transformers } from '../../src/entities/Transformers';
+import { Injectables } from '../../src/entities/Injectables';
+import { Environment } from '../../src/Environment';
 
-// Mock Environment.transformers to avoid importing full Environment
+// ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
+function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
+    const params = new ExecutionParams();
+    names.forEach((name, index) => params.add(name, values[index]));
+    return params;
+}
+
+// Mock Environment to avoid importing the full Environment. The transformers registry is the real
+// class (the executor reads its names / functions and subscribes to onAdded); it is replaced before each test.
 jest.mock('../../src/Environment', () => ({
     Environment: {
-        transformers: {
-            instances: [[], []] as [string[], ((...args: any) => any)[]]
-        },
+        transformers: undefined as unknown,
         router: { isConfigured: false }
     }
 }));
@@ -14,8 +23,17 @@ jest.mock('../../src/Environment', () => ({
 describe('ExpressionExecutor', () => {
     let executor: ExpressionExecutor;
     let element: Element;
+    let transformers: Transformers;
+
+    function addTransformer(name: string, transform: (...args: Array<any>) => any): void {
+        class TransformerContext { transform(...args: Array<any>) { return transform(...args); } }
+        transformers.add(name, TransformerContext as any, []);
+    }
 
     beforeEach(() => {
+        transformers = new Transformers(new Injectables());
+        (Environment as any).transformers = transformers;
+
         executor = new ExpressionExecutor(() => false);
         element = document.createElement('div');
         jest.spyOn(console, 'error').mockImplementation();
@@ -176,7 +194,7 @@ describe('ExpressionExecutor', () => {
     describe('execution params', () => {
         it('should make named params available as variables', () => {
             const ctx = {};
-            const params = new ExecutionParams(['item', 'index'], ['hello', 0]);
+            const params = createParams(['item', 'index'], ['hello', 0]);
             const result = executor.executeExpression('item', ctx, element, params);
             expect(result).toBe('hello');
         });
@@ -269,7 +287,7 @@ describe('ExpressionExecutor', () => {
 
         it('should report the compile failure once per execution-params shape (separate cache keys)', () => {
             executor.executeExpression('this..invalid', {}, element);
-            executor.executeExpression('this..invalid', {}, element, new ExecutionParams(['item'], [1]));
+            executor.executeExpression('this..invalid', {}, element, createParams(['item'], [1]));
 
             expect(messages()).toHaveLength(2);
             expect(messages().every(message => message.includes('compilation error'))).toBe(true);
@@ -290,15 +308,197 @@ describe('ExpressionExecutor', () => {
         it('should not collide expression "a" with param ["b","c"] vs expression "a" with param "b,c"', () => {
             const ctx = { a: 99 };
             // First call: param `b,c` (a single name that LOOKS like two)
-            const params1 = new ExecutionParams(['b,c'], [42]);
+            const params1 = createParams(['b,c'], [42]);
             const result1 = executor.executeExpression('this.a', ctx, element, params1);
             expect(result1).toBe(99);
 
             // Second call with a genuinely different shape — the cached fn must NOT be returned
             // with the wrong arity.
-            const params2 = new ExecutionParams(['b', 'c'], [10, 20]);
+            const params2 = createParams(['b', 'c'], [10, 20]);
             const result2 = executor.executeExpression('this.a', ctx, element, params2);
             expect(result2).toBe(99);
+        });
+
+        // The key is `expression:scopeIdentity|transformersIdentity`. The scope identity has to tell
+        // two different name lists apart, otherwise the function compiled for one list is applied
+        // to the values of the other.
+        it('should not reuse the function of ["ab","c"] for ["a","bc"]', () => {
+            expect(executor.executeExpression('typeof c', {}, element, createParams(['ab', 'c'], [1, 2]))).toBe('number');
+            expect(executor.executeExpression('typeof c', {}, element, createParams(['a', 'bc'], [1, 2]))).toBe('undefined');
+        });
+
+        it('should not reuse the function of one name order for another order of the same names', () => {
+            expect(executor.executeExpression('ab', {}, element, createParams(['a', 'b', 'ab'], [1, 2, 3]))).toBe(3);
+            expect(executor.executeExpression('ab', {}, element, createParams(['ab', 'a', 'b'], [10, 20, 30]))).toBe(10);
+        });
+
+        it('should not reuse the function of ["user","Name"] for ["userName"]', () => {
+            expect(executor.executeExpression('typeof userName', {}, element, createParams(['user', 'Name'], [{}, 'n']))).toBe('undefined');
+            expect(executor.executeExpression('typeof userName', {}, element, createParams(['userName'], ['n']))).toBe('string');
+        });
+    });
+
+    describe('transformers are the parameters of the outer compiled function (2.3)', () => {
+        it('should make a registered transformer callable from an expression', () => {
+            addTransformer('upper', (value: string) => value.toUpperCase());
+
+            expect(executor.executeExpression('upper(this.name)', { name: 'abc' }, element)).toBe('ABC');
+        });
+
+        it('should make transformers and scope params available together, with this as the context', () => {
+            addTransformer('twice', (value: number) => value * 2);
+            addTransformer('plus', (a: number, b: number) => a + b);
+
+            const params = createParams(['item', 'index'], [10, 3]);
+
+            expect(executor.executeExpression('plus(twice(item), index) + this.base', { base: 100 }, element, params)).toBe(123);
+        });
+
+        it('should keep this as the context in a multi-statement expression', () => {
+            addTransformer('twice', (value: number) => value * 2);
+            const ctx = { a: 0, b: 0 };
+
+            executor.executeExpression('this.a = twice(item); this.b = this.a + 1', ctx, element, createParams(['item'], [4]));
+
+            expect(ctx).toEqual({ a: 8, b: 9 });
+        });
+
+        it('should see a transformer that is registered after the expression was first evaluated', () => {
+            expect(executor.executeExpression('typeof late', {}, element)).toBe('undefined');
+
+            addTransformer('late', () => 'here');
+
+            expect(executor.executeExpression('typeof late', {}, element)).toBe('function');
+            expect(executor.executeExpression('late()', {}, element)).toBe('here');
+        });
+
+        it('should compile once per (expression, scope names, transformer set) and not per evaluation', () => {
+            addTransformer('twice', (value: number) => value * 2);
+            const compileSpy = jest.spyOn(executor as any, 'compileFunction');
+
+            for (let i = 0; i < 5; i++) {
+                expect(executor.executeExpression('twice(item)', {}, element, createParams(['item'], [i]))).toBe(i * 2);
+            }
+            expect(compileSpy).toHaveBeenCalledTimes(1);
+
+            addTransformer('other', () => 0);
+            executor.executeExpression('twice(item)', {}, element, createParams(['item'], [1]));
+            executor.executeExpression('twice(item)', {}, element, createParams(['item'], [2]));
+
+            expect(compileSpy).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    describe('compiled functions are dropped when a transformer is added (Transformers.onAdded)', () => {
+        function subscriptionCount(): number {
+            const callBacks = (transformers as any)._onAddedCallBackEvent._callBacks;
+            return Array.isArray(callBacks) ? callBacks.length : callBacks.size;
+        }
+
+        // the cache is Map<expression, Map<scope identity, fn>> - count the compiled functions
+        function cacheSize(target: ExpressionExecutor): number {
+            let size = 0;
+            for (const byIdentity of (target as any)._compiledFnCache.values()) {
+                size += byIdentity.size;
+            }
+            return size;
+        }
+
+        it('should subscribe on construction and clear the whole cache on every added transformer', () => {
+            expect(subscriptionCount()).toBe(1);
+
+            executor.executeExpression('this.a', { a: 1 }, element);
+            executor.executeExpression('item', {}, element, createParams(['item'], [1]));
+            expect(cacheSize(executor)).toBe(2);
+
+            addTransformer('late', () => 0);
+            expect(cacheSize(executor)).toBe(0);
+
+            executor.executeExpression('this.a', { a: 1 }, element);
+            expect(cacheSize(executor)).toBe(1);
+        });
+
+        it('should not clear the cache when a registration is rejected', () => {
+            addTransformer('upper', (value: string) => value.toUpperCase());
+            executor.executeExpression('upper("a")', {}, element);
+
+            addTransformer('upper', () => 'other');        // duplicate - rejected with an error
+
+            expect(cacheSize(executor)).toBe(1);
+            expect(executor.executeExpression('upper("a")', {}, element)).toBe('A');
+        });
+
+        it('should report a broken expression once more after a transformer was added (the stub is dropped too)', () => {
+            executor.executeExpression('this..invalid', {}, element);
+            executor.executeExpression('this..invalid', {}, element);
+            expect(console.error).toHaveBeenCalledTimes(1);
+
+            addTransformer('late', () => 0);
+            executor.executeExpression('this..invalid', {}, element);
+            executor.executeExpression('this..invalid', {}, element);
+
+            expect(console.error).toHaveBeenCalledTimes(2);
+        });
+
+        it('dispose should release the subscription and be repeatable', () => {
+            const other = new ExpressionExecutor(() => false);
+            expect(subscriptionCount()).toBe(2);
+
+            other.dispose();
+            expect(subscriptionCount()).toBe(1);
+
+            other.dispose();
+            expect(subscriptionCount()).toBe(1);
+
+            // the remaining executor still reacts
+            executor.executeExpression('this.a', { a: 1 }, element);
+            addTransformer('late', () => 0);
+            expect(cacheSize(executor)).toBe(0);
+        });
+
+        it('a disposed executor keeps its cache when a transformer is added afterwards', () => {
+            executor.executeExpression('this.a', { a: 1 }, element);
+            executor.dispose();
+
+            addTransformer('late', () => 0);
+
+            expect(cacheSize(executor)).toBe(1);
+        });
+    });
+
+    describe('R7-6: a scope param with the name of a transformer shadows it instead of breaking compilation', () => {
+        // Transformer names and scope names used to share ONE parameter list, so the same name in
+        // both was a duplicate formal parameter - a SyntaxError in strict mode for every expression
+        // in that scope. nb-var / nb-repeat:prefix only validate against the transformers known at
+        // construction, so a transformer registered later could do that to a live tree. The scope
+        // names are now the parameters of an inner function and simply shadow the outer ones.
+        it('should resolve the name to the scope param when the transformer was registered first', () => {
+            addTransformer('foo', () => 'transformer');
+
+            const result = executor.executeExpression('foo', {}, element, createParams(['foo'], ['local']));
+
+            expect(result).toBe('local');
+            expect(console.error).not.toHaveBeenCalled();
+        });
+
+        it('should keep evaluating a live scope when a transformer with the same name is registered later', () => {
+            const params = () => createParams(['foo', 'other'], ['local', 5]);
+
+            expect(executor.executeExpression('foo + other', {}, element, params())).toBe('local5');
+
+            addTransformer('foo', () => 'transformer');
+
+            expect(executor.executeExpression('foo + other', {}, element, params())).toBe('local5');
+            expect(console.error).not.toHaveBeenCalled();
+        });
+
+        it('should still expose the late transformer to scopes that do not shadow it', () => {
+            executor.executeExpression('typeof foo', {}, element, createParams(['foo'], ['local']));
+
+            addTransformer('foo', () => 'transformer');
+
+            expect(executor.executeExpression('foo()', {}, element, createParams(['other'], [1]))).toBe('transformer');
+            expect(executor.executeExpression('foo()', {}, element)).toBe('transformer');
         });
     });
 });

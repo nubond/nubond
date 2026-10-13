@@ -143,6 +143,8 @@ export class ContextBinder implements IContextBinder {
             if (!Helpers.isUndefined(this._rootNElement)) {
                 this._rootNElement!.dispose();
             }
+
+            this.expressionExecutor.dispose();
             
             try {
                 this._onDisposeCallBackEvent.raise();

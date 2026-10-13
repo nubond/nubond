@@ -6,6 +6,13 @@ import { ExpressionDetails } from '../../../../src/expression/ExpressionDetails'
 import { Constants } from '../../../../src/Constants';
 import { Helpers } from '../../../../src/Helpers';
 
+// ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
+function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
+    const params = new ExecutionParams();
+    names.forEach((name, index) => params.add(name, values[index]));
+    return params;
+}
+
 // polyfill structuredClone for jsdom
 if (typeof globalThis.structuredClone !== 'function') {
     (globalThis as any).structuredClone = (obj: any) => JSON.parse(JSON.stringify(obj));
@@ -265,7 +272,7 @@ describe('ContextedBase', () => {
             const el = createElement();
             const attrs = new Attributes(el, () => false);
             const handler = new TestContextedBase(undefined, el, attrs, () => true);
-            const params = new ExecutionParams([], []);
+            const params = createParams([], []);
             const result = handler.bind(params, jest.fn());
             expect(result).toBe(params);
         });
@@ -291,7 +298,7 @@ describe('ContextedBase', () => {
         it('stores executionParams and executeExpression when hasNInExpression', () => {
             const handler = createHandlerWithIn('this.data', { 'my-prop': 'this.value' });
             const execExpr = jest.fn();
-            const params = new ExecutionParams([], []);
+            const params = createParams([], []);
             // No contextBinder yet, so bindInputs won't fire
             handler.bind(params, execExpr);
             expect(execExpr).not.toHaveBeenCalled(); // no contextBinder
@@ -824,7 +831,7 @@ describe('ContextedBase', () => {
     describe('onBind', () => {
         it('returns executionParams by default', () => {
             const handler = createHandlerSimple('this.data');
-            const params = new ExecutionParams(['a'], [1]);
+            const params = createParams(['a'], [1]);
             const result = handler.onBind(params, jest.fn());
             expect(result).toBe(params);
         });

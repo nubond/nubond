@@ -80,6 +80,87 @@ describe('CallBackEvent', () => {
         expect(mockFn).toHaveBeenCalledTimes(1);
     });
 
+    describe('unsubscribe must remove exactly its own callback, in any order', () => {
+        // An unsubscribe function must not depend on the position its callback had when it was
+        // subscribed: every earlier unsubscribe shifts the later entries. The framework itself
+        // unsubscribes out of order all the time - one-shot onDetectChangesDone callbacks remove
+        // themselves while the context's own lifecycle hook stays subscribed (ContextBinder's
+        // detector / eventer setters and the R10-1 self-trigger guard).
+        function setup(): { event: CallBackEvent<() => void>; fired: Array<string>; unSubscribe: Record<string, () => void> } {
+            const event = new CallBackEvent<() => void>();
+            const fired: Array<string> = [];
+            const unSubscribe: Record<string, () => void> = {};
+
+            for (const name of ['A', 'B', 'C']) {
+                unSubscribe[name] = event.subscribe(() => fired.push(name));
+            }
+
+            return { event, fired, unSubscribe };
+        }
+
+        it('should remove the first and then the second subscriber', () => {
+            const { event, fired, unSubscribe } = setup();
+
+            unSubscribe.A();
+            unSubscribe.B();
+            event.raise();
+
+            expect(fired).toEqual(['C']);
+        });
+
+        it('should remove the last subscriber after an earlier one was removed', () => {
+            const { event, fired, unSubscribe } = setup();
+
+            unSubscribe.A();
+            unSubscribe.C();
+            event.raise();
+
+            expect(fired).toEqual(['B']);
+        });
+
+        it('should leave the other subscribers alone when an unsubscribe is called twice', () => {
+            const { event, fired, unSubscribe } = setup();
+
+            unSubscribe.A();
+            unSubscribe.A();
+            event.raise();
+
+            expect(fired).toEqual(['B', 'C']);
+        });
+
+        it('should let one-shot callbacks remove themselves while a permanent one stays', () => {
+            const event = new CallBackEvent<() => void>();
+            const fired: Array<string> = [];
+
+            event.subscribe(() => fired.push('hook'));
+            const unSubscribeFirst: () => void = event.subscribe(() => { unSubscribeFirst(); fired.push('once-1'); });
+            const unSubscribeSecond: () => void = event.subscribe(() => { unSubscribeSecond(); fired.push('once-2'); });
+
+            event.raise();
+            event.raise();
+            event.raise();
+
+            expect(fired).toEqual(['hook', 'once-1', 'once-2', 'hook', 'hook']);
+        });
+
+        it('should keep a subscriber that was added after an earlier one unsubscribed removable', () => {
+            const event = new CallBackEvent<() => void>();
+            const fired: Array<string> = [];
+
+            const unSubscribeA = event.subscribe(() => fired.push('A'));
+            event.subscribe(() => fired.push('B'));
+            unSubscribeA();
+            const unSubscribeC = event.subscribe(() => fired.push('C'));
+            const unSubscribeD = event.subscribe(() => fired.push('D'));
+
+            unSubscribeC();
+            unSubscribeD();
+            event.raise();
+
+            expect(fired).toEqual(['B']);
+        });
+    });
+
     it('should handle unsubscribe called multiple times', () => {
         const event = new CallBackEvent<() => void>();
         const mockFn = jest.fn();

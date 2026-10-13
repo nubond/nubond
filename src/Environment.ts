@@ -147,16 +147,20 @@ export class Environment {
                                                         () => this._showDebugInfo!,
                                                         (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
                                                         (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor));
+        try {
+            const unRegister = this._injectables.register(context, dependencies);
+            rootContextBinder.onDispose(() => {
+                this._elementsToContextsMapping.delete(element);
+                unRegister();
+            });
 
-        const unRegister = this._injectables.register(context, dependencies);
-        rootContextBinder.onDispose(() => {
-            this._elementsToContextsMapping.delete(element);
-            unRegister();
-        });
-
-        rootContextBinder.bind(element, <IContext>this._injectables.resolve(context, new ChangeDetector(() => rootContextBinder!.detectChanges()),
-                                                                            new EventDispatcher(element)), true);
-        this._elementsToContextsMapping.set(element, rootContextBinder);
+            rootContextBinder.bind(element, <IContext>this._injectables.resolve(context, new ChangeDetector(() => rootContextBinder!.detectChanges()),
+                                                                                new EventDispatcher(element)), true);
+            this._elementsToContextsMapping.set(element, rootContextBinder);
+        } catch (ex) {
+            rootContextBinder.dispose();
+            throw ex;
+        }
     }
 
     public static addContainer(name: string | undefined, context: IContextConstructor, dependencies: Array<IInjectableConstructor>,

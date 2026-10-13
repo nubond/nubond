@@ -113,11 +113,20 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
                     if (Environment.containers.isReady(this._currentContextName)) {
                         const contextBinderData = Environment.containers.instantiateBinder(this._currentContextName);
                         if (!Helpers.isUndefined(contextBinderData)) {
-                            const context = Environment.containers.instantiateContext(this._currentContextName,
-                                                                                      new ChangeDetector(() => contextBinderData!.contextBinder!.detectChanges()),
-                                                                                      this._getEventDispatcher!());  
-                            result = new TemplateEntityContextData(context!, contextBinderData!);                    
-                            this._previousContextName = this._currentContextName;
+                            try {
+                                const context = Environment.containers.instantiateContext(this._currentContextName,
+                                                                                          new ChangeDetector(() => contextBinderData!.contextBinder!.detectChanges()),
+                                                                                          this._getEventDispatcher!());
+                                if (!Helpers.isUndefined(context)) {
+                                    result = new TemplateEntityContextData(context!, contextBinderData!);                    
+                                    this._previousContextName = this._currentContextName;
+                                } else {
+                                    contextBinderData!.contextBinder.dispose();
+                                }
+                            } catch (ex) {
+                                contextBinderData!.contextBinder.dispose();
+                                throw ex;
+                            }
                         } else {
                             Console.error(this.nativeElement, `invalid operation: Container '${this._currentContextName}' meta data is not found or container is not ready.`);
                         }
