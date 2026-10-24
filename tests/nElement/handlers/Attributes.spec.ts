@@ -175,16 +175,73 @@ describe('Attributes handler', () => {
         });
     });
 
-    describe('markAsReady', () => {
-        it('should set the ready attribute on the element', () => {
+    describe('system lookups on an element without any attributes (no system map allocated)', () => {
+        const valueName = Constants.VALUE_HANDLER_ATTRIBUTE_NAME;
+        const eventPrefix = Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME;
+
+        it('should report no system attribute via has()', () => {
+            const handler = new Attributes(document.createElement('div'), () => false);
+
+            expect(handler.has(valueName, true)).toBe(false);
+            expect(handler.has(eventPrefix, true, true)).toBe(false);
+            expect(handler.has(eventPrefix, true, true, false)).toBe(false);
+        });
+
+        it('should return undefined via get()', () => {
+            const handler = new Attributes(document.createElement('div'), () => false);
+
+            expect(handler.get(valueName, true)).toBeUndefined();
+            expect(handler.get(eventPrefix, true, true)).toBeUndefined();
+            expect(handler.get(eventPrefix, true, true, false)).toBeUndefined();
+        });
+
+        it('should return an empty map via getAll()', () => {
+            const handler = new Attributes(document.createElement('div'), () => false);
+
+            expect(handler.getAll(eventPrefix, true).size).toBe(0);
+            expect(handler.getAll(eventPrefix, true, false).size).toBe(0);
+            expect(handler.getAll(undefined, true).size).toBe(0);
+        });
+
+        it('should allow set() and remove() of a regular attribute', () => {
             const el = document.createElement('div');
             const handler = new Attributes(el, () => false);
 
-            handler.markAsReady(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            expect(() => handler.set('data-x', '1')).not.toThrow();
             handler.commit();
+            expect(el.getAttribute('data-x')).toBe('1');
 
-            const expectedAttrName = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IF_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
-            expect(el.hasAttribute(expectedAttrName)).toBe(true);
+            expect(() => handler.remove('data-x')).not.toThrow();
+            handler.commit();
+            expect(el.hasAttribute('data-x')).toBe(false);
+        });
+
+        it('should behave the same when the element only has regular attributes', () => {
+            const el = document.createElement('div');
+            el.setAttribute('id', 'a');
+            const handler = new Attributes(el, () => false);
+
+            expect(handler.has(valueName, true)).toBe(false);
+            expect(handler.get(eventPrefix, true, true)).toBeUndefined();
+            expect(handler.getAll(undefined, true).size).toBe(0);
+            expect(handler.has('id')).toBe(true);
+        });
+    });
+
+    describe('ready attributes', () => {
+        it('should not track a ready attribute already present on the element as a system or regular attribute', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IF_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const el = document.createElement('div');
+            el.setAttribute(readyAttr, '');
+
+            const handler = new Attributes(el, () => false);
+
+            expect(handler.getAll(undefined, true).size).toBe(0);
+            expect(handler.has(readyAttr)).toBe(false);
+            expect(consoleSpy).not.toHaveBeenCalled();
+
+            consoleSpy.mockRestore();
         });
     });
 

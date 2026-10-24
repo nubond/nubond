@@ -3,7 +3,7 @@ import { IExpressionDetails } from '../../../interfaces/expression/IExpressionDe
 import { IHandler } from '../../../interfaces/nElement/IHandler';
 import { IVisible } from '../../../interfaces/nElement/IVisible';
 
-import { Base } from '../base/Base';
+import { InitializableBase } from '../base/InitializableBase';
 
 import { Attributes } from '../Attributes';
 import { Classes } from '../Classes';
@@ -16,8 +16,7 @@ import { ExecutionParams } from '../../../expression/ExpressionExecParamsHelper'
 import { Helpers } from '../../../Helpers';
 import { Constants } from '../../../Constants';
 
-export class Switch extends Base implements IHandler<IExpressionDetails>, IVisible {
-    private readonly _attributes: Attributes | undefined;
+export class Switch extends InitializableBase implements IHandler<IExpressionDetails>, IVisible {
     private readonly _classes: Classes | undefined;
 
     private readonly _cases: Array<Case> | undefined;
@@ -50,12 +49,11 @@ export class Switch extends Base implements IHandler<IExpressionDetails>, IVisib
                                  (this._cases!.some(el => el.isDirty) || (!Helpers.isUndefined(this._default) && this._default!.isDirty)));
     }
 
-    constructor(attributes: Attributes, classes: Classes) {
-        super();
+    constructor(nativeElement: Element, attributes: Attributes, classes: Classes) {
+        super(nativeElement, Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
         
         const expression = <string | undefined>attributes.get(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
-            this._attributes = attributes;
             this._classes = classes;
             
             this.hasNExpression = true;
@@ -93,7 +91,7 @@ export class Switch extends Base implements IHandler<IExpressionDetails>, IVisib
         if (this.isDirty) {
             if (this._isFirstCommit) {
                 this._isFirstCommit = false;
-                this._attributes!.markAsReady(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+                this.markAsReady();
             }
 
             for (const el of this._cases!) {

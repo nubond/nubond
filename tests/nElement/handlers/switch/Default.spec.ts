@@ -16,7 +16,7 @@ describe('Default handler', () => {
         switchEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_HANDLER_ATTRIBUTE_NAME}`, switchExpr);
         const switchAttrs = new Attributes(switchEl, () => false);
         const switchClasses = new Classes(switchEl, switchAttrs, () => hideClassName);
-        const switchHandler = new Switch(switchAttrs, switchClasses);
+        const switchHandler = new Switch(switchEl, switchAttrs, switchClasses);
 
         const defaultEl = document.createElement('div');
         defaultEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME}`, '');

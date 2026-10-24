@@ -3,6 +3,7 @@ import { ExpressionExecutor } from '../src/expression/ExpressionExecutor';
 import { Console } from '../src/Console';
 import { Constants } from '../src/Constants';
 import { Environment } from '../src/Environment';
+import { Container } from '../src/nElement/handlers/Container';
 
 // polyfill CSSStyleSheet.replaceSync for jsdom
 if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
@@ -1480,7 +1481,7 @@ describe('ContextBinder', () => {
             binder.bind(root, host, true, false);
             jest.runAllTimers();
 
-            const childBinder = (binder.rootNElement as any)._children[0].container.contextBinder;
+            const childBinder = (binder.rootNElement as any)._children[0]._disposeSequence.find((handler: any) => handler instanceof Container).contextBinder;
 
             return { binder, host, childContext, childBinder, root };
         }

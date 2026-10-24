@@ -17,46 +17,46 @@ describe('Switch handler', () => {
     }
 
     it('should detect expression from attribute', () => {
-        const { attrs, classes } = createElements('ctx.currentTab');
-        const handler = new Switch(attrs, classes);
+        const { el, attrs, classes } = createElements('ctx.currentTab');
+        const handler = new Switch(el, attrs, classes);
 
         expect(handler.hasNExpression).toBe(true);
         expect(handler.nExpression).toBeDefined();
     });
 
     it('should have no expression when attribute missing', () => {
-        const { attrs, classes } = createElements();
-        const handler = new Switch(attrs, classes);
+        const { el, attrs, classes } = createElements();
+        const handler = new Switch(el, attrs, classes);
 
         expect(handler.hasNExpression).toBe(false);
     });
 
     it('should be visible by default', () => {
-        const { attrs, classes } = createElements('ctx.tab');
-        const handler = new Switch(attrs, classes);
+        const { el, attrs, classes } = createElements('ctx.tab');
+        const handler = new Switch(el, attrs, classes);
 
         expect(handler.isVisible).toBe(true);
     });
 
     it('should set value when bound', () => {
-        const { attrs, classes } = createElements('ctx.tab');
-        const handler = new Switch(attrs, classes);
+        const { el, attrs, classes } = createElements('ctx.tab');
+        const handler = new Switch(el, attrs, classes);
 
         handler.bind(undefined, () => 'home');
         expect(handler.value).toBe('home');
     });
 
     it('should be dirty after bind sets value', () => {
-        const { attrs, classes } = createElements('ctx.tab');
-        const handler = new Switch(attrs, classes);
+        const { el, attrs, classes } = createElements('ctx.tab');
+        const handler = new Switch(el, attrs, classes);
 
         handler.bind(undefined, () => 'home');
         expect(handler.isDirty).toBe(true);
     });
 
     it('should return executionParams from bind', () => {
-        const { attrs, classes } = createElements('ctx.tab');
-        const handler = new Switch(attrs, classes);
+        const { el, attrs, classes } = createElements('ctx.tab');
+        const handler = new Switch(el, attrs, classes);
 
         const params = { x: 1 } as any;
         expect(handler.bind(params, () => 'home')).toBe(params);
@@ -64,8 +64,8 @@ describe('Switch handler', () => {
 
     describe('addCase', () => {
         it('should return a removal function', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockCase = { isDirty: false, bind: jest.fn(), commit: jest.fn(), isVisible: false } as any;
             const remove = handler.addCase(mockCase);
@@ -74,8 +74,8 @@ describe('Switch handler', () => {
         });
 
         it('should remove case when removal function is called', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockCase = { isDirty: false, bind: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             const remove = handler.addCase(mockCase);
@@ -100,8 +100,8 @@ describe('Switch handler', () => {
 
     describe('setDefault', () => {
         it('should accept a default', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockDefault = { isDirty: false, show: jest.fn(), hide: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             const remove = handler.setDefault(mockDefault);
@@ -110,8 +110,8 @@ describe('Switch handler', () => {
         });
 
         it('should throw on duplicate default', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockDefault1 = { isDirty: false, show: jest.fn(), hide: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             const mockDefault2 = { isDirty: false, show: jest.fn(), hide: jest.fn(), commit: jest.fn(), isVisible: true } as any;
@@ -122,20 +122,24 @@ describe('Switch handler', () => {
     });
 
     describe('commit', () => {
-        it('should call markAsReady on first commit', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const markAsReadySpy = jest.spyOn(attrs, 'markAsReady');
-            const handler = new Switch(attrs, classes);
+        it('should set the ready attribute directly on the element on first commit', () => {
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
 
             handler.bind(undefined, () => 'home');
+            expect(el.hasAttribute(readyAttr)).toBe(false);
+
             handler.commit();
 
-            expect(markAsReadySpy).toHaveBeenCalledWith(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+            // no Attributes.commit() is needed any more — the handler writes the marker itself
+            expect(el.getAttribute(readyAttr)).toBe('');
+            expect(attrs.isDirty).toBe(false);
         });
 
         it('should hide switch when no cases are visible and no default', () => {
             const { el, attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const handler = new Switch(el, attrs, classes);
 
             const mockCase = { isDirty: false, bind: jest.fn(), commit: jest.fn(), isVisible: false } as any;
             handler.addCase(mockCase);
@@ -150,7 +154,7 @@ describe('Switch handler', () => {
 
         it('should show switch when a case becomes visible', () => {
             const { el, attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const handler = new Switch(el, attrs, classes);
 
             const mockCase = { isDirty: false, bind: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             handler.addCase(mockCase);
@@ -163,8 +167,8 @@ describe('Switch handler', () => {
         });
 
         it('should hide default when a case is visible, and show default when none visible', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockDefault = { isDirty: false, show: jest.fn(), hide: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             handler.setDefault(mockDefault);
@@ -181,8 +185,8 @@ describe('Switch handler', () => {
         });
 
         it('should show default when no cases are visible', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockDefault = { isDirty: false, show: jest.fn(), hide: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             handler.setDefault(mockDefault);
@@ -199,7 +203,7 @@ describe('Switch handler', () => {
 
         it('should toggle visibility from hidden to visible', () => {
             const { el, attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const handler = new Switch(el, attrs, classes);
 
             const mockCase = { isDirty: false, bind: jest.fn(), commit: jest.fn(), isVisible: false } as any;
             handler.addCase(mockCase);
@@ -219,8 +223,8 @@ describe('Switch handler', () => {
         });
 
         it('should return false when not dirty and hasNExpression is false', () => {
-            const { attrs, classes } = createElements();
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements();
+            const handler = new Switch(el, attrs, classes);
 
             // hasNExpression is false → isDirty is just _isDirty which is false
             expect(handler.commit()).toBe(false);
@@ -229,8 +233,8 @@ describe('Switch handler', () => {
 
     describe('isDirty', () => {
         it('should return true when a case is dirty', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const dirtyCase = { isDirty: true, bind: jest.fn(), commit: jest.fn(), isVisible: false } as any;
             handler.addCase(dirtyCase);
@@ -239,8 +243,8 @@ describe('Switch handler', () => {
         });
 
         it('should return true when default is dirty', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockDefault = { isDirty: true, show: jest.fn(), hide: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             handler.setDefault(mockDefault);
@@ -249,8 +253,8 @@ describe('Switch handler', () => {
         });
 
         it('should return false when there are no cases and no default (nothing to commit)', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             // No default set and no cases — there is nothing dirty to flush, so isDirty must be false.
             // (Earlier behavior incorrectly treated "missing default" as dirty; the new code only marks
@@ -259,8 +263,8 @@ describe('Switch handler', () => {
         });
 
         it('should return false when default is defined but not dirty and no cases dirty', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const cleanDefault = { isDirty: false, show: jest.fn(), hide: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             handler.setDefault(cleanDefault);
@@ -271,8 +275,8 @@ describe('Switch handler', () => {
 
     describe('addCase removal edge cases', () => {
         it('should handle double removal gracefully (index < 0)', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockCase = { isDirty: false, bind: jest.fn(), commit: jest.fn(), isVisible: false } as any;
             const remove = handler.addCase(mockCase);
@@ -284,8 +288,8 @@ describe('Switch handler', () => {
         // The removal function must take out its own case whatever was removed before it; a
         // position captured at addCase() time goes stale as soon as an earlier case is removed.
         function addCases(): { handler: Switch; cases: Array<any>; removals: Array<() => void> } {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
             const cases = ['first', 'second', 'third'].map(name =>
                 ({ name, isDirty: false, bind: jest.fn(), commit: jest.fn(), isVisible: false } as any));
 
@@ -325,8 +329,8 @@ describe('Switch handler', () => {
 
     describe('setDefault removal', () => {
         it('should clear default with removal function', () => {
-            const { attrs, classes } = createElements('ctx.tab');
-            const handler = new Switch(attrs, classes);
+            const { el, attrs, classes } = createElements('ctx.tab');
+            const handler = new Switch(el, attrs, classes);
 
             const mockDefault = { isDirty: false, show: jest.fn(), hide: jest.fn(), commit: jest.fn(), isVisible: true } as any;
             const remove = handler.setDefault(mockDefault);
@@ -340,8 +344,8 @@ describe('Switch handler', () => {
     });
 
     it('bind should pass through executionParams unchanged when no expression', () => {
-        const { attrs, classes } = createElements();
-        const handler = new Switch(attrs, classes);
+        const { el, attrs, classes } = createElements();
+        const handler = new Switch(el, attrs, classes);
 
         const params = { foo: 'bar' } as any;
         const result = handler.bind(params, () => 'x');

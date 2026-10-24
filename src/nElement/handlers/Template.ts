@@ -2,7 +2,7 @@ import { IExpressionDetails } from '../../interfaces/expression/IExpressionDetai
 
 import { IHandler } from '../../interfaces/nElement/IHandler';
 
-import { Base } from './base/Base';
+import { InitializableBase } from './base/InitializableBase';
 
 import { NElementProjection } from '../NElementProjection';
 
@@ -17,7 +17,7 @@ import { Helpers } from '../../Helpers';
 import { Constants } from '../../Constants';
 import { Console } from '../../Console';
 
-export class Template extends Base implements IHandler<IExpressionDetails> {
+export class Template extends InitializableBase implements IHandler<IExpressionDetails> {
     public readonly nExpression: IExpressionDetails | undefined;
     public readonly hasNExpression: boolean;
 
@@ -25,7 +25,7 @@ export class Template extends Base implements IHandler<IExpressionDetails> {
 
     constructor(nativeElement: Element, attributes: Attributes,
                 constructSubTree: () => void, requestDetectChanges: () => void) {
-        super();
+        super(nativeElement, Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME);
         
         this.hasNExpression = false;
 
@@ -45,11 +45,7 @@ export class Template extends Base implements IHandler<IExpressionDetails> {
                             nativeElement.replaceChildren(...Array.from(template!.childNodes));
                             nElementProjection.process();
 
-                            attributes.markAsReady(Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME);
-                            
-                            if (asyncCallBack) {
-                                attributes.commit();
-                            }
+                            this.markAsReady();
 
                             constructSubTree();
 

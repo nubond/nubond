@@ -174,14 +174,47 @@ describe('Events handler', () => {
         });
 
         it('should keep manual subscriptions out of the template subscription map (R2-2)', () => {
-            const el = document.createElement('div');
+            const el = createElementWithEvents({ 'mouseover': 'this.onHover()' });
             const attrs = new Attributes(el, () => false);
             const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
 
             handler.subscribe('click', jest.fn());
 
-            expect(handler['_subscribed'].size).toBe(0);
-            expect(handler['_unsubscribed'].size).toBe(0);
+            expect(handler['_subscribed']!.size).toBe(0);
+            expect(handler['_unsubscribed']!.size).toBe(0);
+        });
+
+        it('should not allocate the tracking maps without nb-event bindings, yet keep manual subscriptions working', () => {
+            const el = document.createElement('div');
+            const attrs = new Attributes(el, () => false);
+            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const callback = jest.fn();
+
+            expect(handler.hasNExpression).toBe(false);
+            expect(handler['_subscribed']).toBeUndefined();
+            expect(handler['_unsubscribed']).toBeUndefined();
+
+            const unSubscribe = handler.subscribe('click', callback);
+            el.dispatchEvent(new Event('click'));
+            expect(callback).toHaveBeenCalledTimes(1);
+
+            unSubscribe();
+            el.dispatchEvent(new Event('click'));
+            expect(callback).toHaveBeenCalledTimes(1);
+        });
+
+        it('should dispose safely without nb-event bindings and leave manual subscriptions alone', () => {
+            const el = document.createElement('div');
+            const attrs = new Attributes(el, () => false);
+            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const callback = jest.fn();
+
+            handler.subscribe('click', callback);
+
+            expect(() => handler.dispose()).not.toThrow();
+
+            el.dispatchEvent(new Event('click'));
+            expect(callback).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -192,7 +225,7 @@ describe('Events handler', () => {
             const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
 
             handler.bind(undefined, () => undefined);
-            expect(handler['_subscribed'].has('click')).toBe(true);
+            expect(handler['_subscribed']!.has('click')).toBe(true);
         });
     });
 
@@ -253,7 +286,7 @@ describe('Events handler', () => {
             handler.bind(undefined, () => undefined);
 
             expect(subscribeSpy).toHaveBeenCalledWith('click', expect.any(Function), undefined, undefined);
-            expect(handler['_subscribed'].has('click')).toBe(true);
+            expect(handler['_subscribed']!.has('click')).toBe(true);
         });
     });
 
@@ -397,13 +430,13 @@ describe('Events handler', () => {
             const { handler, exec, addSpy, removeSpy } = createClickHandler();
 
             handler.bind(createParams(['item'], [1]), exec);
-            const firstUnSubscribe = handler['_subscribed'].get('click');
+            const firstUnSubscribe = handler['_subscribed']!.get('click');
             expect(firstUnSubscribe).toBeDefined();
 
             handler.bind(createParams(['item'], [2]), exec);
             handler.bind(createParams(['item', 'index'], [3, 0]), exec);
 
-            expect(handler['_subscribed'].get('click')).toBe(firstUnSubscribe);
+            expect(handler['_subscribed']!.get('click')).toBe(firstUnSubscribe);
             expect(addSpy).toHaveBeenCalledTimes(1);
             expect(removeSpy).not.toHaveBeenCalled();
         });
@@ -542,7 +575,7 @@ describe('Events handler', () => {
             handler.bind(undefined, exec);
 
             el.dispatchEvent(new Event('click'));
-            expect(handler['_unsubscribed'].has('click')).toBe(true);
+            expect(handler['_unsubscribed']!.has('click')).toBe(true);
 
             // The listener is gone — a second dispatch does not re-run the expression
             el.dispatchEvent(new Event('click'));
@@ -561,7 +594,7 @@ describe('Events handler', () => {
             el.dispatchEvent(new Event('click'));
 
             await new Promise(r => setTimeout(r, 0));
-            expect(handler['_unsubscribed'].has('click')).toBe(true);
+            expect(handler['_unsubscribed']!.has('click')).toBe(true);
         });
 
         it('handleSubscription: the injected unSubscribe stops only the template handler', () => {
@@ -581,7 +614,7 @@ describe('Events handler', () => {
             el.dispatchEvent(new Event('click'));
 
             expect(exec).toHaveBeenCalledTimes(1);
-            expect(handler['_unsubscribed'].has('click')).toBe(true);
+            expect(handler['_unsubscribed']!.has('click')).toBe(true);
             // The manual subscriber is untouched by the template handler's unsubscribe (R2-2)
             expect(aspectCallback).toHaveBeenCalledTimes(2);
         });
@@ -659,7 +692,7 @@ describe('Events handler', () => {
             });
 
             // The attempt did not complete, so the one-time subscription is kept alive
-            expect(handler['_unsubscribed'].has('click')).toBe(false);
+            expect(handler['_unsubscribed']!.has('click')).toBe(false);
 
             await withUnhandledRejectionWatch(async () => {
                 el.dispatchEvent(new Event('click'));
@@ -699,7 +732,7 @@ describe('Events handler', () => {
 
             // Second call short-circuits because the eventName is already in _unsubscribed
             expect(() => injectedUnSubscribe!()).not.toThrow();
-            expect(handler['_unsubscribed'].has('click')).toBe(true);
+            expect(handler['_unsubscribed']!.has('click')).toBe(true);
         });
     });
 
@@ -735,8 +768,8 @@ describe('Events handler', () => {
             expect(getExecutionParam(exec.mock.calls[1][1], 'a')).toBe(2);
 
             keptUnSubscribe();
-            expect(handler['_unsubscribed'].has('click')).toBe(true);
-            expect(handler['_subscribed'].has('click')).toBe(false);
+            expect(handler['_unsubscribed']!.has('click')).toBe(true);
+            expect(handler['_subscribed']!.has('click')).toBe(false);
 
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(2);
@@ -753,12 +786,12 @@ describe('Events handler', () => {
             handler.dispose();
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(1);
-            expect(handler['_subscribed'].size).toBe(0);
-            expect(handler['_unsubscribed'].size).toBe(0);
+            expect(handler['_subscribed']!.size).toBe(0);
+            expect(handler['_unsubscribed']!.size).toBe(0);
 
             // after dispose the kept closure no longer matches a live subscription
             keptUnSubscribe();
-            expect(handler['_unsubscribed'].size).toBe(0);
+            expect(handler['_unsubscribed']!.size).toBe(0);
         });
 
         it('still unsubscribes permanently when the injected unSubscribe is called', () => {
@@ -768,14 +801,14 @@ describe('Events handler', () => {
             el.dispatchEvent(new Event('click'));
             last()();
 
-            expect(handler['_unsubscribed'].has('click')).toBe(true);
-            expect(handler['_subscribed'].has('click')).toBe(false);
+            expect(handler['_unsubscribed']!.has('click')).toBe(true);
+            expect(handler['_subscribed']!.has('click')).toBe(false);
 
             // A param change must not resurrect a permanently unsubscribed event
             handler.bind(createParams(['a'], [2]), exec);
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(1);
-            expect(handler['_subscribed'].has('click')).toBe(false);
+            expect(handler['_subscribed']!.has('click')).toBe(false);
         });
     });
 
@@ -798,8 +831,8 @@ describe('Events handler', () => {
             el.dispatchEvent(new Event('mouseover'));
             expect(exec).not.toHaveBeenCalled();
 
-            expect(handler['_subscribed'].size).toBe(0);
-            expect(handler['_unsubscribed'].size).toBe(0);
+            expect(handler['_subscribed']!.size).toBe(0);
+            expect(handler['_unsubscribed']!.size).toBe(0);
         });
 
         it('leaves manual subscriptions to their owner — dispose does not track them', () => {

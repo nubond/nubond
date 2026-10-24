@@ -486,20 +486,20 @@ describe('Repeat handler', () => {
     });
 
     describe('commit()', () => {
-        it('should call markAsReady on first commit', () => {
+        it('should set the ready attribute directly on the element on first commit', () => {
             const { el, attrs, classes } = createElements('ctx.items');
             const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
 
             // bind to make dirty
             handler.bind(undefined, () => ['a']);
             const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            expect(el.hasAttribute(readyAttr)).toBe(false);
 
             handler.commit();
 
-            // markAsReady sets a ready attribute via Attributes
-            expect(el.hasAttribute(readyAttr)).toBe(false); // ready attr is tracked internally in Attributes, commit on Attributes would flush it
-            // We verify markAsReady was called by checking Attributes isDirty was set
-            expect(attrs.isDirty).toBe(true);
+            // written by the handler itself — Attributes is no longer involved
+            expect(el.getAttribute(readyAttr)).toBe('');
+            expect(attrs.isDirty).toBe(false);
         });
 
         it('should return true when visibility changes on commit', () => {
@@ -558,22 +558,22 @@ describe('Repeat handler', () => {
             expect(el.classList.contains(hideClassName)).toBe(false);
         });
 
-        it('should not call markAsReady on second commit', () => {
+        it('should not set the ready attribute again on second commit', () => {
             const { el, attrs, classes } = createElements('ctx.items');
             const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
 
             handler.bind(undefined, () => ['a']);
             handler.commit();
+            expect(el.hasAttribute(readyAttr)).toBe(true);
 
-            // Reset attrs dirty flag by committing attrs
-            attrs.commit();
-            expect(attrs.isDirty).toBe(false);
+            // removed out of band: the marker is written once, so it must not come back
+            el.removeAttribute(readyAttr);
 
-            // Second bind+commit should not set markAsReady again
-            handler.bind(undefined, () => ['b']);
+            handler.bind(undefined, () => []);
             handler.commit();
 
-            // Attrs should not be dirtied by markAsReady a second time
+            expect(el.hasAttribute(readyAttr)).toBe(false);
             expect(attrs.isDirty).toBe(false);
         });
     });

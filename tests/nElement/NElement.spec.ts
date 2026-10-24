@@ -5,6 +5,16 @@ import { ContextBinder } from '../../src/ContextBinder';
 import { INElement } from '../../src/interfaces/nElement/INElement';
 import { Router } from '../../src/Router';
 import { Constants } from '../../src/Constants';
+import { Container } from '../../src/nElement/handlers/Container';
+import { Case } from '../../src/nElement/handlers/switch/Case';
+import { Switch } from '../../src/nElement/handlers/switch/Switch';
+import { Repeat } from '../../src/nElement/handlers/Repeat';
+import { If } from '../../src/nElement/handlers/If';
+import { Exec } from '../../src/nElement/handlers/Exec';
+import { Attributes } from '../../src/nElement/handlers/Attributes';
+import { Classes } from '../../src/nElement/handlers/Classes';
+import { Styles } from '../../src/nElement/handlers/Styles';
+import { Properties } from '../../src/nElement/handlers/Properties';
 
 // polyfill CSSStyleSheet.replaceSync for jsdom
 if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
@@ -1448,19 +1458,22 @@ describe('NElement lifecycle via ContextBinder', () => {
                 `<div nb-switch="'a'"><span nb-case="'b'" ${caseAttributes}></span></div>`
             );
             const caseNElement: any = (binder.rootNElement as any)._children[0]._children[0];
+            // handlers are no longer public fields of NElement — the case handler is found among
+            // the parent-handled visibility handlers, the container by type in each sequence
+            const caseHandler: Case = caseNElement._visibleParentHandlers.find((handler: any) => handler instanceof Case);
             // membership is checked as a boolean so a failure prints `true`/`false` rather than
             // dumping the whole handler graph
-            const isInSequence = (sequenceName: string) => caseNElement[sequenceName].indexOf(caseNElement.container) >= 0;
-            return { binder, caseNElement, isInSequence };
+            const isInSequence = (sequenceName: string) => (caseNElement[sequenceName] ?? []).some((handler: any) => handler instanceof Container);
+            return { binder, caseNElement, caseHandler, isInSequence };
         }
 
         it('should drop a conflicting nb-container from every processing sequence', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-            const { caseNElement, isInSequence } = buildNonMatchingCase(`nb-container="@Foo" nb-value="'v'"`);
+            const { caseNElement, caseHandler, isInSequence } = buildNonMatchingCase(`nb-container="@Foo" nb-value="'v'"`);
 
             // precondition: the parent switch does not match, so the parent owns visibility
-            expect(caseNElement.case.hasNExpression).toBe(true);
-            expect(caseNElement.case.isVisible).toBe(false);
+            expect(caseHandler.hasNExpression).toBe(true);
+            expect(caseHandler.isVisible).toBe(false);
             expect(consoleSpy).toHaveBeenCalledWith(
                 `${Constants.DISPLAY_NAME}: `,
                 caseNElement.nativeElement,
@@ -1481,8 +1494,10 @@ describe('NElement lifecycle via ContextBinder', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const { caseNElement } = buildNonMatchingCase(`nb-container="@Foo" nb-value="'v'"`);
 
-            const bindSpy = jest.spyOn(caseNElement.container, 'bind');
-            const commitSpy = jest.spyOn(caseNElement.container, 'commit');
+            // the container is in no sequence any more, so it is reachable only through its
+            // prototype — this element owns the only Container instance in the tree
+            const bindSpy = jest.spyOn(Container.prototype, 'bind');
+            const commitSpy = jest.spyOn(Container.prototype, 'commit');
 
             caseNElement.detectChanges({});
 
@@ -1495,13 +1510,204 @@ describe('NElement lifecycle via ContextBinder', () => {
         it('should keep a non-conflicting nb-container in the invisible-parent-handled sequences', () => {
             // Control: the removal must be driven by the conflict, not by the invisibility.
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-            const { caseNElement, isInSequence } = buildNonMatchingCase(`nb-container="@Foo"`);
+            const { caseHandler, isInSequence } = buildNonMatchingCase(`nb-container="@Foo"`);
 
-            expect(caseNElement.case.isVisible).toBe(false);
+            expect(caseHandler.isVisible).toBe(false);
             expect(isInSequence('_bindSequenceInvisibleParentHandled')).toBe(true);
             expect(isInSequence('_commitSequenceInvisibleParentHandled')).toBe(true);
 
             consoleSpy.mockRestore();
+        });
+    });
+
+    describe('handlers are kept and sequenced only when they can be used', () => {
+        const firstChild = (binder: ContextBinder): any => (binder.rootNElement as any)._children[0];
+        const hasHandler = (sequence: Array<unknown> | undefined, type: Function) => (sequence ?? []).some(handler => handler instanceof type);
+
+        it('should leave every optional slot undefined for an element with only nb-exec', () => {
+            const { binder } = createBoundElement('<span nb-exec="this.x = 1"></span>', {});
+            const nElement = firstChild(binder);
+
+            expect(nElement.repeat).toBeUndefined();
+            expect(nElement.switch).toBeUndefined();
+            expect(nElement.nativeElementForClone).toBeUndefined();
+            expect(nElement._clone).toBeUndefined();
+            expect(nElement._visibilityHandlers).toBeUndefined();
+            expect(nElement._visibleParentHandlers).toBeUndefined();
+            expect(nElement._bindSequenceSoftRemovers).toBeUndefined();
+            expect(nElement._commitSequenceSoftRemovers).toBeUndefined();
+            expect(nElement._commitSequence).toBeUndefined();
+            expect(nElement._disposeSequence).toBeUndefined();
+            expect(nElement._bindSequenceInvisibleParentHandled).toBeUndefined();
+            expect(nElement._commitSequenceInvisibleParentHandled).toBeUndefined();
+
+            expect(nElement._bindSequence).toHaveLength(1);
+            expect(nElement._bindSequence[0]).toBeInstanceOf(Exec);
+        });
+
+        it('should still run, re-detect and dispose such an element without errors', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            const ctx: any = {};
+            const { binder } = createBoundElement('<span nb-exec="this.count = (this.count || 0) + 1"></span>', ctx);
+            const nElement = firstChild(binder);
+
+            expect(ctx.count).toBe(1);
+
+            nElement.detectChanges(ctx);
+            expect(ctx.count).toBe(2);
+            expect(nElement.isStable).toBe(true);
+
+            expect(() => nElement.dispose()).not.toThrow();
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should expose switch only when nb-switch is bound', () => {
+            const { binder } = createBoundElement(`<div nb-switch="'a'"><span nb-case="'a'"></span></div>`, {});
+
+            expect(firstChild(binder).switch).toBeInstanceOf(Switch);
+            expect(firstChild(binder).repeat).toBeUndefined();
+        });
+
+        it('should expose repeat, the clone template and the clone callback only when nb-repeat is bound', () => {
+            const { binder } = createBoundElement('<ul><li nb-repeat="this.items"></li></ul>', { items: [1] });
+            const repeatNElement = firstChild(binder);
+
+            expect(repeatNElement.repeat).toBeInstanceOf(Repeat);
+            expect(repeatNElement.switch).toBeUndefined();
+            expect(repeatNElement.nativeElementForClone).toBeDefined();
+            expect(typeof repeatNElement._clone).toBe('function');
+        });
+
+        it('should treat nb-case as orphaned when the parent element has handlers but no nb-switch', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            const { binder, el } = createBoundElement(`<div nb-if="true"><span nb-case="'a'">A</span></div>`, {});
+            const caseNElement = firstChild(binder)._children[0];
+
+            expect(firstChild(binder).switch).toBeUndefined();
+            expect(errorSpy).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                el.querySelector('span'),
+                expect.stringContaining('must have direct')
+            );
+            expect(caseNElement._visibleParentHandlers).toBeUndefined();
+            expect(el.querySelector('span')!.classList.contains('nb-hidden')).toBe(false);
+        });
+
+        describe('ready markers are written without an Attributes commit', () => {
+            const ready = (name: string) => `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${name}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+
+            it('should mark nb-if ready on the first cycle', () => {
+                const { binder, el } = createBoundElement('<div nb-if="this.show"></div>', { show: false });
+
+                expect(hasHandler(firstChild(binder)._commitSequence, Attributes)).toBe(false);
+                expect(el.querySelector('div')!.hasAttribute(ready(Constants.IF_HANDLER_ATTRIBUTE_NAME))).toBe(true);
+            });
+
+            it('should mark nb-switch ready on the first cycle', () => {
+                const { binder, el } = createBoundElement(`<div nb-switch="'a'"></div>`, {});
+
+                expect(hasHandler(firstChild(binder)._commitSequence, Attributes)).toBe(false);
+                expect(el.querySelector('div')!.hasAttribute(ready(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME))).toBe(true);
+            });
+
+            it('should mark nb-repeat ready on the first cycle, also on the rendered clones', () => {
+                const { binder, el } = createBoundElement('<ul><li nb-repeat="this.items"></li></ul>', { items: [1, 2, 3] });
+
+                expect(hasHandler(firstChild(binder)._commitSequence, Attributes)).toBe(false);
+
+                const rows = el.querySelectorAll('li');
+                expect(rows).toHaveLength(3);
+                rows.forEach(row => expect(row.hasAttribute(ready(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME))).toBe(true));
+            });
+        });
+
+        describe('commit sequence', () => {
+            it('should commit only classes for a visibility handler without manipulations', () => {
+                const { binder, el } = createBoundElement('<div nb-if="this.show"></div>', { show: false });
+                const sequence = firstChild(binder)._commitSequence;
+
+                expect(hasHandler(sequence, Classes)).toBe(true);
+                expect(hasHandler(sequence, Styles)).toBe(false);
+                expect(hasHandler(sequence, Attributes)).toBe(false);
+                expect(hasHandler(sequence, Properties)).toBe(false);
+                expect(el.querySelector('div')!.classList.contains('nb-hidden')).toBe(true);
+            });
+
+            it('should commit only its own handler for a plain nb-style binding', () => {
+                const { binder, el } = createBoundElement(`<div nb-style="color: this.color"></div>`, { color: 'red' });
+                const sequence = firstChild(binder)._commitSequence;
+
+                expect(hasHandler(sequence, Styles)).toBe(true);
+                expect(hasHandler(sequence, Classes)).toBe(false);
+                expect(hasHandler(sequence, Attributes)).toBe(false);
+                expect(hasHandler(sequence, Properties)).toBe(false);
+                expect((el.querySelector('div') as HTMLElement).style.color).toBe('red');
+            });
+
+            it('should commit classes last of all when the element has nb-class, after the sub-tree changers', () => {
+                const { binder } = createBoundElement(`<div nb-if="true" nb-class="'a'"></div>`, {});
+                const sequence: Array<unknown> = firstChild(binder)._commitSequence;
+
+                expect(sequence[0]).toBeInstanceOf(If);
+                expect(sequence[sequence.length - 1]).toBeInstanceOf(Classes);
+            });
+
+            it('should commit classes, styles, attributes and properties when the manipulation proxy is reachable', () => {
+                const ctx: any = { ref: undefined };
+                const { binder, el } = createBoundElement('<input nb-bound="this.ref = element" />', ctx);
+                const nElement = firstChild(binder);
+                const input = el.querySelector('input')!;
+
+                for (const type of [Classes, Styles, Attributes, Properties]) {
+                    expect(hasHandler(nElement._commitSequence, type)).toBe(true);
+                }
+
+                ctx.ref.classes.add('manipulated');
+                ctx.ref.styles.set('color', 'blue');
+                ctx.ref.attributes.set('data-x', '1');
+                ctx.ref.properties.set('value', 'typed');
+                nElement.detectChanges(ctx);
+
+                expect(input.classList.contains('manipulated')).toBe(true);
+                expect(input.style.color).toBe('blue');
+                expect(input.getAttribute('data-x')).toBe('1');
+                expect(input.value).toBe('typed');
+            });
+
+            it('should apply manipulations made from an nb-bound expression in the same cycle', () => {
+                const { el } = createBoundElement(`<span nb-bound="element.styles.set('color', 'green'); element.classes.add('b')"></span>`, {});
+                const span = el.querySelector('span') as HTMLElement;
+
+                expect(span.style.color).toBe('green');
+                expect(span.classList.contains('b')).toBe(true);
+            });
+        });
+
+        describe('invisible-parent-handled commit sequence', () => {
+            // the matching 'a' case keeps the switch itself visible, so its children are detected
+            function buildHiddenCase(caseAttributes: string) {
+                const { binder, el } = createBoundElement(`<div nb-switch="'a'"><i nb-case="'a'"></i><span nb-case="'b'" ${caseAttributes}></span></div>`);
+                return { caseNElement: firstChild(binder)._children[1], el };
+            }
+
+            it('should hold only classes for a bare nb-case', () => {
+                const { caseNElement, el } = buildHiddenCase('');
+                const sequence = caseNElement._commitSequenceInvisibleParentHandled;
+
+                expect(sequence).toHaveLength(1);
+                expect(sequence[0]).toBeInstanceOf(Classes);
+                expect(el.querySelector('span')!.classList.contains('nb-hidden')).toBe(true);
+            });
+
+            it('should also hold attributes when the case element has nb-attr', () => {
+                const { caseNElement } = buildHiddenCase(`nb-attr:data-x="'1'"`);
+                const sequence = caseNElement._commitSequenceInvisibleParentHandled;
+
+                expect(hasHandler(sequence, Classes)).toBe(true);
+                expect(hasHandler(sequence, Attributes)).toBe(true);
+                // the attribute is only bound while visible
+                expect(hasHandler(caseNElement._bindSequenceInvisibleParentHandled, Attributes)).toBe(false);
+            });
         });
     });
 

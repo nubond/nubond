@@ -3,7 +3,7 @@ import { IExpressionDetails } from '../../interfaces/expression/IExpressionDetai
 import { IHandler } from '../../interfaces/nElement/IHandler';
 import { IVisible } from '../../interfaces/nElement/IVisible';
 
-import { Base } from './base/Base';
+import { InitializableBase } from './base/InitializableBase';
 
 import { Attributes } from './Attributes';
 import { Classes } from './Classes';
@@ -19,9 +19,8 @@ import { Console } from '../../Console';
 
 type RepeatDataType = 'array-like' | 'object' | 'number';
 
-export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisible {
+export class Repeat extends InitializableBase implements IHandler<IExpressionDetails>, IVisible {
     private readonly _nativeElement: Element | undefined;
-    private readonly _attributes: Attributes | undefined;
     private readonly _classes: Classes | undefined;
     private readonly _showDebugInfo: (() => boolean) | undefined;
 
@@ -79,8 +78,8 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
                 requestNElementClone: () => void, requestNElementRemoval: () => void,
                 getShowDebugInfo: () => boolean,
                 cloneOf?: Repeat) {
-        super();
-        
+        super(nativeElement, Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+
         const attributeData = attributes.get(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME, true, true, false);
         if (Helpers.isArray(attributeData)) {
             const attributeName = (<[string, string]>attributeData)[0];
@@ -116,7 +115,6 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
             
             if (isValidPrefix) {
                 this._nativeElement = nativeElement;
-                this._attributes = attributes;
                 this._classes = classes;
                 this._requestNElementClone = requestNElementClone;
                 this._requestNElementRemoval = requestNElementRemoval;
@@ -172,7 +170,7 @@ export class Repeat extends Base implements IHandler<IExpressionDetails>, IVisib
         if (this._isDirty) {
             if (this._isFirstCommit) {
                 this._isFirstCommit = false;
-                this._attributes!.markAsReady(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+                this.markAsReady();
             }
 
             if (this._previousIsVisible !== this._isVisible) {

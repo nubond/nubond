@@ -47,27 +47,27 @@ export interface INTreeElement extends IDisposable {
 export interface INElement extends INTreeElement {    
     readonly nativeElementForClone: Node | undefined;
 
-    readonly attributes: Attributes & IHandler<Map<string, IExpressionDetails>>;
-    readonly classes: Classes & (IHandler<IClassesBindings<IExpressionDetails> | 
-                                          IClassesBindings<Array<IExpressionDetails>> | 
-                                          IClassesBindings<Map<string, IExpressionDetails>>>) & 
-                                 IVisibilityHandler;
-    readonly styles: Styles & IHandler<Map<string, IExpressionDetails>>;
-    readonly value: Value & IHandler<IExpressionDetails>;
-    readonly html: Html & IHandler<IExpressionDetails>;
-    readonly if: If & IHandler<IExpressionDetails> & IVisible;
-    readonly events: Events & IHandler<Map<string, IEventsBindings>> & IDisposable;
-    readonly properties: Properties & IHandler<Map<string, IExpressionDetails>>;
-    readonly repeat: Repeat & IHandler<IExpressionDetails> & IVisible;
-    readonly exec: Exec & IHandler<IExpressionDetails>;
-    readonly switch: Switch & IHandler<IExpressionDetails> & IVisible;
-    readonly case: Case & IHandler<IExpressionDetails> & IDisposable;
-    readonly default: Default & IHandler<IExpressionDetails> & IDisposable;
-    readonly bound: Bound & IHandler<IExpressionDetails>;
-    readonly variables: Variables & IHandler<Map<string, IExpressionDetails>>;
+    // readonly attributes: Attributes & IHandler<Map<string, IExpressionDetails>>;
+    // readonly classes: Classes & (IHandler<IClassesBindings<IExpressionDetails> | 
+    //                                       IClassesBindings<Array<IExpressionDetails>> | 
+    //                                       IClassesBindings<Map<string, IExpressionDetails>>>) & 
+    //                              IVisibilityHandler;
+    // readonly styles: Styles & IHandler<Map<string, IExpressionDetails>>;
+    // readonly value: Value & IHandler<IExpressionDetails>;
+    // readonly html: Html & IHandler<IExpressionDetails>;
+    // readonly if: If & IHandler<IExpressionDetails> & IVisible;
+    // readonly events: Events & IHandler<Map<string, IEventsBindings>> & IDisposable;
+    // readonly properties: Properties & IHandler<Map<string, IExpressionDetails>>;
+    readonly repeat: (Repeat & IHandler<IExpressionDetails> & IVisible) | undefined;
+    // readonly exec: Exec & IHandler<IExpressionDetails>;
+    readonly switch: (Switch & IHandler<IExpressionDetails> & IVisible) | undefined;
+    // readonly case: Case & IHandler<IExpressionDetails> & IDisposable;
+    // readonly default: Default & IHandler<IExpressionDetails> & IDisposable;
+    // readonly bound: Bound & IHandler<IExpressionDetails>;
+    // readonly variables: Variables & IHandler<Map<string, IExpressionDetails>>;
 
-    readonly container: Container & IHandler<IContextBaseBindings> & IDisposable;
-    readonly component: Component & IHandler<IContextBaseBindings> & IDisposable;
-    readonly aspects: Aspects & IHandler<Map<string, IAspectBindings>> & IDisposable;
-    readonly template: Template & IHandler<IExpressionDetails>;
+    // readonly container: Container & IHandler<IContextBaseBindings> & IDisposable;
+    // readonly component: Component & IHandler<IContextBaseBindings> & IDisposable;
+    // readonly aspects: Aspects & IHandler<Map<string, IAspectBindings>> & IDisposable;
+    // readonly template: Template & IHandler<IExpressionDetails>;
 }

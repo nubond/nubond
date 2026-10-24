@@ -63,6 +63,24 @@ describe('Template handler', () => {
         expect(handler.hasNExpression).toBe(true);
     });
 
+    it('should set the ready attribute directly on the element once the template is injected', () => {
+        Environment.addTemplate('test-tpl-ready', '<p>content</p>', undefined);
+
+        const el = createElementWithAttr('@test-tpl-ready');
+        const attrs = new Attributes(el, () => false);
+        const constructSubTree = jest.fn();
+        const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+
+        new Template(el, attrs, constructSubTree, jest.fn());
+
+        // a ready template is injected synchronously from the constructor
+        expect(constructSubTree).toHaveBeenCalledTimes(1);
+        expect(el.innerHTML).toBe('<p>content</p>');
+        // written by the handler itself — Attributes is no longer involved
+        expect(el.getAttribute(readyAttr)).toBe('');
+        expect(attrs.isDirty).toBe(false);
+    });
+
     describe('constructor error paths', () => {
         it('should error when expression does not start with @', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
@@ -101,7 +119,7 @@ describe('Template handler', () => {
     });
 
     describe('tryPrepare async callback', () => {
-        it('should call commit and requestDetectChanges when asyncCallBack is true', () => {
+        it('should mark ready and call requestDetectChanges, without an attributes commit, when asyncCallBack is true', () => {
             // Mock Environment.templates to control tryPrepare
             const templateContent = document.createElement('template');
             templateContent.innerHTML = '<p>async content</p>';
@@ -122,10 +140,14 @@ describe('Template handler', () => {
             const requestDetectChanges = jest.fn();
             const commitSpy = jest.spyOn(attrs, 'commit');
 
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+
             const handler = new Template(el, attrs, constructSubTree, requestDetectChanges);
 
             expect(handler.hasNExpression).toBe(true);
-            expect(commitSpy).toHaveBeenCalled();
+            // the ready marker is written by the handler itself, so nothing has to be flushed
+            expect(el.hasAttribute(readyAttr)).toBe(true);
+            expect(commitSpy).not.toHaveBeenCalled();
             expect(requestDetectChanges).toHaveBeenCalled();
             expect(constructSubTree).toHaveBeenCalled();
         });

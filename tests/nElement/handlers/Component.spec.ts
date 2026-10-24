@@ -90,12 +90,15 @@ describe('Component handler', () => {
         it('should mark ready and instantiate binder on first commit', () => {
             mockComponentsEnv({ has: true, isReady: true });
             const { handler, attrs, el } = createComponentHandler('my-widget');
-            const markAsReadySpy = jest.spyOn(attrs, 'markAsReady');
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.COMPONENT_MARKER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            expect(el.hasAttribute(readyAttr)).toBe(false);
 
             // The handler sets isEntityDataDirty in the constructor, so just commit
             handler.commit();
 
-            expect(markAsReadySpy).toHaveBeenCalledWith(Constants.COMPONENT_MARKER_ATTRIBUTE_NAME);
+            // written by the handler itself — Attributes is no longer involved
+            expect(el.getAttribute(readyAttr)).toBe('');
+            expect(attrs.isDirty).toBe(false);
             expect((el as any).$bind).toHaveBeenCalled();
         });
 

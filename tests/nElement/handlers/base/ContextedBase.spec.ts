@@ -34,6 +34,7 @@ class TestContextedBase extends ContextedBase<string> {
     public get exposedContextBinder() { return this.contextBinder; }
     public get exposedContextInputValues() { return this.contextInputValues; }
     public get exposedContextInputsWithChangedValue() { return this.contextInputsWithChangedValue; }
+    public exposedMarkAsReady() { this.markAsReady(); }
 
     protected onCommit(_entityData: string | null | undefined): string | null | undefined {
         return this.commitReturnValue;
@@ -77,7 +78,7 @@ function createHandlerSimple(expression?: string) {
         el.setAttribute(`${PREFIX}container`, expression);
     }
     const attrs = new Attributes(el, () => false);
-    return new TestContextedBase(expression, el, attrs, () => true);
+    return new TestContextedBase(expression, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
 }
 
 function createHandlerWithIn(expression: string, inAttrs: Record<string, string>, inRefAttrs?: Record<string, string>) {
@@ -92,7 +93,7 @@ function createHandlerWithIn(expression: string, inAttrs: Record<string, string>
     }
     const el = createElement(attrMap);
     const attrs = new Attributes(el, () => false);
-    return new TestContextedBase(expression, el, attrs, () => true);
+    return new TestContextedBase(expression, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
 }
 
 // --- Tests -------------------------------------------------------------------
@@ -144,10 +145,21 @@ describe('ContextedBase', () => {
     // --- Constructor ---
 
     describe('constructor', () => {
+        it('marks the element ready under the handler attribute name it was constructed with', () => {
+            const el = createElement();
+            const attrs = new Attributes(el, () => false);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, () => true);
+
+            handler.exposedMarkAsReady();
+
+            expect(el.hasAttribute(`${PREFIX}${Constants.COMPONENT_MARKER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`)).toBe(true);
+            expect(el.hasAttribute(`${PREFIX}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`)).toBe(false);
+        });
+
         it('sets hasNExpression=false when expression is undefined', () => {
             const el = createElement();
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, () => true);
+            const handler = new TestContextedBase(undefined, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             expect(handler.hasNExpression).toBe(false);
             expect(handler.nExpression).toBeUndefined();
         });
@@ -203,7 +215,7 @@ describe('ContextedBase', () => {
             };
             const el = createElement(attrMap);
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => true);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             const inMap = handler.nExpression!.nInExpression!;
             expect(inMap.size).toBe(1);
             expect(inMap.get('myProp')!.ref).toBe(false);
@@ -222,7 +234,7 @@ describe('ContextedBase', () => {
                 [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}`]: 'this.x',
             });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => true);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             // The property name after "in:" is empty → Console.error
             expect(consoleSpy).toHaveBeenCalled();
         });
@@ -271,7 +283,7 @@ describe('ContextedBase', () => {
         it('returns executionParams unchanged when hasNExpression is false', () => {
             const el = createElement();
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, () => true);
+            const handler = new TestContextedBase(undefined, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             const params = createParams([], []);
             const result = handler.bind(params, jest.fn());
             expect(result).toBe(params);
@@ -281,7 +293,7 @@ describe('ContextedBase', () => {
             let visible = false;
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => visible);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
             const execExpr = jest.fn();
             handler.bind(undefined, execExpr);
             expect(handler.exposedIsVisible).toBe(false);
@@ -329,7 +341,7 @@ describe('ContextedBase', () => {
                 [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value',
             });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => visible);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
             const mockBinder = createMockContextBinder({ myProp: 'old' });
             handler.entityChangeReturnValue = mockBinder;
 
@@ -396,7 +408,7 @@ describe('ContextedBase', () => {
             const attached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => true, attached);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, attached);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
             handler.entityChangeReturnValue = mockBinder;
@@ -632,7 +644,7 @@ describe('ContextedBase', () => {
             const attached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => true, attached);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, attached);
             const onCommit = jest.spyOn(handler as any, 'onCommit');
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
@@ -702,7 +714,7 @@ describe('ContextedBase', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => true, undefined, detached);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
 
@@ -751,7 +763,7 @@ describe('ContextedBase', () => {
                 [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value'
             });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => visible);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
             const ctx: Record<string, any> = { myProp: 'initial' };
             handler.entityChangeReturnValue = createMockContextBinder(ctx);
             handler.exposedIsEntityDataDirty = true;
@@ -781,7 +793,7 @@ describe('ContextedBase', () => {
         it('does nothing when hasNExpression is false', () => {
             const el = createElement();
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, () => true);
+            const handler = new TestContextedBase(undefined, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             // Should not throw
             handler.dispose();
         });
@@ -790,7 +802,7 @@ describe('ContextedBase', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => true, undefined, detached);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
             handler.entityChangeReturnValue = mockBinder;
@@ -1310,7 +1322,7 @@ describe('ContextedBase', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, () => true, undefined, detached);
+            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
             const ctx1 = { prop: 'v1' };
             const mockBinder1 = createMockContextBinder(ctx1);
             const ctx2 = { prop: 'v2' };

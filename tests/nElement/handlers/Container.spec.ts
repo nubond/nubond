@@ -129,20 +129,23 @@ describe('Container handler', () => {
     });
 
     describe('onCommit', () => {
-        it('should call markAsReady on first commit', () => {
-            const { handler, attrs } = createHandler('this.name');
-            const markAsReadySpy = jest.spyOn(attrs, 'markAsReady');
+        it('should set the ready attribute directly on the element on first commit', () => {
+            const { handler, attrs, el } = createHandler('this.name');
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
 
             mockContainersEnv({ has: true, isReady: true });
 
             // bind to set the container name
             const executeExpression = jest.fn().mockReturnValue('mycontainer');
             handler.bind(undefined, executeExpression);
+            expect(el.hasAttribute(readyAttr)).toBe(false);
 
             // commit
             handler.commit();
 
-            expect(markAsReadySpy).toHaveBeenCalledWith(Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME);
+            // written by the handler itself — Attributes is no longer involved
+            expect(el.getAttribute(readyAttr)).toBe('');
+            expect(attrs.isDirty).toBe(false);
         });
 
         it('should instantiate binder and context on first commit with ready container', () => {

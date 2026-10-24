@@ -6,7 +6,7 @@ import { IHandler } from '../../../interfaces/nElement/IHandler';
 
 import { IDisposable } from '../../../interfaces/IDisposable'
 
-import { Base } from './Base';
+import { InitializableBase } from './InitializableBase';
 
 import { IContextBinder } from '../../../ContextBinder';
 
@@ -42,14 +42,11 @@ export class ContextBaseBindings implements IContextBaseBindings {
     }
 }
 
-export abstract class ContextedBase<T> extends Base implements IHandler<IContextBaseBindings>, IDisposable {
+export abstract class ContextedBase<T> extends InitializableBase implements IHandler<IContextBaseBindings>, IDisposable {
     private _isFirstCommit = true;
 
     private _executionParams: ExecutionParams | undefined;
     private _executeExpression: ((expression: string | null | undefined, executionParams: ExecutionParams | undefined) => any) | undefined;
-
-    protected readonly nativeElement: Element | undefined;
-    protected readonly attributes: Attributes | undefined;
 
     protected readonly isElementVisible: (() => boolean) | undefined;
     protected readonly notifyContextAttached: ((context: object) => void) | undefined;
@@ -99,15 +96,13 @@ export abstract class ContextedBase<T> extends Base implements IHandler<IContext
     }
 
     constructor(expression: string | undefined, nativeElement: Element, attributes: Attributes,
+                handlerAttributeName: string,
                 isElementVisible: () => boolean,
                 notifyContextAttached?: (context: object) => void,
                 notifyContextDetached?: (context: object) => void) {
-        super();
-
+        super(nativeElement, handlerAttributeName);
+        
         if (Helpers.isString(expression)) {
-            this.nativeElement = nativeElement;
-            this.attributes = attributes;
-            
             this.isElementVisible = isElementVisible;
             this.notifyContextAttached = notifyContextAttached;
             this.notifyContextDetached = notifyContextDetached;

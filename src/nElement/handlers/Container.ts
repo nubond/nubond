@@ -59,7 +59,8 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
         }
 
         super(expression, 
-              nativeElement, attributes, 
+              nativeElement, attributes,
+              Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME,
               isElementVisible,
               notifyContainerAttached, notifyContainerDetached);
         
@@ -104,7 +105,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
             if (this._previousContextName !== this._currentContextName) {
                 if (this._isFirstContainerCommit) {
                     this._isFirstContainerCommit = false;
-                    this.attributes!.markAsReady(Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME);
+                    this.markAsReady();
                 } else {
                     this.disposeInternal(false);
                 }

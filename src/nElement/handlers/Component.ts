@@ -40,7 +40,8 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
                 getElementManipulations: () => ElementManipulations, getElementSubscriptions: () => ElementSubscriptions, getEventDispatcher: () => EventDispatcher,
                 isElementVisible: () => boolean) {
         super(Environment.components.has(nativeElement.tagName) ? `@${nativeElement.tagName.toLowerCase()}` : undefined,
-              nativeElement, attributes, 
+              nativeElement, attributes,
+              Constants.COMPONENT_MARKER_ATTRIBUTE_NAME,
               isElementVisible);
 
         if (this.hasNExpression) {
@@ -59,7 +60,7 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
             if (this._previousComponentName !== this._currentComponentName) {
                 if (this._isFirstComponentCommit) {
                     this._isFirstComponentCommit = false;
-                    this.attributes!.markAsReady(Constants.COMPONENT_MARKER_ATTRIBUTE_NAME);
+                    this.markAsReady();
                 } else {
                     this.disposeInternal(false);
                 }

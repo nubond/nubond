@@ -22,7 +22,7 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
     private _previousStyles: Map<string, string>;
     private _styles: Map<string, string>;
 
-    public readonly nExpression: Map<string, IExpressionDetails> | undefined;;
+    public readonly nExpression: Map<string, IExpressionDetails> | undefined;
     public readonly hasNExpression: boolean;
 
     private _isDirty = false;

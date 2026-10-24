@@ -110,7 +110,14 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
     private readonly _getHideClassName: () => string;
     private readonly _setClassName: (className: string) => void;
 
-    private readonly _hiddenBy = new Set<string>();
+    private __hiddenBy: Set<string> | undefined;
+    private get _hiddenBy(): Set<string> {
+        if (Helpers.isUndefined(this.__hiddenBy)) {
+            this.__hiddenBy = new Set<string>();
+        }
+
+        return this.__hiddenBy!;
+    }
 
     private _staticClassNames: Set<string> | undefined;
     private _previousClassNames: Array<string>; //TODO: to Set?
@@ -159,14 +166,17 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
         if (Helpers.isString(expression)) {
             this.hasNExpression = true;
 
-            this._staticClassNames = new Set(this._classNames);
+            const staticClassNames = new Set(this._classNames);
 
             if (ConditionExpressionData.isThisType(expression!)) {
-                this.nExpression = new ConditionExpressionData(nativeElement, expression!, this._staticClassNames);
+                this.nExpression = new ConditionExpressionData(nativeElement, expression!, staticClassNames);
+                this._staticClassNames = undefined; //is not used in static class check
             } else if (ArrayExpressionData.isThisType(expression!)) {
                 this.nExpression = new ArrayExpressionData(nativeElement, expression!);
+                this._staticClassNames = staticClassNames;
             } else {
                 this.nExpression = new SimpleExpressionData(nativeElement, expression!);
+                this._staticClassNames = staticClassNames;
             }
         } else {
             this.hasNExpression = false;
@@ -226,7 +236,8 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
                     this.processExpressionExecution(currentExpressionDetails, Constants.CLASS_HANDLER_ATTRIBUTE_NAME, 
                                                     expression => executeExpression(expression, executionParams), 
                                                     data => this.toggleInternal(Helpers.stringify(data), currentExpressionDetails, 
-                                                                                className => !this._staticClassNames!.has(className)));
+                                                                                className => !Helpers.isUndefined(this._staticClassNames) &&
+                                                                                             !this._staticClassNames!.has(className)));
                 break;
                 case 'array':
                     const arrayExpressions = <Array<IExpressionDetails>>this.nExpression!.rawExpression;
@@ -252,6 +263,7 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
 
                     for (const [key, value] of arrayExpressionsWithValues) {
                         this.toggleInternal(value, key, className => !arrayExpressionsValues.has(className) && 
+                                                                     !Helpers.isUndefined(this._staticClassNames) &&
                                                                      !this._staticClassNames!.has(className));
                     }
                 break;

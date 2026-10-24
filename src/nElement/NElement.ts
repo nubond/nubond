@@ -1,4 +1,5 @@
 import { INElement, INTreeElement } from '../interfaces/nElement/INElement';
+import { IVisible } from '../interfaces/nElement/IVisible';
 import { ICommittable } from '../interfaces/nElement/ICommittable';
 import { IBindable } from '../interfaces/nElement/IBindable';
 import { IDisposable } from '../interfaces/IDisposable'
@@ -42,9 +43,7 @@ export class NTreeElement implements INTreeElement {
     protected readonly _childrenToRemove: Array<INTreeElement> = [];
     protected readonly _children: Array<INTreeElement> = [];
 
-    public get isSubTreeHandled(): boolean {
-        return false;
-    }
+    public readonly isSubTreeHandled: boolean = false;
 
     protected _isStable = true;
     public get isStable(): boolean {
@@ -93,17 +92,17 @@ export class NElement extends NTreeElement implements INElement {
     private readonly _contextBinder: ContextBinder;
     private readonly _parent: INElement | INTreeElement | null;
 
-    private readonly _clone: (nElementsParent: INElement, nElement: INElement) => void;
+    private readonly _clone: ((nElementsParent: INElement, nElement: INElement) => void) | undefined;
     
-    private readonly _bindSequenceInvisibleParentHandled: Array<IBindable>;
-    private readonly _commitSequenceInvisibleParentHandled: Array<ICommittable>;
+    private readonly _bindSequenceInvisibleParentHandled: Array<IBindable> | undefined;
+    private readonly _commitSequenceInvisibleParentHandled: Array<ICommittable> | undefined;
 
-    private readonly _bindSequenceSoftRemovers: Array<IBindable>;
-    private readonly _commitSequenceSoftRemovers: Array<ICommittable>;
+    private readonly _bindSequenceSoftRemovers: Array<IBindable> | undefined;
+    private readonly _commitSequenceSoftRemovers: Array<ICommittable> | undefined;
 
-    private readonly _bindSequence: Array<IBindable>;
-    private readonly _commitSequence: Array<ICommittable>;
-    private readonly _disposeSequence: Array<IDisposable>;
+    private readonly _bindSequence: Array<IBindable> | undefined;
+    private readonly _commitSequence: Array<ICommittable> | undefined;
+    private readonly _disposeSequence: Array<IDisposable> | undefined;
 
     private _removed = false;
     private _isDisposed = false;
@@ -113,16 +112,15 @@ export class NElement extends NTreeElement implements INElement {
     }
 
     //handlers that are handles in parents but changing child visibility
+    private readonly _visibleParentHandlers: Array<IVisible> | undefined;
     private get _isVisibleParentHandled(): boolean {
-        return (!this.case.hasNExpression || (this.case.hasNExpression && this.case.isVisible)) &&
-               (!this.default.hasNExpression || (this.default.hasNExpression && this.default.isVisible));
+        return Helpers.isUndefined(this._visibleParentHandlers) || !this._visibleParentHandlers!.some(el => !el.isVisible);
     }
 
+    private readonly _visibilityHandlers: Array<IVisible> | undefined;
     private get _isVisible(): boolean {
         return this._isVisibleParentHandled &&
-               (!this.if.hasNExpression || (this.if.hasNExpression && this.if.isVisible)) &&
-               (!this.repeat.hasNExpression || (this.repeat.hasNExpression && this.repeat.isVisible)) &&
-               (!this.switch.hasNExpression || (this.switch.hasNExpression && this.switch.isVisible));
+               (Helpers.isUndefined(this._visibilityHandlers) || !this._visibilityHandlers!.some(el => !el.isVisible));
     }
 
     private _eventDispatcher: EventDispatcher | undefined;
@@ -131,32 +129,10 @@ export class NElement extends NTreeElement implements INElement {
 
     public readonly nativeElementForClone: Node | undefined;
 
-    public readonly attributes: Attributes;
-    public readonly classes: Classes;
-    public readonly styles: Styles;
-    public readonly value: Value;
-    public readonly html: Html;
-    public readonly if: If;
-    public readonly events: Events;
-    public readonly properties: Properties;
-    public readonly repeat: Repeat;
-    public readonly exec: Exec;
-    public readonly switch: Switch;
-    public readonly case: Case;
-    public readonly default: Default;
-    public readonly bound: Bound;
-    public readonly variables: Variables;
+    public readonly repeat: Repeat | undefined;
+    public readonly switch: Switch | undefined;
 
-    public readonly container: Container;
-    public readonly component: Component;
-    public readonly aspects: Aspects;
-    public readonly template: Template;
-
-    public get isSubTreeHandled(): boolean {
-        return this.template.hasNExpression ||
-               this.container.hasNExpression || this.component.hasNExpression || 
-               this.value.hasNExpression || this.html.hasNExpression;
-    }
+    public readonly isSubTreeHandled: boolean;
 
     constructor (contextBinder: ContextBinder, parent: INElement | INTreeElement | null, nativeElement: Element, cloneOf: INElement | undefined,
                  clone: (nElementsParent: INElement | INTreeElement, nElement: INElement) => void,
@@ -165,153 +141,222 @@ export class NElement extends NTreeElement implements INElement {
 
         this._contextBinder = contextBinder;
         this._parent = parent;
-        this._clone = clone;
-        
-        this.attributes = new Attributes(this.nativeElement, () => contextBinder.getShowDebugInfo());
-        this.classes = new Classes(this.nativeElement, this.attributes,
+
+        //handlers creation
+        const attributes = new Attributes(this.nativeElement, () => contextBinder.getShowDebugInfo());
+        const properties = new Properties(this.nativeElement, attributes);
+
+        const classes = new Classes(this.nativeElement, attributes,
                                    () => contextBinder.getHiddenClassName());
+        const styles = new Styles(this.nativeElement, attributes);
+
+        const value = new Value(this.nativeElement, attributes);
+        const html = new Html(this.nativeElement, attributes,
+                              contextBinder.htmlSanitizer);
+
+        const events = new Events(this.nativeElement, attributes,
+                                  this.getManipulationProxyCreator(properties, attributes, styles, classes), 
+                                  () => contextBinder.detectChanges());
+        const exec = new Exec(attributes);
+
+        const if_ = new If(this.nativeElement, attributes, classes);
+        const switch_ = new Switch(this.nativeElement, attributes, classes);
+        const case_ = new Case(this.nativeElement, attributes, classes, (<INElement>parent)?.switch);
+        const default_ = new Default(this.nativeElement, attributes, classes, (<INElement>parent)?.switch);
+
+        const repeat = new Repeat(this.nativeElement, attributes, classes,
+                                  () => this.clone(), 
+                                  () => this._removed = true,
+                                  () => contextBinder.getShowDebugInfo(),
+                                  cloneOf?.repeat);
+
+        const container = new Container(this.nativeElement, attributes,
+                                        () => this.getEventDispatcher(),
+                                        () => this._isVisible,
+                                        () => contextBinder.detectChanges(),
+                                        context => contextBinder.containerAttached(context),
+                                        context => contextBinder.containerDetached(context));
+
+        const component = new Component(this.nativeElement, attributes,
+                                        this.getManipulationProxyCreator(properties, attributes, styles, classes), this.getSubscriptionsProxyCreator(events),
+                                        () => this.getEventDispatcher(),
+                                        () => this._isVisible);
+
+        const aspects = new Aspects(this.nativeElement, attributes,
+                                    this.getManipulationProxyCreator(properties, attributes, styles, classes), this.getSubscriptionsProxyCreator(events),
+                                    () => this.getEventDispatcher(),
+                                    () => contextBinder.detectChanges());
+
+        const template = new Template(this.nativeElement, attributes, 
+                                      () => constructSubTree(this), () => contextBinder.detectChanges());
         
-        this.styles = new Styles(this.nativeElement, this.attributes);
+        const bound = new Bound(this.nativeElement, attributes, this.getManipulationProxyCreator(properties, attributes, styles, classes));
+        const variables = new Variables(this.nativeElement, attributes);
 
-        this.value = new Value(this.nativeElement, this.attributes);
-        this.html = new Html(this.nativeElement, this.attributes,
-                             contextBinder.htmlSanitizer);
-
-        this.events = new Events(this.nativeElement, this.attributes,
-                                 () => this.getManipulationProxy(), 
-                                 () => contextBinder.detectChanges());
-        this.exec = new Exec(this.attributes);
-
-        this.if = new If(this.attributes, this.classes);
-        this.switch = new Switch(this.attributes, this.classes);
-        this.case = new Case(this.nativeElement, this.attributes, this.classes, (<INElement>parent)?.switch);
-        this.default = new Default(this.nativeElement, this.attributes, this.classes, (<INElement>parent)?.switch);
-        this.repeat = new Repeat(this.nativeElement, this.attributes, this.classes,
-                                 () => this.clone(), 
-                                 () => this._removed = true,
-                                 () => contextBinder.getShowDebugInfo(),
-                                 cloneOf?.repeat);
-
-        this.container = new Container(this.nativeElement, this.attributes,
-                                       () => this.getEventDispatcher(),
-                                       () => this._isVisible,
-                                       () => contextBinder.detectChanges(),
-                                       context => contextBinder.containerAttached(context),
-                                       context => contextBinder.containerDetached(context));
-
-        this.component = new Component(this.nativeElement, this.attributes,
-                                       () => this.getManipulationProxy(), () => this.getSubscriptionsProxy(), () => this.getEventDispatcher(),
-                                       () => this._isVisible);
-
-        this.aspects = new Aspects(this.nativeElement, this.attributes,
-                                   () => this.getManipulationProxy(), () => this.getSubscriptionsProxy(), () => this.getEventDispatcher(),
-                                   () => contextBinder.detectChanges());
-
-        this.properties = new Properties(this.nativeElement, this.attributes);
-        this.template = new Template(this.nativeElement, this.attributes, 
-                                     () => constructSubTree(this), () => contextBinder.detectChanges());
+        //additional info
+        const visibilityCanBeChanged = if_.hasNExpression || switch_.hasNExpression || case_.hasNExpression || default_.hasNExpression || repeat.hasNExpression;
+        const manipulationProxyCanBeUsed = events.hasNExpression || 
+                                           component.hasNExpression || aspects.hasNExpression || 
+                                           bound.hasNExpression;
+        //handlers based assignments
+        this.switch = switch_.hasNExpression ? switch_ : undefined;
         
-        this.bound = new Bound(this.nativeElement, this.attributes, () => this.getManipulationProxy());
-        this.variables = new Variables(this.nativeElement, this.attributes);
-
-        if (this.repeat.hasNExpression) {
+        if (repeat.hasNExpression) {
+            this.repeat = repeat;
             this.nativeElementForClone = Helpers.isUndefined(cloneOf) 
                                                 ? nativeElement.cloneNode(true) 
                                                 : cloneOf!.nativeElementForClone;
+            this._clone = clone;
+        } else {
+            this.repeat = undefined;
+            this._clone = undefined;
         }
+
+        this.isSubTreeHandled = template.hasNExpression ||
+                                container.hasNExpression || component.hasNExpression || 
+                                value.hasNExpression || html.hasNExpression;
+
+        //visibility sequences
+        const visibleParentHandlers = [
+            case_,
+            default_
+        ].filter(el => el.hasNExpression);
+        this._visibleParentHandlers = visibleParentHandlers.length > 0 ? visibleParentHandlers : undefined;
+
+        const visibilityHandlers = [
+            if_,
+            repeat,
+            switch_
+        ].filter(el => el.hasNExpression);
+        this._visibilityHandlers = visibilityHandlers.length > 0 ? visibilityHandlers : undefined;
         
         //
         //soft removers sequences
         //
         //bind sequence
-        this._bindSequenceSoftRemovers = [
-            this.repeat
+        const bindSequenceSoftRemovers = [
+            repeat
         ].filter(el => el.hasNExpression);
+        this._bindSequenceSoftRemovers = bindSequenceSoftRemovers.length > 0 ? bindSequenceSoftRemovers : undefined;
 
         //commit sequence
-        this._commitSequenceSoftRemovers = [
-            this.repeat
+        const commitSequenceSoftRemovers = [
+            repeat
         ].filter(el => el.hasNExpression);
+        this._commitSequenceSoftRemovers = commitSequenceSoftRemovers.length > 0 ? commitSequenceSoftRemovers : undefined;
 
         //
         //regular sequences
         //
         //bind sequence
-        this._bindSequence = [
+        const bindSequence = [
             //should be first due to possibility of context creation
-            this.variables,
+            variables,
             
             //should be second-ish
-            this.bound,
+            bound,
 
-            this.events,
-            this.exec,
-            this.if,
-            this.switch,
+            events,
+            exec,
+            if_,
+            switch_,
 
-            this.value,
-            this.html,
+            value,
+            html,
 
-            this.container,
-            this.component,
-            this.aspects,
+            container,
+            component,
+            aspects,
 
-            this.styles,
-            this.classes,
-            this.properties,
-            this.attributes
+            styles,
+            classes,
+            properties,
+            attributes
         ].filter(el => el.hasNExpression);
+        this._bindSequence= bindSequence.length > 0 ? bindSequence : undefined;
             
         //commit sequence
-        this._commitSequence = [
+        const commitSequence = [
             //sub-tree changers 
-            this.if,
-            this.switch,
+            if_,
+            switch_,
 
             //impacted by sub-tree changes
-            this.value,
-            this.html,
+            value,
+            html,
 
-            this.container,
-            this.component,
-            this.aspects
+            container,
+            component,
+            aspects
         ].filter(el => el.hasNExpression);
+        this._commitSequence = (commitSequence.length > 0) ||
+                                classes.hasNExpression || styles.hasNExpression || attributes.hasNExpression || properties.hasNExpression ||
+                                visibilityCanBeChanged || manipulationProxyCanBeUsed
+                                    ? commitSequence 
+                                    : undefined;
 
         //should be last due to usage by other handlers
-        this._commitSequence.push(this.styles);
-        this._commitSequence.push(this.classes);
-        this._commitSequence.push(this.attributes);
-        this._commitSequence.push(this.properties);
+        if (classes.hasNExpression || visibilityCanBeChanged || manipulationProxyCanBeUsed) {
+            this._commitSequence!.push(classes);
+        }
 
-        this._disposeSequence = [
-            this.container,
-            this.component,
-            this.aspects,
-            this.case,
-            this.default,
-            this.events
+        if (styles.hasNExpression || manipulationProxyCanBeUsed) {
+            this._commitSequence!.push(styles);
+        }
+        
+        if (attributes.hasNExpression || manipulationProxyCanBeUsed) {
+            this._commitSequence!.push(attributes);
+        }
+        
+        if (properties.hasNExpression || manipulationProxyCanBeUsed) {
+            this._commitSequence!.push(properties);
+        }
+
+        const disposeSequence = [
+            container,
+            component,
+            aspects,
+            case_,
+            default_,
+            events
         ].filter(el => el.hasNExpression);
+        this._disposeSequence = disposeSequence.length > 0 ? disposeSequence : undefined;
 
         //
         //sequences for for invisible nElements for cases when visibility is handled by parent nElement
         //
         //bind sequence
-        this._bindSequenceInvisibleParentHandled = [
-            this.container,
-            this.component
+        const bindSequenceInvisibleParentHandled = [
+            container,
+            component
         ].filter(el => el.hasNExpression);
+        this._bindSequenceInvisibleParentHandled = bindSequenceInvisibleParentHandled.length > 0 ? bindSequenceInvisibleParentHandled : undefined;
 
         //commit sequence
-        this._commitSequenceInvisibleParentHandled = [
-            this.container,
-            this.component
+        const commitSequenceInvisibleParentHandled = [
+            container,
+            component
         ].filter(el => el.hasNExpression);
+        this._commitSequenceInvisibleParentHandled = (commitSequenceInvisibleParentHandled.length > 0) ||
+                                                      classes.hasNExpression || attributes.hasNExpression ||
+                                                      visibilityCanBeChanged || manipulationProxyCanBeUsed
+                                                                ? commitSequenceInvisibleParentHandled 
+                                                                : undefined;
 
         //should be last due to usage by other handlers
-        this._commitSequenceInvisibleParentHandled.push(this.classes);
+        if (classes.hasNExpression || visibilityCanBeChanged || manipulationProxyCanBeUsed) {
+            this._commitSequenceInvisibleParentHandled!.push(classes);
+        }
+
+        if (attributes.hasNExpression || manipulationProxyCanBeUsed) {
+            this._commitSequenceInvisibleParentHandled!.push(attributes);
+        }
 
         //validate
-        this.validate();
+        this.validate(value, html, 
+                      if_, switch_, case_, default_, 
+                      repeat, 
+                      container, component, template);
     }
 
     public detectChanges(context: object, executionParams?: ExecutionParams): void {
@@ -320,7 +365,7 @@ export class NElement extends NTreeElement implements INElement {
         let currentExecutionParams = executionParams;
 
         if (this._isVisibleParentHandled) {
-            if (this._bindSequenceSoftRemovers.length > 0) {
+            if (!Helpers.isUndefined(this._bindSequenceSoftRemovers)) {
                 currentExecutionParams = this.detectChangesInternal(context, currentExecutionParams, this._bindSequenceSoftRemovers, this._commitSequenceSoftRemovers);
             }
 
@@ -344,11 +389,13 @@ export class NElement extends NTreeElement implements INElement {
         if (!this._isDisposed) {
             this._isDisposed = true;
 
-            for (const el of this._disposeSequence) {
-                try {
-                    el.dispose();
-                } catch(ex) {
-                    Console.error(this.nativeElement, 'handler', el, `dispose error: ${ex}`);
+            if (!Helpers.isUndefined(this._disposeSequence)) {
+                for (const el of this._disposeSequence!) {
+                    try {
+                        el.dispose();
+                    } catch(ex) {
+                        Console.error(this.nativeElement, 'handler', el, `dispose error: ${ex}`);
+                    }
                 }
             }
 
@@ -359,22 +406,24 @@ export class NElement extends NTreeElement implements INElement {
     }
 
     private detectChangesInternal(context: object, executionParams: ExecutionParams | undefined,
-                                  bindSequence: Array<IBindable>, commitSequence: Array<ICommittable>): ExecutionParams | undefined {
-       let currentExecutionParams = executionParams;
+                                  bindSequence: Array<IBindable> | undefined, commitSequence: Array<ICommittable> | undefined): ExecutionParams | undefined {
+        let currentExecutionParams = executionParams;
 
-        for (const el of bindSequence) {
-            try {
-                currentExecutionParams = el.bind(currentExecutionParams, (expression, executionParams) => 
+        if (!Helpers.isUndefined(bindSequence)) {
+            for (const el of bindSequence!) {
+                try {
+                    currentExecutionParams = el.bind(currentExecutionParams, (expression, executionParams) => 
                                                                             this._expressionExecutor.executeExpression(expression, context, 
                                                                                                                         this.nativeElement, 
                                                                                                                         executionParams));
-            } catch(ex) {
-                Console.error(this.nativeElement, 'handler', el, `bind error: ${ex}`);
-            }
+                } catch(ex) {
+                    Console.error(this.nativeElement, 'handler', el, `bind error: ${ex}`);
+                }
 
-            //breaking bind sequence due to optimization
-            if (this._removed) {
-                break;
+                //breaking bind sequence due to optimization
+                if (this._removed) {
+                    break;
+                }
             }
         }
 
@@ -387,14 +436,16 @@ export class NElement extends NTreeElement implements INElement {
 
             this.dispose();
         } else {
-            for (const el of commitSequence) {
-                try {
-                    const handlerCommitted = el.commit();
-                    if (handlerCommitted) {
-                        this._isStable = false;
+            if (!Helpers.isUndefined(commitSequence)) {
+                for (const el of commitSequence!) {
+                    try {
+                        const handlerCommitted = el.commit();
+                        if (handlerCommitted) {
+                            this._isStable = false;
+                        }
+                    } catch(ex) {
+                        Console.error(this.nativeElement, 'handler', el ,`commit error: ${ex}`);
                     }
-                } catch(ex) {
-                    Console.error(this.nativeElement, 'handler', el ,`commit error: ${ex}`);
                 }
             }
         }
@@ -405,22 +456,25 @@ export class NElement extends NTreeElement implements INElement {
     private clone(): void {
         if (!this._removed) {
             if ((this._parent !== null) && (this.nativeElement.parentNode !== null)) {
-                this._clone(<INElement>this._parent, this);
+                this._clone!(<INElement>this._parent, this);
             } else {
                 Console.error(this.nativeElement, 'attempt to clone orphaned element');
             }
         }
     }
 
-    private validate(): void {
+    private validate(value: Value, html: Html, 
+                     if_: If, switch_: Switch, case_: Case, default_: Default,
+                     repeat: Repeat,
+                     container: Container, component: Component, template: Template,): void {
         //handler content conflicts
         const contentChangers = [
-            { handler: this.value, name: 'value' }, 
-            { handler: this.html, name: 'html' },
-            { handler: this.switch, name: 'switch' }, 
-            { handler: this.container, name: 'container' }, 
-            { handler: this.component, name: 'component' },
-            { handler: this.template, name: 'template' }
+            { handler: value, name: 'value' }, 
+            { handler: html, name: 'html' },
+            { handler: switch_, name: 'switch' }, 
+            { handler: container, name: 'container' }, 
+            { handler: component, name: 'component' },
+            { handler: template, name: 'template' }
         ].filter(el => el.handler.hasNExpression);
         if (contentChangers.length > 1) {
             this.removeFromProcessingSequences(contentChangers.map(el => el.handler));
@@ -429,9 +483,9 @@ export class NElement extends NTreeElement implements INElement {
 
         //handler structure conflict
         const structureChangers = [
-            { handler: this.case, name: 'case'},
-            { handler: this.default, name: 'default'},
-            { handler: this.repeat, name: 'repeat'}
+            { handler: case_, name: 'case'},
+            { handler: default_, name: 'default'},
+            { handler: repeat, name: 'repeat'}
         ].filter(el => el.handler.hasNExpression);
         if (structureChangers.length > 1) {
             this.removeFromProcessingSequences(structureChangers.map(el => el.handler));
@@ -440,9 +494,9 @@ export class NElement extends NTreeElement implements INElement {
 
         //handler function conflict
         const functionChangers = [
-            { handler: this.case, name: 'case'},
-            { handler: this.default, name: 'default'},
-            { handler: this.if, name: 'if'}
+            { handler: case_, name: 'case'},
+            { handler: default_, name: 'default'},
+            { handler: if_, name: 'if'}
         ].filter(el => el.handler.hasNExpression);
         if (functionChangers.length > 1) {
             this.removeFromProcessingSequences(functionChangers.map(el => el.handler));
@@ -452,8 +506,8 @@ export class NElement extends NTreeElement implements INElement {
         //child elements changers conflict
         if (this._contextBinder.getShowDebugInfo()) {
             const childElementsChangers = [
-                { handler: this.value, name: 'value' }, 
-                { handler: this.html, name: 'value' },
+                { handler: value, name: 'value' }, 
+                { handler: html, name: 'value' },
             ].filter(el => el.handler.hasNExpression);
             if ((childElementsChangers.length > 0) && 
                  Array.from(this.nativeElement.childNodes).some(el => (el.nodeType == Node.ELEMENT_NODE) || 
@@ -466,40 +520,50 @@ export class NElement extends NTreeElement implements INElement {
     }
 
     private removeFromProcessingSequences(handlers: Array<IBindable | ICommittable | IDisposable>): void {
+        const bindSequenceSoftRemovers = !Helpers.isUndefined(this._bindSequenceSoftRemovers) ? this._bindSequenceSoftRemovers! : [];
+        const bindSequence = !Helpers.isUndefined(this._bindSequence) ? this._bindSequence! : [];
+        const bindSequenceInvisibleParentHandled = !Helpers.isUndefined(this._bindSequenceInvisibleParentHandled) ? this._bindSequenceInvisibleParentHandled! : [];
+       
+        const commitSequenceSoftRemovers = !Helpers.isUndefined(this._commitSequenceSoftRemovers) ? this._commitSequenceSoftRemovers! : [];
+        const commitSequence = !Helpers.isUndefined(this._commitSequence) ? this._commitSequence! : [];
+        const commitSequenceInvisibleParentHandled = !Helpers.isUndefined(this._commitSequenceInvisibleParentHandled) ? this._commitSequenceInvisibleParentHandled! : [];
+
+        const disposeSequence = !Helpers.isUndefined(this._disposeSequence) ? this._disposeSequence! : []; 
+
         for (const handler of handlers) {
-            const bindSequenceSoftRemoversIndex = this._bindSequenceSoftRemovers.indexOf(<IBindable>handler);
+            const bindSequenceSoftRemoversIndex = bindSequenceSoftRemovers.indexOf(<IBindable>handler);
             if (bindSequenceSoftRemoversIndex >= 0) {
-                this._bindSequenceSoftRemovers.splice(bindSequenceSoftRemoversIndex, 1);
+                bindSequenceSoftRemovers.splice(bindSequenceSoftRemoversIndex, 1);
             }
 
-            const bindSequenceIndex = this._bindSequence.indexOf(<IBindable>handler);
+            const bindSequenceIndex = bindSequence.indexOf(<IBindable>handler);
             if (bindSequenceIndex >= 0) {
-                this._bindSequence.splice(bindSequenceIndex, 1);
+                bindSequence.splice(bindSequenceIndex, 1);
             }
 
-            const bindSequenceInvisibleParentHandledIndex = this._bindSequenceInvisibleParentHandled.indexOf(<IBindable>handler);
+            const bindSequenceInvisibleParentHandledIndex = bindSequenceInvisibleParentHandled.indexOf(<IBindable>handler);
             if (bindSequenceInvisibleParentHandledIndex >= 0) {
-                this._bindSequenceInvisibleParentHandled.splice(bindSequenceInvisibleParentHandledIndex, 1);
+                bindSequenceInvisibleParentHandled.splice(bindSequenceInvisibleParentHandledIndex, 1);
             }
 
-            const commitSequenceSoftRemoversIndex = this._commitSequenceSoftRemovers.indexOf(<ICommittable>handler);
+            const commitSequenceSoftRemoversIndex = commitSequenceSoftRemovers.indexOf(<ICommittable>handler);
             if (commitSequenceSoftRemoversIndex >= 0) {
-                this._commitSequenceSoftRemovers.splice(commitSequenceSoftRemoversIndex, 1);
+                commitSequenceSoftRemovers.splice(commitSequenceSoftRemoversIndex, 1);
             }
 
-            const commitSequenceIndex = this._commitSequence.indexOf(<ICommittable>handler);
+            const commitSequenceIndex = commitSequence.indexOf(<ICommittable>handler);
             if (commitSequenceIndex >= 0) {
-                this._commitSequence.splice(commitSequenceIndex, 1);
+                commitSequence.splice(commitSequenceIndex, 1);
             }
 
-            const commitSequenceInvisibleParentHandledIndex = this._commitSequenceInvisibleParentHandled.indexOf(<ICommittable>handler);
+            const commitSequenceInvisibleParentHandledIndex = commitSequenceInvisibleParentHandled.indexOf(<ICommittable>handler);
             if (commitSequenceInvisibleParentHandledIndex >= 0) {
-                this._commitSequenceInvisibleParentHandled.splice(commitSequenceInvisibleParentHandledIndex, 1);
+                commitSequenceInvisibleParentHandled.splice(commitSequenceInvisibleParentHandledIndex, 1);
             }
 
-            const disposeSequenceIndex = this._disposeSequence.indexOf(<IDisposable>handler);
+            const disposeSequenceIndex = disposeSequence.indexOf(<IDisposable>handler);
             if (disposeSequenceIndex >= 0) {
-                this._disposeSequence.splice(disposeSequenceIndex, 1);
+                disposeSequence.splice(disposeSequenceIndex, 1);
             }
         }
     }
@@ -511,79 +575,83 @@ export class NElement extends NTreeElement implements INElement {
 
         return this._eventDispatcher!;
     }
-    private getSubscriptionsProxy(): ElementSubscriptions {
-        if (Helpers.isUndefined(this._elementSubscriptions)) {
-            this._elementSubscriptions = new ElementSubscriptions((eventName, callBack, optionsOrDebounce, debounce) => Helpers.isNumber(optionsOrDebounce) && !isNaN(<number>optionsOrDebounce)
-                                                                                                                                    ? this.events.subscribe(eventName, callBack, undefined, <number>optionsOrDebounce)
-                                                                                                                                    : this.events.subscribe(eventName, callBack, <boolean | AddEventListenerOptions | undefined>optionsOrDebounce, debounce));
-        }
+    private getSubscriptionsProxyCreator(events: Events): () => ElementSubscriptions {
+        return () => {
+            if (Helpers.isUndefined(this._elementSubscriptions)) {
+                this._elementSubscriptions = new ElementSubscriptions((eventName, callBack, optionsOrDebounce, debounce) => Helpers.isNumber(optionsOrDebounce) && !isNaN(<number>optionsOrDebounce)
+                                                                                                                                        ? events.subscribe(eventName, callBack, undefined, <number>optionsOrDebounce)
+                                                                                                                                        : events.subscribe(eventName, callBack, <boolean | AddEventListenerOptions | undefined>optionsOrDebounce, debounce));
+            }
 
-        return this._elementSubscriptions!;
+            return this._elementSubscriptions!;
+        }
     }
 
     //TODO: Think about validation on manipulations on properties, attributes and styles when handler already exists and injection is trying to manipulate the same
-    private getManipulationProxy(): ElementManipulations {
-        if (Helpers.isUndefined(this._elementManipulations)) {
-            this._elementManipulations = new ElementManipulations(new ElementPropertiesManipulations((propertyKey) => this.properties.get(propertyKey),
-                                                                                                     (propertyKey, propertyValue) => {
-                                                                                                         this.properties.set(propertyKey, propertyValue);
-                                                                                                         if (this.properties.isDirty) {
-                                                                                                             this._contextBinder.detectChanges();
-                                                                                                         }
+    private getManipulationProxyCreator(properties: Properties, attributes: Attributes, styles: Styles, classes: Classes): () => ElementManipulations {
+        return () => {
+            if (Helpers.isUndefined(this._elementManipulations)) {
+                this._elementManipulations = new ElementManipulations(new ElementPropertiesManipulations((propertyKey) => properties.get(propertyKey),
+                                                                                                         (propertyKey, propertyValue) => {
+                                                                                                            properties.set(propertyKey, propertyValue);
+                                                                                                            if (properties.isDirty) {
+                                                                                                                this._contextBinder.detectChanges();
+                                                                                                            }
+                                                                                                         }),
+                                                                      new ElementAttributesManipulations(attributeName => attributes.has(attributeName),
+                                                                                                         attributeName => <string | undefined>attributes.get(attributeName),
+                                                                                                         () => attributes.getAll(),
+                                                                                                         (attributeName, value) => {
+                                                                                                            attributes.set(attributeName, value);
+                                                                                                            if (attributes.isDirty) {
+                                                                                                                this._contextBinder.detectChanges();
+                                                                                                            }
+                                                                                                         },
+                                                                                                         attributeName => {
+                                                                                                            attributes.remove(attributeName);
+                                                                                                            if (attributes.isDirty) {
+                                                                                                                this._contextBinder.detectChanges();
+                                                                                                            }
+                                                                                                         }),
+                                                                      new ElementStylesManipulations(propertyName => styles.has(propertyName),
+                                                                                                     propertyName => styles.get(propertyName),
+                                                                                                     () => styles.getAll(),
+                                                                                                     (propertyName, propertyValue) => {
+                                                                                                            styles.set(propertyName, propertyValue);
+                                                                                                            if (styles.isDirty) {
+                                                                                                                this._contextBinder.detectChanges();
+                                                                                                            }
+                                                                                                     },
+                                                                                                     propertyName => {
+                                                                                                             styles.remove(propertyName);
+                                                                                                             if (styles.isDirty) {
+                                                                                                                 this._contextBinder.detectChanges();
+                                                                                                             }
                                                                                                      }),
-                                                                  new ElementAttributesManipulations(attributeName => this.attributes.has(attributeName),
-                                                                                                     attributeName => <string | undefined>this.attributes.get(attributeName),
-                                                                                                     () => this.attributes.getAll(),
-                                                                                                     (attributeName, value) => {
-                                                                                                         this.attributes.set(attributeName, value);
-                                                                                                         if (this.attributes.isDirty) {
+                                                                      new ElementClassesManipulations(className => classes.has(className),
+                                                                                                     () => classes.getAll(),
+                                                                                                     className => {
+                                                                                                         classes.add(className);
+                                                                                                         if (classes.isDirty) {
                                                                                                              this._contextBinder.detectChanges();
                                                                                                          }
                                                                                                      },
-                                                                                                     attributeName => {
-                                                                                                         this.attributes.remove(attributeName);
-                                                                                                         if (this.attributes.isDirty) {
+                                                                                                     className => {
+                                                                                                         classes.remove(className);
+                                                                                                         if (classes.isDirty) {
                                                                                                              this._contextBinder.detectChanges();
                                                                                                          }
-                                                                                                     }),
-                                                                  new ElementStylesManipulations(propertyName => this.styles.has(propertyName),
-                                                                                                 propertyName => this.styles.get(propertyName),
-                                                                                                 () => this.styles.getAll(),
-                                                                                                 (propertyName, propertyValue) => {
-                                                                                                         this.styles.set(propertyName, propertyValue);
-                                                                                                         if (this.styles.isDirty) {
+                                                                                                     },
+                                                                                                     className => {
+                                                                                                         classes.toggle(className);
+                                                                                                         if (classes.isDirty) {
                                                                                                              this._contextBinder.detectChanges();
                                                                                                          }
-                                                                                                 },
-                                                                                                 propertyName => {
-                                                                                                         this.styles.remove(propertyName);
-                                                                                                         if (this.styles.isDirty) {
-                                                                                                             this._contextBinder.detectChanges();
-                                                                                                         }
-                                                                                                 }),
-                                                                  new ElementClassesManipulations(className => this.classes.has(className),
-                                                                                                  () => this.classes.getAll(),
-                                                                                                  className => {
-                                                                                                      this.classes.add(className);
-                                                                                                      if (this.classes.isDirty) {
-                                                                                                          this._contextBinder.detectChanges();
-                                                                                                      }
-                                                                                                  },
-                                                                                                  className => {
-                                                                                                      this.classes.remove(className);
-                                                                                                      if (this.classes.isDirty) {
-                                                                                                          this._contextBinder.detectChanges();
-                                                                                                      }
-                                                                                                  },
-                                                                                                  className => {
-                                                                                                      this.classes.toggle(className);
-                                                                                                      if (this.classes.isDirty) {
-                                                                                                          this._contextBinder.detectChanges();
-                                                                                                      }
-                                                                                                  }));
-        }
+                                                                                                     }));
+            }
 
-        return this._elementManipulations!;
+            return this._elementManipulations!;
+        }
     }
 
     public static isNApplicable(nativeElement: Element): boolean {

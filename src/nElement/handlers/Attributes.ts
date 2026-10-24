@@ -18,8 +18,8 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
 
     private readonly _nativeElement: Element;
 
-    private readonly _systemAttributes = new Map<string, string>();
-    private readonly _systemAttributesKeys: Array<string>;
+    private readonly _systemAttributes: Map<string, string>  | undefined;
+    private readonly _systemAttributesKeys: Array<string> | undefined;
 
     private _previousAttributes = new Map<string, string | undefined>();
     private _attributes: Map<string, string | undefined>;
@@ -40,6 +40,8 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
         this.hasNExpression = false;
 
         if (nativeElement.hasAttributes()) {
+            const systemAttributes = new Map<string, string>();
+
             for (const attribute of nativeElement.attributes) {
                 if (attribute.name.indexOf(this.DEFAULT_PREFIX_AND_SEPARATOR) === 0) {
                     const attributeValue = attribute.value.trim();
@@ -87,8 +89,8 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
                                 Constants.KNOWN_PREFIX_HANDLERS.some(el => attribute.name.startsWith(el)) ||
                                 Constants.KNOWN_HANDLER_EXTENSIONS.has(attribute.name) || 
                                 Constants.KNOWN_HANDLER_EXTENSIONS_WITHOUT_VALUES.has(attribute.name)) {
-                                if (!this._systemAttributes.has(attribute.name)) {
-                                    this._systemAttributes.set(attribute.name, attributeValue);
+                                if (!systemAttributes.has(attribute.name)) {
+                                    systemAttributes.set(attribute.name, attributeValue);
                                 } else {
                                     Console.error(nativeElement, `multiple ${attribute.name} found`);
                                 }
@@ -104,24 +106,29 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
             }
 
             this._attributes = new Map<string, string | undefined>(this._previousAttributes);
-            this._systemAttributesKeys = [...this._systemAttributes.keys()];
+            this._systemAttributes = systemAttributes;
+            this._systemAttributesKeys = [...systemAttributes.keys()];
         } else {
             this._attributes = new Map<string, string | undefined>();
-            this._systemAttributesKeys = [];
+            this._systemAttributesKeys = undefined;
         }
     }
 
     public has(attributeNameOrPrefix: string, isSystem?: boolean, isPrefix?: boolean, isPrefixRequired = true): boolean {
         if (isSystem === true) {
-            const fullAttributeNameOrPrefix = this.DEFAULT_PREFIX_AND_SEPARATOR + attributeNameOrPrefix;
+            if (!Helpers.isUndefined(this._systemAttributes)) {
+                const fullAttributeNameOrPrefix = this.DEFAULT_PREFIX_AND_SEPARATOR + attributeNameOrPrefix;
 
-            if (isPrefix === true) {
-                const fullAttributeNameAndPrefix = fullAttributeNameOrPrefix + Constants.META_VALUE_SEPARATOR;
-                return this._systemAttributesKeys.some(el => isPrefixRequired 
-                                                                ? (el.indexOf(fullAttributeNameAndPrefix) === 0)
-                                                                : ((el === fullAttributeNameOrPrefix) || (el.indexOf(fullAttributeNameAndPrefix) === 0)));
+                if (isPrefix === true) {
+                    const fullAttributeNameAndPrefix = fullAttributeNameOrPrefix + Constants.META_VALUE_SEPARATOR;
+                    return this._systemAttributesKeys!.some(el => isPrefixRequired 
+                                                                    ? (el.indexOf(fullAttributeNameAndPrefix) === 0)
+                                                                    : ((el === fullAttributeNameOrPrefix) || (el.indexOf(fullAttributeNameAndPrefix) === 0)));
+                } else {
+                    return this._systemAttributes!.has(fullAttributeNameOrPrefix);
+                }
             } else {
-                return this._systemAttributes.has(fullAttributeNameOrPrefix);
+                return false;
             }
         } else {
             if (isPrefix === true) {
@@ -154,21 +161,25 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
 
     public get(attributeNameOrPrefix: string, isSystem?: boolean, isPrefix?: boolean, isPrefixRequired = true): string | undefined | [string, string] {
         if (isSystem === true) {
-            const fullAttributeNameOrPrefix = this.DEFAULT_PREFIX_AND_SEPARATOR + attributeNameOrPrefix;
+            if (!Helpers.isUndefined(this._systemAttributes)) {
+                const fullAttributeNameOrPrefix = this.DEFAULT_PREFIX_AND_SEPARATOR + attributeNameOrPrefix;
 
-            if (isPrefix === true) {
-                const fullAttributeNameAndPrefix = fullAttributeNameOrPrefix + Constants.META_VALUE_SEPARATOR;
-                const attributeKey = this._systemAttributesKeys.find(el => isPrefixRequired 
-                                                                            ? (el.indexOf(fullAttributeNameAndPrefix) === 0)
-                                                                            : ((el === fullAttributeNameOrPrefix) || (el.indexOf(fullAttributeNameAndPrefix) === 0)));
-                if (Helpers.isString(attributeKey)) {
-                    const attributeValue = this._systemAttributes.get(attributeKey!);
-                    if (Helpers.isString(attributeValue)) {
-                        return [attributeKey!.replace(this.DEFAULT_PREFIX_AND_SEPARATOR, ''), attributeValue!];
+                if (isPrefix === true) {
+                    const fullAttributeNameAndPrefix = fullAttributeNameOrPrefix + Constants.META_VALUE_SEPARATOR;
+                    const attributeKey = this._systemAttributesKeys!.find(el => isPrefixRequired 
+                                                                                ? (el.indexOf(fullAttributeNameAndPrefix) === 0)
+                                                                                : ((el === fullAttributeNameOrPrefix) || (el.indexOf(fullAttributeNameAndPrefix) === 0)));
+                    if (Helpers.isString(attributeKey)) {
+                        const attributeValue = this._systemAttributes!.get(attributeKey!);
+                        if (Helpers.isString(attributeValue)) {
+                            return [attributeKey!.replace(this.DEFAULT_PREFIX_AND_SEPARATOR, ''), attributeValue!];
+                        }
                     }
+                } else {
+                    return this._systemAttributes!.get(fullAttributeNameOrPrefix);
                 }
             } else {
-                return this._systemAttributes.get(fullAttributeNameOrPrefix);
+                return undefined;
             }
         } else {
             if (isPrefix === true) {
@@ -208,30 +219,34 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
         let result: Map<string, string | undefined>;
 
         if (isSystem === true) {
-            if (Helpers.isString(attributeNameOrPrefix)) {
-                result = new Map<string, string | undefined>();
-                const fullAttributeNameOrPrefix = this.DEFAULT_PREFIX_AND_SEPARATOR + attributeNameOrPrefix;
-                const fullAttributeNameAndPrefix = fullAttributeNameOrPrefix! + Constants.META_VALUE_SEPARATOR;
+            if (!Helpers.isUndefined(this._systemAttributes)) {
+                if (Helpers.isString(attributeNameOrPrefix)) {
+                    result = new Map<string, string | undefined>();
+                    const fullAttributeNameOrPrefix = this.DEFAULT_PREFIX_AND_SEPARATOR + attributeNameOrPrefix;
+                    const fullAttributeNameAndPrefix = fullAttributeNameOrPrefix! + Constants.META_VALUE_SEPARATOR;
 
-                if (isPrefixRequired) {
-                    for (const [key, value] of this._systemAttributes) {
-                        if (key.indexOf(fullAttributeNameAndPrefix) === 0) {
-                            result.set(key.replace(this.DEFAULT_PREFIX_AND_SEPARATOR, ''), value);
+                    if (isPrefixRequired) {
+                        for (const [key, value] of this._systemAttributes!) {
+                            if (key.indexOf(fullAttributeNameAndPrefix) === 0) {
+                                result.set(key.replace(this.DEFAULT_PREFIX_AND_SEPARATOR, ''), value);
+                            }
+                        }
+                    } else {
+                        for (const [key, value] of this._systemAttributes!) {
+                            if ((key === fullAttributeNameOrPrefix) || (key.indexOf(fullAttributeNameAndPrefix) === 0)) {
+                                result.set(key.replace(this.DEFAULT_PREFIX_AND_SEPARATOR, ''), value);
+                            }
                         }
                     }
                 } else {
-                    for (const [key, value] of this._systemAttributes) {
-                        if ((key === fullAttributeNameOrPrefix) || (key.indexOf(fullAttributeNameAndPrefix) === 0)) {
-                            result.set(key.replace(this.DEFAULT_PREFIX_AND_SEPARATOR, ''), value);
-                        }
+                    result = new Map<string, string | undefined>();
+                    
+                    for (const [key, value] of this._systemAttributes!) {
+                        result.set(key.replace(this.DEFAULT_PREFIX_AND_SEPARATOR, ''), value);
                     }
                 }
             } else {
                 result = new Map<string, string | undefined>();
-                
-                for (const [key, value] of this._systemAttributes) {
-                    result.set(key.replace(this.DEFAULT_PREFIX_AND_SEPARATOR, ''), value);
-                }
             }
         } else {
             if (Helpers.isString(attributeNameOrPrefix)) {
@@ -260,7 +275,7 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
     }
 
     public set(attributeName: string, attributeValue?: string | null): void {
-        if (this._systemAttributes.has(attributeName)) {
+        if (!Helpers.isUndefined(this._systemAttributes) && this._systemAttributes!.has(attributeName)) {
             throw new Error(`${Constants.DISPLAY_NAME}: system (${attributeName}) attribute changes during runtime are not allowed.`);
         }
 
@@ -268,7 +283,7 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
     }
 
     public remove(attributeName: string): void {
-        if (this._systemAttributes.has(attributeName)) {
+        if (!Helpers.isUndefined(this._systemAttributes) && this._systemAttributes!.has(attributeName)) {
             throw new Error(`${Constants.DISPLAY_NAME}: system (${attributeName}) attribute removal during runtime are not allowed.`);
         }
 
@@ -276,16 +291,6 @@ export class Attributes extends Base implements IHandler<Map<string, IExpression
             this._attributes.delete(attributeName);
             this._isDirty = true;
         }
-    }
-    
-    public markAsReady(nElementAttributeName: string): void {
-        const attributeName = this.DEFAULT_PREFIX_AND_SEPARATOR + nElementAttributeName + Constants.DEFAULT_SEPARATOR + Constants.HANDLER_READY_ATTRIBUTE_SUFFIX;
-        if (!this._systemAttributes.has(attributeName)) {
-            this._systemAttributes.set(attributeName, '');
-        }
-        
-        this._attributes.set(attributeName, '');
-        this._isDirty = true;
     }
 
     public bind(executionParams: ExecutionParams | undefined,

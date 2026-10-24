@@ -37,8 +37,8 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
     private readonly _nativeElement: HTMLElement;
     private readonly _requestDetectChanges: (() => void);
 
-    private readonly _subscribed = new Map<string, () => void>();
-    private readonly _unsubscribed = new Set<string>();
+    private readonly _subscribed: Map<string, () => void> | undefined;
+    private readonly _unsubscribed: Set<string> | undefined;
 
     private _executionParams: ExecutionParams | undefined;
 
@@ -58,6 +58,9 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
         if (attributes.has(Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME, true, true)) {
             this.hasNExpression = true;
             this.nExpression = new Map<string, EventsBindings>();
+
+            this._subscribed = new Map<string, () => void>();
+            this._unsubscribed = new Set<string>();
 
             for (const [key, value] of attributes.getAll(Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME, true)) {
                 const rawEventName = key.replace(Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME + Constants.META_VALUE_SEPARATOR, '');
@@ -145,25 +148,27 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
     }
     
     public dispose(): void {
-        for (const [key, unsubscribeFn] of this._subscribed) {
-            if (Helpers.isFunction(unsubscribeFn)) {
-                unsubscribeFn!();
+        if (this.hasNExpression) {
+            for (const [key, unsubscribeFn] of this._subscribed!) {
+                if (Helpers.isFunction(unsubscribeFn)) {
+                    unsubscribeFn!();
+                }
             }
-        }
 
-        this._unsubscribed.clear();
-        this._subscribed.clear();
+            this._unsubscribed!.clear();
+            this._subscribed!.clear();
+        }
     }
 
     private handleSubscription<K extends keyof HTMLElementEventMap>(key: K | string, data: IEventsBindings, 
                                                                     executeExpression: (expression: string | null | undefined, executionParams: ExecutionParams | undefined) => any) {
-        if (!this._subscribed.has(key) && !this._unsubscribed.has(key)) { 
+        if (!this._subscribed!.has(key) && !this._unsubscribed!.has(key)) { 
             const nativeUnSubscribe = this.subscribe(key, (evt: Event) => {
                 const unSubscribe = () => {
-                    if (!this._unsubscribed.has(key) && (this._subscribed.get(key) === nativeUnSubscribe)) {
+                    if (!this._unsubscribed!.has(key) && (this._subscribed!.get(key) === nativeUnSubscribe)) {
                         nativeUnSubscribe();
-                        this._subscribed.delete(key);
-                        this._unsubscribed.add(key);
+                        this._subscribed!.delete(key);
+                        this._unsubscribed!.add(key);
                     }
                 };
 
@@ -191,7 +196,7 @@ export class Events extends Base implements IHandler<Map<string, IEventsBindings
                 }
             }, undefined, data.debounce);
 
-            this._subscribed.set(key, nativeUnSubscribe);
+            this._subscribed!.set(key, nativeUnSubscribe);
         }
     }
 }

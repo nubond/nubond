@@ -1,5 +1,6 @@
 import { ContextBinder } from '../src/ContextBinder';
 import { Environment } from '../src/Environment';
+import { Container } from '../src/nElement/handlers/Container';
 
 // An entity (nb-container / component) that sits on an element nobody can see is not
 // committed: ContextedBase.commit() skips the entity block while the element is hidden
@@ -123,7 +124,7 @@ describe('hidden entities are instantiated lazily', () => {
                                          <div nb-case="@two" nb-container="@${two.name}"></div>
                                      </div>`, host);
 
-            const oneBinder = (binder.rootNElement as any)._children[0]._children[0].container.contextBinder;
+            const oneBinder = (binder.rootNElement as any)._children[0]._children[0]._disposeSequence.find((handler: any) => handler instanceof Container).contextBinder;
 
             expect(oneBinder.changeDetectionEnabled).toBe(true);
 

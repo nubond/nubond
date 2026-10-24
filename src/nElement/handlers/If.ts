@@ -3,7 +3,7 @@ import { IExpressionDetails } from '../../interfaces/expression/IExpressionDetai
 import { IHandler } from '../../interfaces/nElement/IHandler';
 import { IVisible } from '../../interfaces/nElement/IVisible';
 
-import { Base } from './base/Base';
+import { InitializableBase } from './base/InitializableBase';
 
 import { Attributes } from './Attributes';
 import { Classes } from './Classes';
@@ -14,8 +14,7 @@ import { ExecutionParams } from '../../expression/ExpressionExecParamsHelper';
 import { Constants } from '../../Constants';
 import { Helpers } from '../../Helpers';
 
-export class If extends Base implements IHandler<IExpressionDetails>, IVisible {
-    private readonly _attributes: Attributes | undefined;
+export class If extends InitializableBase implements IHandler<IExpressionDetails>, IVisible {
     private readonly _classes: Classes | undefined;
 
     private _isFirstCommit = true;
@@ -39,12 +38,11 @@ export class If extends Base implements IHandler<IExpressionDetails>, IVisible {
         return this._isDirty;
     }
 
-    constructor(attributes: Attributes, classes: Classes) {
-        super();
+    constructor(nativeElement: Element, attributes: Attributes, classes: Classes) {
+        super(nativeElement, Constants.IF_HANDLER_ATTRIBUTE_NAME);
         
         const expression = <string | undefined>attributes.get(Constants.IF_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
-            this._attributes = attributes;
             this._classes = classes;
 
             this.hasNExpression = true;
@@ -72,7 +70,7 @@ export class If extends Base implements IHandler<IExpressionDetails>, IVisible {
         if (this._isDirty) {
             if (this._isFirstCommit) {
                 this._isFirstCommit = false;
-                this._attributes!.markAsReady(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+                this.markAsReady();
             }
 
             if (this._previousIsVisible !== this._isVisible) {
