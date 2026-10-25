@@ -133,7 +133,8 @@ export class Main {
 
 ## Documentation
 
-**[`Documentation & Feature Reference`](FEATURES.md)**
+- **[`Interactive documentation`](https://nubond.github.io/)**
+- **[`Documentation & Feature Reference document`](FEATURES.md)**
 
 In addition all features and details are available in the `showcase` app:
 ```bash
@@ -151,6 +152,40 @@ nuBond ships alongside a set of satellite packages:
 | **[`create-nubond`](https://github.com/nubond/create-nubond)** | Project scaffolder — `npm create nubond`. Includes `blank`, `native`, and `showcase` templates. |
 | **[`posthtml-value-interpolation`](https://github.com/nubond/posthtml-value-interpolation)** | Parcel/PostHTML plugin enabling `{{ expression }}` text interpolation in templates. |
 | **[`nuBond Language Service`](https://github.com/nubond/vscode-extension)** | VS Code extension: hover, completion, go-to-definition, rename, references, diagnostics, CodeLens, and a TypeScript plugin for cross-file template ↔ class navigation. |
+
+## Powered by nuBond
+
+Production apps built with nuBond:
+
+### [Lamella Studio](https://workstation-master.com/lamella-studio.html)
+
+**Photo Editor with Layers and PSD Support — Private, Fully Offline**
+
+A full-featured image editor that opens and saves PSD/PSB files with layers, masks, effects and editable type intact. It ships 70 tools, 27 dockable panels, over 120 filters (Camera Raw and Lens Correction among them), 22 adjustments usable as adjustment layers, layer styles, smart selection, retouching, Liquify / Puppet Warp transforms, and export to PNG, JPG, WebP, SVG, animated GIF, APNG, MP4 and more. No account, no ads, no cloud — it works completely offline.
+
+<a href="https://apps.microsoft.com/detail/9NMZ6B6795JK"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" height="56" /></a>
+
+<a href="https://workstation-master.com/lamella-studio.html"><img src="https://workstation-master.com/assets/lamellastudio/win11/1.png" alt="Lamella Studio screenshot" /></a>
+
+### [World Time Scheduler](https://workstation-master.com/world-time-scheduler.html)
+
+**Schedule Meetings Across Time Zones — Fast, Clear, and Intuitive**
+
+Find a meeting slot that works for everyone: search locations by country, city or time zone, group and reorder zones, and pick times in 15-minute steps while working hours, weekends, date changes and daylight-saving transitions are highlighted. The selected slot can be copied, sent as a Gmail message, added to Google Calendar, or exported as an iCalendar file for Outlook, Apple Calendar or Thunderbird.
+
+<a href="https://apps.microsoft.com/detail/9NGF3J7JSJ83"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" height="56" /></a> &nbsp; <a href="https://apps.apple.com/us/app/world-time-scheduler-clock/id6799776721?mt=12&itscg=30200&itsct=apps_box_badge&mttnsubad=6799776721"><img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us?releaseDate=1786838400" alt="Download on the App Store" height="56" /></a>
+
+<a href="https://workstation-master.com/world-time-scheduler.html"><img src="https://workstation-master.com/assets/worldtimescheduler/win11/1.png" alt="World Time Scheduler screenshot" /></a>
+
+### [Ultimate IPTV](https://workstation-master.com/ultimate-iptv.html)
+
+**Watch IPTV from Around the World With Style**
+
+A modern IPTV player with advanced search by name, category or language, favorites for quick access, and live channel preview — wrapped in a native Windows 10 / 11 look with dark and light themes and low resource usage.
+
+<a href="https://apps.microsoft.com/detail/9PKHVPL1V74G"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" height="56" /></a>
+
+<a href="https://workstation-master.com/ultimate-iptv.html"><img src="https://workstation-master.com/assets/ultimateiptv/win11/1.png" alt="Ultimate IPTV screenshot" /></a>
 
 ## License
 
