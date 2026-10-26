@@ -839,6 +839,8 @@ export class App { }
 
 Meta-value separator changes from `:` to `--` in W3C mode.
 
+`complyWithW3C` only changes what the runtime looks for. The `{{ }}` interpolation plugin runs at build time and cannot see it, so W3C apps that use `{{ }}` also set the plugin's `compliantWithW3CInterpolation` flag — see [§15](#w3c-compliant-output).
+
 ---
 
 ## 15. Parcel Integration & Text Interpolation Plugin
@@ -858,6 +860,29 @@ Transforms `{{expression}}` in text nodes into `<span nb-value="expression"></sp
 <!-- Compiled output -->
 <p>Welcome, <span nb-value="this.userName"></span>! You have <span nb-value="this.messageCount"></span> messages.</p>
 ```
+
+### W3C-compliant output
+
+An app in W3C compliance mode ([§14](#14-w3c-compliance-mode)) ignores `nb-value`, so `{{ }}` would render nothing. Set `compliantWithW3CInterpolation` in the `nubond` section of the project's root `package.json`, and the plugin emits `data-nb-value` instead:
+
+```json
+{
+  "nubond": {
+    "compliantWithW3CInterpolation": true
+  }
+}
+```
+
+```html
+<!-- Compiled output in W3C-compliant mode -->
+<p>Welcome, <span data-nb-value="this.userName"></span>!</p>
+```
+
+- The flag comes from the nearest `package.json`, searched upwards from the current working directory (the project root when Parcel runs). With no flag, the plugin emits `nb-value`.
+- A non-boolean value or an unreadable `package.json` logs an error, and the plugin falls back to `nb-value`.
+- The same key can be passed as a plugin option in `.posthtmlrc` (`{ "plugins": { "@nubond/posthtml-value-interpolation": { "compliantWithW3CInterpolation": true } } }`), and the option wins over `package.json`. The `root` option changes the directory the search starts from.
+- `package.json` is reported to Parcel as a dependency of each template, so after you change the flag, Parcel rebuilds the templates without clearing `.parcel-cache`.
+- The flag must match `complyWithW3C` in `@AppRoot`. The plugin does not read the app's config.
 
 ### Parcel Features
 

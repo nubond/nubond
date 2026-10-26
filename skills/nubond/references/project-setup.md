@@ -181,6 +181,17 @@ since style files are deliberately imported as strings.
 { "plugins": { "@nubond/posthtml-value-interpolation": {} } }
 ```
 
+For an app with `complyWithW3C: true`, switch the plugin to `data-nb-value` in the root `package.json`:
+```json
+{ "nubond": { "compliantWithW3CInterpolation": true } }
+```
+The plugin reads the nearest `package.json`, searching upwards from the working directory. It reports
+that file to Parcel as a dependency, so templates rebuild when the flag changes, with no need to clear
+`.parcel-cache`. The same key is accepted as a plugin option in `.posthtmlrc`, and the option wins.
+`root` changes the directory the search starts from. A non-boolean value logs an error and falls back
+to `nb-value`. Keep the flag in step with `complyWithW3C` by hand, because nothing checks that they
+match.
+
 Dev dependencies: `parcel`, `@parcel/transformer-inline-string`, `@parcel/transformer-sass`,
 `@parcel/transformer-typescript-tsc`, `parcel-reporter-static-files-copy` (copies `staticFiles`),
 `posthtml`, `@nubond/posthtml-value-interpolation`.
@@ -252,5 +263,5 @@ including route slot containers declared directly in `index.html`.
 |---|---|
 | `nubond` (1.0.9) | The framework. |
 | `create-nubond` (1.0.11) | Scaffolder — `npm create nubond <template> <name>`. |
-| `@nubond/posthtml-value-interpolation` (1.0.3) | `{{ expr }}` → `<span nb-value="expr">` at build time. |
+| `@nubond/posthtml-value-interpolation` (1.0.4) | `{{ expr }}` → `<span nb-value="expr">` at build time (`data-nb-value` with `compliantWithW3CInterpolation`). |
 | nuBond Language Service (VS Code) | Hover, completion, go-to-definition, rename, references, diagnostics, CodeLens across templates and classes. |

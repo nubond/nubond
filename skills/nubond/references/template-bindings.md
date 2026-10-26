@@ -145,6 +145,10 @@ put `nb-value` on a component tag: value and component are both *content* handle
   double-quoted attribute), so a string literal containing an apostrophe breaks — use a context
   property or `nb-value` for such text.
 - The full expression grammar works, including `#` and `@` prefixes: `{{#this.title}}`.
+- **W3C mode needs its own build flag.** The plugin can't see `complyWithW3C`, so by default it
+  still emits `nb-value`, which a W3C app ignores. The spans then render empty, with no error. Add
+  `"nubond": { "compliantWithW3CInterpolation": true }` to the root `package.json` and it emits
+  `data-nb-value`. See `project-setup.md`.
 
 ## Classes & styles
 

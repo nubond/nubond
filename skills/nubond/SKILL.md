@@ -10,7 +10,7 @@ decorators; markup lives in separate `.html` files bound through `nb-*` attribut
 through a poll-based change-detection pass over a tree of bound DOM elements.
 
 > **Version.** This skill describes the published **`nubond` 1.0.9** package (and the
-> `create-nubond` 1.0.11 / `@nubond/posthtml-value-interpolation` 1.0.3 tooling). Check the project's
+> `create-nubond` 1.0.11 / `@nubond/posthtml-value-interpolation` 1.0.4 tooling). Check the project's
 > installed version (`node_modules/nubond/package.json`) — behavior differs between releases, and
 > later ones may lift some of the limitations listed here.
 
