@@ -17,7 +17,7 @@ import { IShadowRootConfig } from './interfaces/IShadowRootConfig';
 import { ITemplateProvider } from './interfaces/ITemplateProvider';
 
 import { AppRoot, Container, Component, Aspect, Transformer, Injectable, Detector, Eventer,
-         $Template, $AdoptedStyle, $Injectable, $Config, $Route } from './Decorators';
+         $Template, $AdoptedStyle, $Injectable, $Config, $Route, $GlobalShadowRootConfig } from './Decorators';
 
 import { ChangeDetector } from './models/injections/ChangeDetector';
 import { ElementManipulations } from './models/injections/ElementManipulations';
@@ -47,6 +47,7 @@ export {
     $Injectable,
     $Config,
     $Route,
+    $GlobalShadowRootConfig,
 
     IContext, IContextConstructor,
     IComponentContext, IComponentContextConstructor,

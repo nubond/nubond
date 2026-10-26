@@ -308,11 +308,12 @@ These are confirmed limitations and design positions of the 1.0.9 release. Each 
 accommodate up front and expensive to discover late — the full set with mechanisms and workarounds is
 in `references/known-limitations.md`.
 
-- **Apply a global `shadowRootConfig` in a module imported before any component.** `@Component`
-  captures the shadow-root config when its decorator runs — i.e. when its module is imported, *before*
-  `@AppRoot`'s config is applied — so `@AppRoot({ shadowRootConfig })` reaches no component. Call
-  `$Config({...})` in a tiny module that `index.ts` imports first. (Every other global setting works
-  from `@AppRoot`.)
+- **Set the global shadow-root config with `$GlobalShadowRootConfig` in a module imported before any
+  component.** It is not an `IGlobalConfig` key — a `shadowRootConfig` inside `@AppRoot`'s config
+  makes the whole object unrecognized (every setting in it is silently lost), and `$Config` ignores it.
+  `@Component` captures the value when its decorator runs — i.e. when its module is imported — so call
+  `$GlobalShadowRootConfig({...})` in a tiny module that `index.ts` imports first. (Every global
+  config setting works from `@AppRoot`.)
 - **Inject concrete classes only.** An interface-, `any`- or union-typed constructor parameter is not
   injected — it arrives `undefined` with `Injection 'Object' cannot be resolve.` Also declare an
   explicit constructor on every decorated class: inherited constructors resolve to zero arguments.

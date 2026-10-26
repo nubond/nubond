@@ -54,6 +54,7 @@ Both are implemented via `Object.defineProperty` and can only be applied to simp
 | `$AdoptedStyle(name, css \| provider, sanitizer?)` | Registers a global adopted stylesheet by name. The optional sanitizer applies to URL-/provider-resolved content only — inline CSS is trusted ([§19](#19-sanitization--trusted-content)). |
 | `$Injectable(target, singleton?, ...dependencies)` | Programmatic injectable registration. Also accepts an existing object instance — `$Injectable(instance)` registers it as a singleton under its constructor. |
 | `$Config(globalConfig)` | Applies global framework configuration. |
+| `$GlobalShadowRootConfig(shadowRootConfig)` | Sets the default `IShadowRootConfig` for components that have no per-component `shadowRootConfig`. Each `@Component` captures it when its decorator runs, so call it in a module evaluated **before** any component module — see [§5](#shadow-dom-configuration). |
 | `$Route(routeConfig)` | Configures routing programmatically. |
 
 ---
@@ -407,7 +408,23 @@ Metadata args (style, adopted-styles array, context config, custom element class
 export class ConfiguredComponent { }
 ```
 
-The shadow root mode defaults to **`closed`** (unless overridden by a per-component `shadowRootConfig` or the global config).
+The shadow root mode defaults to **`closed`** (unless overridden by a per-component `shadowRootConfig` or the global one set with `$GlobalShadowRootConfig`).
+
+#### Global default — `$GlobalShadowRootConfig`
+
+The app-wide default is set with the `$GlobalShadowRootConfig` pseudo-decorator — it is **not** an `IGlobalConfig` key, so neither `$Config` nor `@AppRoot` accepts it:
+
+```typescript
+// shadow-root-config.ts — imported first in index.ts, before any component module
+import { $GlobalShadowRootConfig } from 'nubond';
+
+$GlobalShadowRootConfig({ mode: 'open', delegatesFocus: true });
+```
+
+- **Captured at registration.** Each `@Component` reads the global value when its decorator runs and keeps it, so the call must happen before the component modules are evaluated. Imports are hoisted, so a call placed in `index.ts` *after* its imports — or next to `@AppRoot` — runs too late; put it in its own module imported first. A later call affects only components registered after it (no error is logged — there is no runtime guard as there is for `$Config`), and the last call wins.
+- **Replaced, not merged.** A per-component `shadowRootConfig` replaces the global one as a whole — e.g. a global `delegatesFocus: true` is not inherited by a component that sets only `{ mode: 'closed' }`.
+- **Stored as a clone** (`structuredClone`) — mutating the passed object afterwards has no effect; an uncloneable value logs `Can't setup shadowRootConfig` and keeps the previous setting. At attach time the fields are validated individually: `mode` other than `'open'`/`'closed'` falls back to `closed`, non-boolean `delegatesFocus`/`serializable` are ignored.
+- **Migration:** a `shadowRootConfig` key left in a global config object is not applied. Passed to `@AppRoot`, the object then no longer matches the `IGlobalConfig` shape and is dropped **as a whole**, silently — the other settings in it (`showDebugInfo`, sanitizers, …) are lost too.
 
 ---
 
@@ -544,6 +561,22 @@ Content projection allows parent templates to inject content into named slots of
 - `nb-project-instead="@name"` — Projected content *replaces* the slot element.
 
 Containers, components and templates support projections with the same syntax.
+
+**Projected content binds against the *receiving* context, not the one that authored it.** The marked nodes are cloned into the child's template before it is bound, so every expression inside them — `this`, `nb-event` handlers, `{{ }}` — is evaluated by the child's binder: in `<div nb-container="@Card"><p nb-projection>{{ this.title }}</p></div>`, `this` is the `Card` instance. This differs from Web Component slots and from content projection in other frameworks. Hand parent data to the child through `nb-in` / `nb-in-ref`, and handle projected events in the child (or re-dispatch them).
+
+```html
+<!-- parent: `this` inside the projected button is the Card, not the parent -->
+<div nb-container="@Card" nb-in:title="this.title">
+    <button nb-projection="@footer" nb-event:click="this.like()">Like</button>
+</div>
+```
+
+**Projection rules:**
+- Slot names are plain strings matched verbatim between `nb-projection` and `nb-project-to` / `nb-project-instead` — the leading `@` is a convention, not the constant prefix, so write the same text on both sides.
+- Only one element may use the unnamed (default) slot per host; a second one logs `Projection without name can't be used when there are multiple projections.` and is ignored. Wrap several elements in one. A repeated *named* projection replaces the earlier one (last wins).
+- A slot that receives no projection keeps its own markup, so content inside an `nb-project-to` / `nb-project-instead` element is its fallback.
+- Projected nodes are cloned, so one projection fills every slot with that name.
+- Host children without `nb-projection` are kept aside and restored when the container is emptied (its name becomes empty or names no registered container).
 
 ---
 

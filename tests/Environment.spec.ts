@@ -91,10 +91,24 @@ describe('Environment', () => {
             }).not.toThrow();
         });
 
-        it('should accept shadowRootConfig config', () => {
-            expect(() => {
+        it('should ignore shadowRootConfig (moved to Environment.shadowRootConfig / $GlobalShadowRootConfig)', () => {
+            const attachShadowSpy = jest.spyOn(Element.prototype, 'attachShadow');
+            try {
                 Environment.config({ shadowRootConfig: { mode: 'open' } } as any);
-            }).not.toThrow();
+
+                class IgnoredGlobalShadowComp {}
+                const name = `ignored-global-shadow-${Date.now()}`;
+                Environment.addComponent(name, IgnoredGlobalShadowComp as any, [],
+                                         undefined, '<span>x</span>', undefined, undefined, undefined);
+
+                const el = document.createElement(name);
+                (el as any).$bind({ bind: () => {} } as any, {} as any, false);
+
+                expect(attachShadowSpy).toHaveBeenCalledTimes(1);
+                expect(attachShadowSpy.mock.calls[0][0].mode).toBe('closed');
+            } finally {
+                attachShadowSpy.mockRestore();
+            }
         });
 
         it('should accept htmlSanitizer config', () => {
@@ -109,6 +123,125 @@ describe('Environment', () => {
             expect(() => {
                 Environment.config({ styleSanitizer: sanitizer } as any);
             }).not.toThrow();
+        });
+    });
+
+    describe('shadowRootConfig', () => {
+        let seq = 0;
+        let attachShadowSpy: jest.SpyInstance;
+
+        beforeEach(() => {
+            attachShadowSpy = jest.spyOn(Element.prototype, 'attachShadow');
+        });
+
+        afterEach(() => {
+            attachShadowSpy.mockRestore();
+        });
+
+        /** register + instantiate + drive $bind; returns the ShadowRootInit the component attached with */
+        function attachedShadowRootInit(contextConfig?: any, register: boolean = true, name?: string): ShadowRootInit {
+            name = name ?? `global-shadow-${++seq}-${Date.now()}`;
+
+            if (register) {
+                class GlobalShadowComp {}
+                Environment.addComponent(name, GlobalShadowComp as any, [],
+                                         undefined, '<span>x</span>', undefined, undefined, contextConfig);
+            }
+
+            attachShadowSpy.mockClear();
+            const el = document.createElement(name);
+            (el as any).$bind({ bind: () => {} } as any, {} as any, false);
+
+            expect(attachShadowSpy).toHaveBeenCalledTimes(1);
+            return attachShadowSpy.mock.calls[0][0];
+        }
+
+        it('should default to a closed shadow root without a global config', () => {
+            expect(attachedShadowRootInit()).toEqual({ mode: 'closed' });
+        });
+
+        it('should apply the global config to components registered after it', () => {
+            Environment.shadowRootConfig({ mode: 'open', delegatesFocus: true, serializable: true });
+
+            expect(attachedShadowRootInit()).toEqual({ mode: 'open', delegatesFocus: true, serializable: true });
+        });
+
+        it('should not apply the global config to components registered before it', () => {
+            const name = `global-shadow-early-${Date.now()}`;
+            expect(attachedShadowRootInit(undefined, true, name).mode).toBe('closed');
+
+            Environment.shadowRootConfig({ mode: 'open' });
+
+            //captured at registration — a new instance of the early component stays closed
+            expect(attachedShadowRootInit(undefined, false, name).mode).toBe('closed');
+            //a component registered afterwards picks it up
+            expect(attachedShadowRootInit().mode).toBe('open');
+        });
+
+        it('should let a per-component shadowRootConfig replace the global one entirely', () => {
+            Environment.shadowRootConfig({ mode: 'open', delegatesFocus: true });
+
+            //replaced, not merged — delegatesFocus from the global config is not inherited
+            expect(attachedShadowRootInit({ shadowRootConfig: { mode: 'closed' } })).toEqual({ mode: 'closed' });
+        });
+
+        it('should let the last call win', () => {
+            Environment.shadowRootConfig({ mode: 'open', delegatesFocus: true });
+            Environment.shadowRootConfig({ mode: 'closed', serializable: true });
+
+            expect(attachedShadowRootInit()).toEqual({ mode: 'closed', serializable: true });
+        });
+
+        it('should store a clone, so a later mutation of the passed object has no effect', () => {
+            const config: { mode: ShadowRootMode } = { mode: 'open' };
+            Environment.shadowRootConfig(config);
+            config.mode = 'closed';
+
+            expect(attachedShadowRootInit().mode).toBe('open');
+        });
+
+        it('should drop unknown keys and invalid values field by field', () => {
+            Environment.shadowRootConfig({ mode: 'bogus', delegatesFocus: 'yes', serializable: true, extra: 1 } as any);
+
+            expect(attachedShadowRootInit()).toEqual({ mode: 'closed', serializable: true });
+        });
+
+        it('should be accepted after an app is bound (no runtime guard, unlike config)', () => {
+            const root = document.createElement('div');
+            root.id = `global-shadow-app-${Date.now()}`;
+            document.body.appendChild(root);
+            try {
+                class ShadowApp {}
+                Environment.addApp(`#${root.id}`, ShadowApp as any, []);
+
+                (console.error as jest.Mock).mockClear();
+                Environment.shadowRootConfig({ mode: 'open' });
+
+                expect(console.error as jest.Mock).not.toHaveBeenCalled();
+                expect(attachedShadowRootInit().mode).toBe('open');
+            } finally {
+                root.remove();
+            }
+        });
+
+        it('should log an error and keep the previous config when the config cannot be cloned', () => {
+            Environment.shadowRootConfig({ mode: 'open' });
+
+            const cloneSpy = jest.spyOn(globalThis, 'structuredClone').mockImplementationOnce(() => {
+                throw new Error('could not be cloned');
+            });
+            (console.error as jest.Mock).mockClear();
+            try {
+                expect(() => Environment.shadowRootConfig({ mode: 'closed' })).not.toThrow();
+            } finally {
+                cloneSpy.mockRestore();
+            }
+
+            expect(console.error as jest.Mock).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining(`Can't setup shadowRootConfig`),
+            );
+            expect(attachedShadowRootInit().mode).toBe('open');
         });
     });
 

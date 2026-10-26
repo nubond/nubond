@@ -23,12 +23,13 @@ The framework targets **modern browsers only** — an explicit design decision:
 
 ## Configuration timing
 
-**A global `shadowRootConfig` passed to `@AppRoot` is too late.** `@Component` resolves the global
-shadow-root config when its decorator runs. Entity modules are imported (and decorated) before the
-`App` class at the bottom of `index.ts` is, so `@AppRoot({ shadowRootConfig })` reaches no component.
-**Call `$Config({ shadowRootConfig })` in a module that `index.ts` imports first.** Everything else —
-`showDebugInfo`, `complyWithW3C`, the CD strategy and the sanitizers — is read later and works from
-`@AppRoot`.
+**The global shadow-root config must be set before any component is decorated.** It is set with
+`$GlobalShadowRootConfig` (not an `IGlobalConfig` key), and `@Component` captures it when its decorator
+runs. Entity modules are imported (and decorated) before any statement in the body of `index.ts`
+executes — imports are hoisted — so a call placed there, or next to `@AppRoot`, reaches no component,
+and nothing is logged. **Call `$GlobalShadowRootConfig({...})` in a module that `index.ts` imports
+first.** Everything in `IGlobalConfig` — `showDebugInfo`, `complyWithW3C`, the CD strategy and the
+sanitizers — is read later and works from `@AppRoot`.
 
 **Config objects that fail the shape check are dropped silently** — an unknown key or a wrongly typed
 value (`{ showDebugInfo: 'true' }`) and the app runs unconfigured.

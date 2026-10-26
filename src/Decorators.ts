@@ -6,6 +6,7 @@ import { IEntityDependencyConstructor } from './interfaces/IEntityDependencyCons
 import { IInjectableConstructor, IInjectable } from './interfaces/IInjectable';
 
 import { IGlobalConfig } from './interfaces/IGlobalConfig';
+import { IShadowRootConfig } from './interfaces/IShadowRootConfig';
 import { IContextConfig } from './interfaces/contexts/configs/IContextConfig';
 import { IComponentContextConfig } from './interfaces/contexts/configs/IComponentContextConfig';
 
@@ -25,11 +26,6 @@ const GLOBAL_CONFIG_TEMPLATE: IGlobalConfig = {
     showDebugInfo: false,
     complyWithW3C: false,
     pessimisticChangeDetectionStrategy: false,
-    shadowRootConfig: {
-        delegatesFocus: false,
-        mode: 'closed',
-        serializable: false
-    },
     htmlSanitizer: (html: string) => html,
     styleSanitizer: (style: string) => style,
 }
@@ -562,6 +558,16 @@ export function $Injectable<T extends IInjectableConstructor | IInjectable>(targ
     }
 
     return target;
+}
+
+/**
+ * Configure the global shadow root config.
+ * Use this before @AppRoot.
+ *
+ * @param shadowRootConfig global shadow root config
+ */
+export function $GlobalShadowRootConfig(shadowRootConfig: IShadowRootConfig): void {
+    Environment.shadowRootConfig(shadowRootConfig);
 }
 
 /**

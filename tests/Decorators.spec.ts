@@ -18,6 +18,7 @@ jest.mock('../src/Environment', () => ({
         addEventer: jest.fn(),
         setupRouter: jest.fn(),
         config: jest.fn(),
+        shadowRootConfig: jest.fn(),
     }
 }));
 
@@ -50,6 +51,7 @@ import {
     $Injectable,
     $Config,
     $Route,
+    $GlobalShadowRootConfig,
 } from '../src/Decorators';
 
 const MockEnvironment = Environment as jest.Mocked<typeof Environment>;
@@ -552,6 +554,16 @@ describe('$Config pseudo-decorator', () => {
     });
 });
 
+// ---------- $GlobalShadowRootConfig ----------
+describe('$GlobalShadowRootConfig pseudo-decorator', () => {
+    it('should call Environment.shadowRootConfig', () => {
+        const config = { mode: 'open', delegatesFocus: true, serializable: false } as const;
+        $GlobalShadowRootConfig(config);
+        expect(MockEnvironment.shadowRootConfig).toHaveBeenCalledWith(config);
+        expect(MockEnvironment.config).not.toHaveBeenCalled();
+    });
+});
+
 // ---------- $Route ----------
 describe('$Route pseudo-decorator', () => {
     it('should call Environment.setupRouter', () => {
@@ -575,7 +587,7 @@ describe('AppRoot decorator', () => {
     });
 
     it('should call Environment.config if global config provided', () => {
-        const globalCfg = { showDebugInfo: true, complyWithW3C: false, pessimisticChangeDetectionStrategy: false, shadowRootConfig: { delegatesFocus: false, mode: 'closed', serializable: false }, htmlSanitizer: (h: string) => h, styleSanitizer: (s: string) => s };
+        const globalCfg = { showDebugInfo: true, complyWithW3C: false, pessimisticChangeDetectionStrategy: false, htmlSanitizer: (h: string) => h, styleSanitizer: (s: string) => s };
 
         @AppRoot('#root', globalCfg as any)
         class CfgApp {
@@ -583,6 +595,20 @@ describe('AppRoot decorator', () => {
         }
 
         expect(MockEnvironment.config).toHaveBeenCalledTimes(1);
+        expect(MockEnvironment.addApp).toHaveBeenCalledTimes(1);
+    });
+
+    it('should drop a global config that still carries shadowRootConfig (no longer a global config key)', () => {
+        const legacyCfg = { showDebugInfo: true, shadowRootConfig: { mode: 'open' } };
+
+        @AppRoot('#root', legacyCfg as any)
+        class LegacyCfgApp {
+            constructor() {}
+        }
+
+        //the whole object fails the global config shape check, so showDebugInfo is lost too
+        expect(MockEnvironment.config).not.toHaveBeenCalled();
+        expect(MockEnvironment.shadowRootConfig).not.toHaveBeenCalled();
         expect(MockEnvironment.addApp).toHaveBeenCalledTimes(1);
     });
 
@@ -606,8 +632,8 @@ describe('AppRoot decorator', () => {
     });
 
     it('should throw on multiple global configs', () => {
-        const cfg1 = { showDebugInfo: true, complyWithW3C: false, pessimisticChangeDetectionStrategy: false, shadowRootConfig: { delegatesFocus: false, mode: 'closed', serializable: false }, htmlSanitizer: (h: string) => h, styleSanitizer: (s: string) => s };
-        const cfg2 = { showDebugInfo: false, complyWithW3C: true, pessimisticChangeDetectionStrategy: false, shadowRootConfig: { delegatesFocus: false, mode: 'closed', serializable: false }, htmlSanitizer: (h: string) => h, styleSanitizer: (s: string) => s };
+        const cfg1 = { showDebugInfo: true, complyWithW3C: false, pessimisticChangeDetectionStrategy: false, htmlSanitizer: (h: string) => h, styleSanitizer: (s: string) => s };
+        const cfg2 = { showDebugInfo: false, complyWithW3C: true, pessimisticChangeDetectionStrategy: false, htmlSanitizer: (h: string) => h, styleSanitizer: (s: string) => s };
 
         expect(() => {
             @AppRoot('#root', cfg1 as any, cfg2 as any)

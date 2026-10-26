@@ -80,22 +80,23 @@ A real custom element with shadow DOM and scoped styles.
   entity constructors.
 - **Tag name** = explicit name, or `fromCamelToKebabCase(toCamelCase(className))`. It must contain a
   hyphen; `Button` → `button` fails registration. Names already containing `-` are used verbatim.
-- Shadow root mode defaults to **`closed`** unless overridden per component or globally.
+- Shadow root mode defaults to **`closed`** unless overridden per component or globally
+  (`$GlobalShadowRootConfig`). A per-component `shadowRootConfig` **replaces** the global one as a
+  whole — fields are not merged.
 
 ```typescript
 @Component(html, css, { shadowRootConfig: { mode: 'open', delegatesFocus: true } })
 export class ConfiguredComponent { }
 ```
 
-> **A global `shadowRootConfig` must be set before components are imported.** Each `@Component`
-> resolves the global shadow-root config the moment its decorator runs. Component modules are imported
-> at the top of `index.ts`, while `@AppRoot`'s config is applied only when `App` itself is decorated at
-> the bottom — so `@AppRoot({ shadowRootConfig: … })` reaches no component. Put the setting in its own
-> module and import it first:
+> **The global shadow-root config is set with `$GlobalShadowRootConfig`, before components are
+> imported.** Each `@Component` resolves it the moment its decorator runs; a later call reaches only
+> components registered after it (nothing is logged), and the last call wins. Component modules are
+> imported at the top of `index.ts`, so put the call in its own module and import it first:
 > ```typescript
 > // config-first.ts — imported as the very first line of index.ts
-> import { $Config } from 'nubond';
-> if (process.env.NODE_ENV !== 'production') { $Config({ shadowRootConfig: { mode: 'open' } }); }
+> import { $GlobalShadowRootConfig } from 'nubond';
+> if (process.env.NODE_ENV !== 'production') { $GlobalShadowRootConfig({ mode: 'open' }); }
 > ```
 > (Opening shadow roots changes only external script access — useful for test harnesses — not
 > styling or event flow.)
@@ -214,6 +215,7 @@ subclasses — redeclare it on the concrete context.
 | `$AdoptedStyle(name, cssOrProvider, sanitizer?)` | Registers a shared `CSSStyleSheet`. **Returns the name.** |
 | `$Injectable(target, singleton?, ...deps)` | Programmatic registration. `$Injectable(instance)` registers an existing object as a singleton under its constructor — the way to inject third-party classes. |
 | `$Config(globalConfig)` | Applies global configuration (before any app root). |
+| `$GlobalShadowRootConfig(shadowRootConfig)` | Sets the default `IShadowRootConfig` for components without their own. Captured by each `@Component` at decoration — call it before any component module is imported. |
 | `$Route(routeConfig)` | Configures routing (before any app root). |
 
 Because `$Template`/`$AdoptedStyle` return the name, they compose neatly inside a decorator's
@@ -405,7 +407,6 @@ interface IGlobalConfig {
     showDebugInfo?: boolean;                      // default false — turn ON during development
     complyWithW3C?: boolean;                      // default false — switches to data-nb-* / --
     pessimisticChangeDetectionStrategy?: boolean; // default false
-    shadowRootConfig?: IShadowRootConfig;         // { mode: 'open'|'closed', delegatesFocus, serializable }
     htmlSanitizer?: (html: string) => string;     // default undefined = raw
     styleSanitizer?: (style: string) => string;
 }
@@ -417,7 +418,13 @@ interface IContextConfig {           // @Container
 
 interface IComponentContextConfig {  // @Component — IContextConfig plus:
     styleSanitizer?: (style: string) => string;
-    shadowRootConfig?: IShadowRootConfig;
+    shadowRootConfig?: IShadowRootConfig;     // replaces the $GlobalShadowRootConfig value, no merge
+}
+
+interface IShadowRootConfig {        // $GlobalShadowRootConfig / IComponentContextConfig
+    mode: 'open' | 'closed';         // anything else falls back to 'closed'
+    delegatesFocus?: boolean;
+    serializable?: boolean;
 }
 ```
 
@@ -426,9 +433,10 @@ its shape: any unknown key or wrongly typed value (`{ showDebugInfo: 'true' }`) 
 object unrecognized and it is **silently ignored**.
 
 **Config timing.** `showDebugInfo`, `complyWithW3C`, the change-detection strategy and the sanitizers
-are read lazily, so passing them to `@AppRoot` works. The global `shadowRootConfig` is the exception:
-it is captured when each `@Component` decorator runs — set it with `$Config` in a module imported
-before any component module (see `@Component` above).
+are read lazily, so passing them to `@AppRoot` works. The global shadow-root config is not part of
+`IGlobalConfig` — a `shadowRootConfig` key there makes the object unrecognized. It is set with
+`$GlobalShadowRootConfig` and captured when each `@Component` decorator runs, so call it in a module
+imported before any component module (see `@Component` above).
 
 **What the sanitizers cover.** `htmlSanitizer` is applied to `nb-html` values and to HTML templates
 resolved from a URL or provider; `styleSanitizer` to styles resolved from a URL or provider. Inline

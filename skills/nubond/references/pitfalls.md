@@ -275,8 +275,8 @@ altogether (`nb-attr:onclick`, `javascript:` hrefs, `srcdoc`). **Sanitize untrus
 before binding them, and never assemble an inline template from untrusted data.**
 
 **Shadow roots are `closed` by default.** `element.shadowRoot` is `null` from outside; you cannot
-`querySelector` into a component. Communicate via inputs and events, or set
-`shadowRootConfig: { mode: 'open' }` deliberately.
+`querySelector` into a component. Communicate via inputs and events, or open them deliberately —
+per component (`shadowRootConfig: { mode: 'open' }`) or app-wide (`$GlobalShadowRootConfig`).
 
 **Component styles don't leak in.** A `@Component`'s shadow DOM blocks page CSS. Share styles with
 `$AdoptedStyle` + `['name']`, or expose CSS custom properties (which do pierce shadow boundaries).
@@ -347,7 +347,8 @@ dies with a `SyntaxError`.
    position.
 10. Component/container "missed" something or kept old state → was its element hidden? It is built
     on first show, and a hidden container ignores name changes until shown again.
-11. Global config "ignored" → wrong key/type (whole object dropped silently), or `shadowRootConfig`
-    passed to `@AppRoot` instead of a first-imported `$Config`.
+11. Global config "ignored" → wrong key/type (whole object dropped silently) — including a leftover
+    `shadowRootConfig` key. Shadow-root config "ignored" → `$GlobalShadowRootConfig` called after the
+    components were imported instead of in a first-imported module.
 12. Switch shows the default (or nothing) for a value that "obviously" matches → type mismatch:
     `@5` is a number, the switch value is a string.

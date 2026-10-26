@@ -1,5 +1,3 @@
-import { IShadowRootConfig } from './IShadowRootConfig';
-
 /**
 * Global config.
 */
@@ -20,10 +18,6 @@ export interface IGlobalConfig {
     * Whether the default context change-detection strategy is pessimistic.
     */
     pessimisticChangeDetectionStrategy?: boolean;
-    /**
-    * Default ShadowRoot config.
-    */
-    shadowRootConfig?: IShadowRootConfig;
 
     /**
     * Default HTML sanitizer.

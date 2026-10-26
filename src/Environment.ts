@@ -327,14 +327,6 @@ export class Environment {
             this._pessimisticChangeDetectionStrategy = config.pessimisticChangeDetectionStrategy!;
         }
 
-        if (Helpers.isObject(config.shadowRootConfig)) {
-            try {
-                this._shadowRootConfig = structuredClone(config.shadowRootConfig);
-            } catch(ex) {
-                Console.error(`Can't setup shadowRootConfig, error: ${ex}`);
-            }
-        }
-
         //functions
         if (Helpers.isFunction(config.htmlSanitizer)) {
             this._htmlSanitizer = config.htmlSanitizer;
@@ -342,6 +334,14 @@ export class Environment {
 
         if (Helpers.isFunction(config.styleSanitizer)) {
             this._styleSanitizer = config.styleSanitizer;
+        }
+    }
+
+    public static shadowRootConfig(shadowRootConfig: IShadowRootConfig): void {
+        try {
+            this._shadowRootConfig = structuredClone(shadowRootConfig);
+        } catch(ex) {
+            Console.error(`Can't setup shadowRootConfig, error: ${ex}`);
         }
     }
 }

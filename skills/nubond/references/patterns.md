@@ -5,16 +5,17 @@ thousands of bindings — and the `create-nubond` showcase.
 
 ## Config-first module
 
-The global `shadowRootConfig` is captured by each `@Component` when its decorator runs, so it must be
-applied before any component module is imported. Make it the first import of `index.ts`. (Every
-other global setting — debug info, sanitizers, CD strategy — can stay in `@AppRoot`.)
+The global shadow-root config (`$GlobalShadowRootConfig`) is captured by each `@Component` when its
+decorator runs, so it must be applied before any component module is imported. Make it the first
+import of `index.ts`. (The global config — debug info, sanitizers, CD strategy — can stay in
+`@AppRoot`.)
 
 ```typescript
 // src/config-first.ts
-import { $Config } from 'nubond';
+import { $GlobalShadowRootConfig } from 'nubond';
 
 if (process.env.NODE_ENV !== 'production') {
-    $Config({ shadowRootConfig: { mode: 'open' } });   // e.g. so a test harness can reach in
+    $GlobalShadowRootConfig({ mode: 'open' });   // e.g. so a test harness can reach in
 }
 ```
 
