@@ -240,6 +240,78 @@ describe('Container handler', () => {
             // No error should be thrown
         });
 
+        it('should mark an initially empty container ready', () => {
+            const { handler, el } = createHandler('this.name');
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const { containers } = mockContainersEnv({ has: true, isReady: true });
+
+            handler.bind(undefined, jest.fn().mockReturnValue(''));
+            expect(el.hasAttribute(readyAttr)).toBe(false);
+
+            handler.commit();
+
+            expect(el.getAttribute(readyAttr)).toBe('');
+            expect(containers.has).not.toHaveBeenCalled();
+            expect(containers.instantiateBinder).not.toHaveBeenCalled();
+        });
+
+        it('should keep the fallback children of an initially empty container in the DOM', () => {
+            const el = createElementWithAttr('this.name');
+            el.innerHTML = '<p id="fallback">Static fallback</p>text';
+            const attrs = new Attributes(el, () => false);
+            const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
+                                          mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            mockContainersEnv({ has: true, isReady: true });
+
+            handler.bind(undefined, jest.fn().mockReturnValue(''));
+            handler.commit();
+
+            expect(el.innerHTML).toBe('<p id="fallback">Static fallback</p>text');
+        });
+
+        it('should still instantiate the first real container after starting empty', () => {
+            const { handler, el } = createHandler('this.name');
+            const { containers } = mockContainersEnv({ has: true, isReady: true });
+
+            handler.bind(undefined, jest.fn().mockReturnValue(''));
+            handler.commit();
+
+            expect(containers.instantiateBinder).not.toHaveBeenCalled();
+
+            handler.bind(undefined, jest.fn().mockReturnValue('mycontainer'));
+            handler.commit();
+
+            expect(containers.instantiateBinder).toHaveBeenCalledTimes(1);
+            expect(containers.instantiateBinder).toHaveBeenCalledWith('mycontainer');
+            expect(containers.instantiateContext).toHaveBeenCalledTimes(1);
+            // the template of the real container replaced the (empty) host children
+            expect(el.innerHTML).toBe('<span></span>');
+        });
+
+        it('should restore the fallback children when going empty -> real -> empty', () => {
+            const el = createElementWithAttr('this.name');
+            el.innerHTML = '<p id="fallback">Static fallback</p>';
+            const attrs = new Attributes(el, () => false);
+            const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
+                                          mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            const { containers, mockContextBinder } = mockContainersEnv({ has: true, isReady: true });
+
+            handler.bind(undefined, jest.fn().mockReturnValue(''));
+            handler.commit();
+
+            handler.bind(undefined, jest.fn().mockReturnValue('mycontainer'));
+            handler.commit();
+
+            expect(containers.instantiateBinder).toHaveBeenCalledTimes(1);
+            expect(el.querySelector('#fallback')).toBeNull();
+
+            handler.bind(undefined, jest.fn().mockReturnValue(''));
+            handler.commit();
+
+            expect(mockContextBinder.dispose).toHaveBeenCalledTimes(1);
+            expect(el.innerHTML).toBe('<p id="fallback">Static fallback</p>');
+        });
+
         it('should call tryPrepare when container is not ready', () => {
             const { handler } = createHandler('this.name');
             const envMock = mockContainersEnv({ has: true, isReady: false, tryPrepareResult: true });
@@ -441,6 +513,25 @@ describe('Container handler', () => {
 
             // Should not throw even with null state — results in empty context
             handler.commit();
+        });
+
+        it('should mark a route container with an empty slot ready', () => {
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const mockRouter = {
+                isConfigured: true,
+                state: { mySlot: undefined } as any,
+                onAfterStateChange: jest.fn().mockReturnValue(() => {}),
+            };
+            (Environment as any)._router = mockRouter;
+            Object.defineProperty(Environment, 'router', { get: () => mockRouter, configurable: true });
+
+            const { containers } = mockContainersEnv({ has: true, isReady: true });
+            const { handler, el } = createHandler('%mySlot');
+
+            handler.commit();
+
+            expect(el.getAttribute(readyAttr)).toBe('');
+            expect(containers.instantiateBinder).not.toHaveBeenCalled();
         });
 
         it('should unsubscribe from route on dispose', () => {

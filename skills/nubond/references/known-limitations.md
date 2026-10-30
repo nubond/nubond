@@ -148,12 +148,12 @@ slots and from most frameworks' content projection — expect `this` to mean the
 **Unmatched projection slots keep their own content** (useful as fallback), and duplicate *named*
 projections silently let the last one win (only the duplicate-unnamed case errors).
 
-**Container fallback content is static and often invisible.** Host children without `nb-projection`
-are restored as raw clones when the container empties — their `nb-*` bindings are inert, and elements
-among them that carry `nb-if`/`nb-repeat`/`nb-container`/… stay hidden by the anti-flicker stylesheet.
-A container whose name is empty *from the start* never receives its ready marker, so its fallback
-stays hidden until a real name lands. Don't build "nothing selected" UI as container fallback — use a
-sibling under `nb-if`.
+**Container fallback content is static.** Host children without `nb-projection` are shown whenever
+the container's name is empty — from the first pass when it starts empty, and restored as raw clones
+when it empties later. Their `nb-*` bindings are inert, and elements among them that carry
+`nb-if`/`nb-repeat`/`nb-container`/… stay hidden by the anti-flicker stylesheet. Plain markup and
+`href="#/…"` links are fine (e.g. a crawlable landing page inside a route slot with no default); for
+dynamic "nothing selected" UI use a sibling under `nb-if`.
 
 **A dynamic container name that is not registered logs every pass.** `nb-container="this.view"`
 resolving to an unknown name re-logs `Container with name '…' not found` on each pass of the parent.

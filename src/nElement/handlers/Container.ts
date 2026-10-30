@@ -158,6 +158,11 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
                 result = entityData;
             }
         } else {
+            if (this._isFirstContainerCommit) {
+                this._isFirstContainerCommit = false;
+                this.markAsReady();
+            }
+
             if (this._previousContextName !== this._currentContextName) {
                 this._nElementProjection!.cleanUp();
                 this.disposeInternal(true);

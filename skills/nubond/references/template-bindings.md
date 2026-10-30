@@ -609,7 +609,8 @@ Slots are declared in the child's template; content is supplied from the parent.
   `nb-project-to` element serves as fallback content.
 - Projected nodes are cloned, so the same source can feed several slots.
 - Host children *without* `nb-projection` are kept aside as fallback content and restored if the
-  container is disposed or its name resolves to nothing.
+  container is disposed or its name resolves to nothing. A container whose name is empty from the
+  start is marked ready on its first pass, so its fallback is visible right away.
 - For components, projection moves light-DOM children into the shadow root's slots.
 
 ## Sub-tree ownership and which elements are tracked
