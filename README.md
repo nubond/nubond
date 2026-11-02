@@ -164,6 +164,7 @@ Production apps built with nuBond:
 A full-featured image editor that opens and saves PSD/PSB files with layers, masks, effects and editable type intact. It ships 70 tools, 27 dockable panels, over 120 filters (Camera Raw and Lens Correction among them), 22 adjustments usable as adjustment layers, layer styles, smart selection, retouching, Liquify / Puppet Warp transforms, and export to PNG, JPG, WebP, SVG, animated GIF, APNG, MP4 and more. No account, no ads, no cloud — it works completely offline.
 
 <a href="https://apps.microsoft.com/detail/9NMZ6B6795JK"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" height="56" /></a>
+<a href="https://lamella-studio.com/"><img src="https://workstation-master.com/assets/open_in_web_dark.png" alt="Open in WEB" height="56" /></a>
 
 <a href="https://workstation-master.com/lamella-studio.html"><img src="https://workstation-master.com/assets/lamellastudio/win11/1.png" alt="Lamella Studio screenshot" /></a>
 
