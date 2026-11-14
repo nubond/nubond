@@ -1,5 +1,7 @@
 import { Attributes } from '../../../src/nElement/handlers/Attributes';
 import { Constants } from '../../../src/Constants';
+import { ContextBinder } from '../../../src/ContextBinder';
+import { Environment } from '../../../src/Environment';
 
 describe('Attributes handler', () => {
     function createElementWithAttrs(bindings: Record<string, string>, regularAttrs?: Record<string, string>): Element {
@@ -229,7 +231,7 @@ describe('Attributes handler', () => {
     });
 
     describe('ready attributes', () => {
-        it('should not track a ready attribute already present on the element as a system or regular attribute', () => {
+        it('should track a ready attribute already present on the element as a system attribute, not a regular one (L-19)', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IF_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
             const el = document.createElement('div');
@@ -237,8 +239,10 @@ describe('Attributes handler', () => {
 
             const handler = new Attributes(el, () => false);
 
-            expect(handler.getAll(undefined, true).size).toBe(0);
+            expect([...handler.getAll(undefined, true).keys()]).toEqual([`${Constants.IF_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`]);
             expect(handler.has(readyAttr)).toBe(false);
+            expect(handler.getAll().size).toBe(0);
+            expect(() => handler.set(readyAttr, 'x')).toThrow(/system/);
             expect(consoleSpy).not.toHaveBeenCalled();
 
             consoleSpy.mockRestore();
@@ -308,10 +312,10 @@ describe('Attributes handler', () => {
             expect(Attributes.isNApplicable(el)).toBe(true);
         });
 
-        it('should return false for text nodes', () => {
-            const textNode = document.createTextNode('hello') as unknown as Element;
-
-            expect(Attributes.isNApplicable(textNode)).toBe(false);
+        // The nodeType guard was removed: the only caller (TreeBuilder) walks firstElementChild /
+        // nextElementSibling, so isNApplicable is only ever given elements.
+        it('should return false for an element without attributes', () => {
+            expect(Attributes.isNApplicable(document.createElement('div'))).toBe(false);
         });
     });
 
@@ -729,6 +733,240 @@ describe('Attributes handler', () => {
             expect(consoleSpy).toHaveBeenCalled();
             expect(handler.nExpression!.has('once')).toBe(true);
             consoleSpy.mockRestore();
+        });
+    });
+
+    describe('L-21: nb-in / nb-in-ref alone do not make an element N-applicable', () => {
+        afterEach(() => {
+            Constants.changeCompliancyWithW3C(false);
+        });
+
+        it.each(['nb-in:label', 'nb-in-ref:label'])('%s alone does not make an element N-applicable', (name) => {
+            const el = document.createElement('div');
+            el.setAttribute(name, 'this.label');
+
+            expect(Attributes.isNApplicable(el)).toBe(false);
+        });
+
+        it.each(['nb-in:label', 'nb-in-ref:label'])('%s is still read as a system attribute next to nb-container', (name) => {
+            const el = document.createElement('div');
+            el.setAttribute('nb-container', '@child');
+            el.setAttribute(name, 'this.label');
+            const attrs = new Attributes(el, () => false);
+
+            expect(Attributes.isNApplicable(el)).toBe(true);
+            const handlerName = name.slice('nb-'.length, name.indexOf(':'));
+            expect(attrs.has(handlerName, true, true)).toBe(true);
+            expect([...attrs.getAll(handlerName, true)]).toEqual([[handlerName + ':label', 'this.label']]);
+        });
+
+        it('nb-attr:nb-in:* is rejected as a system attribute', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            const el = document.createElement('div');
+            el.setAttribute('nb-attr:nb-in:label', 'this.label');
+            const attrs = new Attributes(el, () => false);
+
+            expect(attrs.hasNExpression).toBe(false);
+            expect(consoleSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, 'system (nb-in:label) attribute changes is not allowed');
+            consoleSpy.mockRestore();
+        });
+
+        it('follows the W3C prefix and separator', () => {
+            Constants.changeCompliancyWithW3C(true);
+
+            const alone = document.createElement('div');
+            alone.setAttribute('data-nb-in--label', 'this.label');
+            expect(Attributes.isNApplicable(alone)).toBe(false);
+
+            const withContainer = document.createElement('div');
+            withContainer.setAttribute('data-nb-container', '@child');
+            withContainer.setAttribute('data-nb-in-ref--label', 'this.label');
+            const attrs = new Attributes(withContainer, () => false);
+            expect(attrs.has(Constants.IN_REF_HANDLER_ATTRIBUTE_NAME, true, true)).toBe(true);
+            expect([...attrs.getAll(Constants.IN_REF_HANDLER_ATTRIBUTE_NAME, true)]).toEqual([['in-ref--label', 'this.label']]);
+        });
+
+        it('an entity still receives nb-in, and a stray nb-in is never evaluated', () => {
+            jest.useFakeTimers();
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            try {
+                let received: any;
+                class L21Child {
+                    public label: any;
+                    public onInputsRefreshDone(): void { received = this.label; }
+                }
+                Environment.addContainer('L21Child', L21Child as any, [], '<span></span>', undefined);
+
+                let reads = 0;
+                const host = { text: 'hello', read: () => { reads++; return 'x'; } };
+                const root = document.createElement('div');
+                root.innerHTML = '<span nb-in:label="this.read()"></span>' +
+                                 '<span nb-value="this.text" nb-in-ref:label="this.read()"></span>' +
+                                 '<div nb-container="@L21Child" nb-in:label="this.text"></div>';
+                document.body.appendChild(root);
+
+                const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined,
+                                                 () => false, () => undefined, () => undefined);
+                binder.bind(root, host as any, true, false);
+                jest.runAllTimers();
+
+                expect(received).toBe('hello');
+                expect(reads).toBe(0);
+                expect(root.children[1].textContent).toBe('hello');
+                // known gap: a stray nb-in is still ignored without a diagnostic
+                expect(consoleSpy).not.toHaveBeenCalled();
+
+                binder.dispose();
+                root.remove();
+            } finally {
+                consoleSpy.mockRestore();
+                jest.useRealTimers();
+            }
+        });
+    });
+    describe('L-16..L-19: nb-* attribute classification', () => {
+        let errorSpy: jest.SpyInstance;
+
+        function create(attrs: Record<string, string>): { el: Element; handler: Attributes } {
+            const el = document.createElement('div');
+            for (const [name, value] of Object.entries(attrs)) {
+                el.setAttribute(name, value);
+            }
+            return { el, handler: new Attributes(el, () => false) };
+        }
+
+        const errors = (): Array<string> => errorSpy.mock.calls.map(call => String(call[call.length - 1]));
+
+        beforeEach(() => {
+            errorSpy = jest.spyOn(console, 'error').mockImplementation();
+        });
+
+        afterEach(() => {
+            errorSpy.mockRestore();
+            Constants.changeCompliancyWithW3C(false);
+        });
+
+        describe('L-16: prefix handlers match only with their separator', () => {
+            it.each(['nb-index', 'nb-info', 'nb-in-reference', 'nb-repeated', 'nb-variant', 'nb-events', 'nb-property', 'nb-attribute', 'nb-aspects'])(
+                '%s alone does not make an element N-applicable', (name) => {
+                    const el = document.createElement('div');
+                    el.setAttribute(name, 'x');
+                    expect(Attributes.isNApplicable(el)).toBe(false);
+                });
+
+            it('keeps look-alike names as regular attributes, so they can be changed at runtime', () => {
+                const { handler } = create({ 'nb-value': 'this.x', 'nb-index': '1', 'nb-repeated': 'a', 'nb-variant': 'b' });
+
+                expect([...handler.getAll().keys()]).toEqual(['nb-index', 'nb-repeated', 'nb-variant']);
+                expect([...handler.getAll(undefined, true).keys()]).toEqual(['value']);
+                expect(() => handler.set('nb-index', '2')).not.toThrow();
+                expect(errors()).toEqual([]);
+            });
+
+            it('still recognizes the real prefix handlers, including plain nb-repeat', () => {
+                const { el, handler } = create({ 'nb-repeat': 'this.items', 'nb-repeat:row': 'this.rows', 'nb-in:x': 'this.a', 'nb-in-ref:y': 'this.b', 'nb-var:v': '1' });
+
+                expect(Attributes.isNApplicable(el)).toBe(true);
+                expect([...handler.getAll(undefined, true).keys()]).toEqual(['repeat', 'repeat:row', 'in:x', 'in-ref:y', 'var:v']);
+                expect(handler.getAll().size).toBe(0);
+                expect(errors()).toEqual([]);
+            });
+
+            it('follows the W3C prefix and separator', () => {
+                Constants.changeCompliancyWithW3C(true);
+                const { handler } = create({ 'data-nb-index': '1', 'data-nb-in--x': 'this.a', 'data-nb-repeat': 'this.items' });
+
+                expect([...handler.getAll().keys()]).toEqual(['data-nb-index']);
+                expect([...handler.getAll(undefined, true).keys()]).toEqual(['in--x', 'repeat']);
+            });
+        });
+
+        describe('L-17: unknown nb-* attributes are kept as regular attributes', () => {
+            it('keeps them with and without a value, without an error', () => {
+                const { handler } = create({ 'nb-value': 'this.x', 'nb-custom': 'x', 'nb-flag': '' });
+
+                expect(handler.getAll().get('nb-custom')).toBe('x');
+                expect(handler.getAll().get('nb-flag')).toBe('');
+                expect(errors()).toEqual([]);
+            });
+
+            it('removes an unknown nb-* attribute from the DOM on commit', () => {
+                const { el, handler } = create({ 'nb-value': 'this.x', 'nb-custom': 'x' });
+
+                handler.remove('nb-custom');
+                handler.commit();
+
+                expect(el.hasAttribute('nb-custom')).toBe(false);
+            });
+
+            it('still reports an empty known handler', () => {
+                create({ 'nb-value': '' });
+                expect(errors()).toEqual(['incorrect binding found, nb-value attributes should have value.']);
+            });
+        });
+
+        describe('L-18: bare prefix handlers are reported', () => {
+            it.each(['nb-in', 'nb-in-ref', 'nb-var', 'nb-event', 'nb-prop', 'nb-attr', 'nb-aspect'])('%s without a name logs an error', (name) => {
+                const { handler } = create({ 'nb-value': 'this.x', [name]: 'this.y' });
+
+                expect(errors()).toHaveLength(1);
+                expect(errors()[0]).toMatch(new RegExp(`^incorrect binding found, ${name} should have meta value`));
+                expect(handler.getAll().has(name)).toBe(false);
+            });
+
+            it('does not report a plain nb-repeat', () => {
+                create({ 'nb-repeat': 'this.items' });
+                expect(errors()).toEqual([]);
+            });
+
+            it('reports the W3C spelling too', () => {
+                Constants.changeCompliancyWithW3C(true);
+                create({ 'data-nb-in': 'this.a' });
+                expect(errors()[0]).toMatch(/^incorrect binding found, data-nb-in should have meta value/);
+            });
+        });
+
+        describe('L-19: ready markers are never regular attributes', () => {
+            it('keeps every *-ready marker out of getAll()', () => {
+                const { handler } = create({ 'nb-if': 'this.x', 'nb-if-ready': '', 'nb-repeat-ready': '' });
+
+                expect(handler.getAll().size).toBe(0);
+                expect([...handler.getAll(undefined, true).keys()]).toEqual(['if', 'if-ready', 'repeat-ready']);
+                expect(errors()).toEqual([]);
+            });
+
+            it('keeps empty framework markers (nb-projection, nb-project-to, nb-component) out of getAll(), but keeps an empty unknown one', () => {
+                const { handler } = create({ 'nb-value': 'this.x', 'nb-projection': '', 'nb-project-to': '', 'nb-component': '', 'nb-flag': '' });
+
+                expect([...handler.getAll().keys()]).toEqual(['nb-flag']);
+                // valueless framework markers are recorded as system attributes (the Projection
+                // handler reads nb-projection through has(..., true), also for the default slot)
+                expect([...handler.getAll(undefined, true).keys()]).toEqual(['value', 'projection', 'project-to', 'component']);
+                expect(errors()).toEqual([]);
+            });
+        });
+
+        describe('nb-attr: targets that name framework attributes', () => {
+            const bindsTarget = (target: string): boolean => {
+                const { handler } = create({ [`nb-attr:${target}`]: 'this.v' });
+                return handler.nExpression?.has(target) === true;
+            };
+
+            it.each(['nb-value', 'nb-repeat', 'nb-var:x', 'nb-in:x', 'nb-in-ref:y', 'nb-projection', 'nb-component'])(
+                'rejects nb-attr:%s as a system attribute', (target) => {
+                    expect(bindsTarget(target)).toBe(false);
+                    expect(errors()).toEqual([`system (${target}) attribute changes is not allowed`]);
+                });
+
+            it.each(['nb-index', 'nb-variant', 'nb-custom'])('binds the look-alike nb-attr:%s (L-16)', (target) => {
+                expect(bindsTarget(target)).toBe(true);
+                expect(errors()).toEqual([]);
+            });
+
+            it.each(['nb-in', 'nb-in-ref', 'nb-var', 'nb-event', 'nb-prop', 'nb-attr', 'nb-aspect'])('rejects a bare prefix name nb-attr:%s as a system attribute', (target) => {
+                expect(bindsTarget(target)).toBe(false);
+                expect(errors()).toEqual([`system (${target}) attribute changes is not allowed`]);
+            });
         });
     });
 });

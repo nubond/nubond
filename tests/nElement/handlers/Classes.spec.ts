@@ -658,6 +658,26 @@ describe('Classes handler', () => {
             expect(arr.rawExpression[0].expression).toBe("this.fn('a;b')");
             expect(errorSpy).not.toHaveBeenCalled();
         });
+
+        it('should not split on an unescaped ";" inside a string literal of a condition value (L-15)', () => {
+            const el = createElementWithAttr(`{label: this.fn('a;b'); other: this.x === "c;d"}`);
+            const handler = new Classes(el, new Attributes(el, () => false), () => hideClassName);
+
+            const cond = handler.nExpression as unknown as { rawExpression: Map<string, { expression: string }> };
+            expect(cond.rawExpression.size).toBe(2);   // pre-fix: broken entries + "incorrect conditional class expression" errors
+            expect(cond.rawExpression.get('label')!.expression).toBe(`this.fn('a;b')`);
+            expect(cond.rawExpression.get('other')!.expression).toBe(`this.x === "c;d"`);
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should not split on an unescaped ";" inside a string literal of an array entry (L-15)', () => {
+            const el = createElementWithAttr("[this.fn('a;b'); `x;${this.y}`]");
+            const handler = new Classes(el, new Attributes(el, () => false), () => hideClassName);
+
+            const arr = handler.nExpression as unknown as { rawExpression: Array<{ expression: string }> };
+            expect(arr.rawExpression.map(entry => entry.expression)).toEqual(["this.fn('a;b')", '`x;${this.y}`']);
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
     });
 
     describe('commit', () => {

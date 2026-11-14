@@ -106,16 +106,17 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
                 const triggerReadyCallBacks = () => {
                     //to unwrap error if any
                     setTimeout(() => {
-                        for (const el of this._readyCallBacks) {
+                        const readyCallBacks = this._readyCallBacks;
+                        this._readyCallBacks = [];
+                        this._fetchInProgress = false;
+
+                        for (const el of readyCallBacks) {
                             try {
                                 el(true);
-                            } catch(ex) {
+                            } catch (ex) {
                                 Console.error(el, `Aspect readyCallBack failed with exception: ${ex}`);
                             }
                         }
-
-                        this._readyCallBacks = [];
-                        this._fetchInProgress = false;
                     });
                 };
                 
@@ -136,11 +137,13 @@ class TemplateEntityWithNameMetaData extends BaseTemplateEntityMetaData {
 
                         Console.error(errorMessage);
                         
-                        if (this._getShowDebugInfo()) {
-                            this.setStyleTemplate(errorMessage);
+                        try {
+                            if (this._getShowDebugInfo()) {
+                                this.setStyleTemplate(errorMessage);
+                            }
+                        } finally {
+                            triggerReadyCallBacks();
                         }
-
-                        triggerReadyCallBacks();
                     });
                 } else {
                     triggerReadyCallBacks();

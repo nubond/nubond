@@ -12,7 +12,7 @@ if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
 
 describe('ContextBinder', () => {
     function createBinder(config?: any): ContextBinder {
-        return new ContextBinder(
+        return new ContextBinder(null, null, 
             config,                    // contextConfig
             false,                     // pessimisticChangeDetectionStrategyDefault
             () => 'nb-hidden',         // getHiddenClassName
@@ -92,11 +92,11 @@ describe('ContextBinder', () => {
 
         it('should set rootNElement after bind', () => {
             const binder = createBinder();
-            expect(binder.rootNElement).toBeUndefined();
+            expect((binder as any).rootNElement).toBeUndefined();
 
             const el = document.createElement('div');
             binder.bind(el, {} as any, false, false);
-            expect(binder.rootNElement).toBeDefined();
+            expect((binder as any).rootNElement).toBeDefined();
         });
     });
 
@@ -137,7 +137,7 @@ describe('ContextBinder', () => {
             const el = document.createElement('div');
             binder.bind(el, {} as any, false, false);
 
-            const disposeSpy = jest.spyOn(binder.rootNElement as any, 'dispose');
+            const disposeSpy = jest.spyOn((binder as any).rootNElement as any, 'dispose');
             binder.dispose();
             expect(disposeSpy).toHaveBeenCalled();
         });
@@ -203,7 +203,7 @@ describe('ContextBinder', () => {
             const el = document.createElement('div');
             binder.bind(el, {} as any, false, false);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             detectSpy.mockClear();
 
             binder.detectChanges();
@@ -282,13 +282,13 @@ describe('ContextBinder', () => {
 
     describe('detector property interception', () => {
         function createDetectorBinder(detectors: string[]): ContextBinder {
-            return new ContextBinder(
+            return new ContextBinder(null, null, 
                 undefined,
                 false,
                 () => 'nb-hidden',
                 undefined,
                 () => false,
-                () => detectors,
+                () => new Set(detectors),
                 () => undefined
             );
         }
@@ -313,7 +313,7 @@ describe('ContextBinder', () => {
 
             binder.bind(el, context, false, false);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             detectSpy.mockClear();
 
             context.count = 10;
@@ -333,7 +333,7 @@ describe('ContextBinder', () => {
 
                 binder.bind(el, context, false, false);
 
-                const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+                const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
                 detectSpy.mockClear();
 
                 context.when = new Date('still invalid');
@@ -348,6 +348,31 @@ describe('ContextBinder', () => {
             }
         });
 
+        // L-50: Helpers.equals(null, Object.create(null)) used to be true, so this transition was not a change
+        it('should trigger detectChanges when a detector goes from null to an empty null-prototype object and back (L-50)', () => {
+            jest.useFakeTimers();
+            try {
+                const binder = createDetectorBinder(['lookup']);
+                const el = document.createElement('div');
+                const context = { lookup: null } as any;
+
+                binder.bind(el, context, false, false);
+
+                const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
+                detectSpy.mockClear();
+
+                context.lookup = Object.create(null);
+                jest.runAllTimers();
+                expect(detectSpy).toHaveBeenCalledTimes(1);   // pre-fix: 0
+
+                context.lookup = null;
+                jest.runAllTimers();
+                expect(detectSpy).toHaveBeenCalledTimes(2);   // pre-fix: 0
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
         it('should NOT trigger detectChanges when setting same value', () => {
             jest.useFakeTimers();
             const binder = createDetectorBinder(['count']);
@@ -356,7 +381,7 @@ describe('ContextBinder', () => {
 
             binder.bind(el, context, false, false);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             detectSpy.mockClear();
 
             context.count = 42;
@@ -454,7 +479,7 @@ describe('ContextBinder', () => {
 
             binder.bind(el, context, false, false);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             detectSpy.mockClear();
 
             // No auto-trigger should have happened for undefined val
@@ -488,7 +513,7 @@ describe('ContextBinder', () => {
 
     describe('eventer property interception', () => {
         function createEventerBinder(eventers: Map<string, string>): ContextBinder {
-            return new ContextBinder(
+            return new ContextBinder(null, null, 
                 undefined,
                 false,
                 () => 'nb-hidden',
@@ -747,7 +772,7 @@ describe('ContextBinder', () => {
 
             binder.bind(el, context, false, true);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
 
             jest.runAllTimers();
 
@@ -764,7 +789,7 @@ describe('ContextBinder', () => {
             // Call bind without the debounced parameter - exercises the default-arg branch
             binder.bind(el, context, false);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             jest.runAllTimers();
 
             expect(detectSpy).toHaveBeenCalled();
@@ -774,7 +799,7 @@ describe('ContextBinder', () => {
 
     describe('pessimistic strategy', () => {
         function createPessimisticBinder(): ContextBinder {
-            return new ContextBinder(
+            return new ContextBinder(null, null, 
                 { pessimisticChangeDetectionStrategy: true } as any,
                 false,
                 () => 'nb-hidden',
@@ -791,12 +816,12 @@ describe('ContextBinder', () => {
             binder.bind(el, {} as any, false, false);
 
             let callCount = 0;
-            const origDetect = (binder.rootNElement as any).detectChanges.bind(binder.rootNElement);
-            jest.spyOn(binder.rootNElement as any, 'detectChanges').mockImplementation((ctx: any) => {
+            const origDetect = ((binder as any).rootNElement as any).detectChanges.bind((binder as any).rootNElement);
+            jest.spyOn((binder as any).rootNElement as any, 'detectChanges').mockImplementation((ctx: any) => {
                 origDetect(ctx);
             });
 
-            Object.defineProperty(binder.rootNElement!, 'isStable', {
+            Object.defineProperty((binder as any).rootNElement!, 'isStable', {
                 get: () => {
                     callCount++;
                     return callCount > 2;
@@ -817,7 +842,7 @@ describe('ContextBinder', () => {
             const el = document.createElement('div');
             binder.bind(el, {} as any, false, false);
 
-            Object.defineProperty(binder.rootNElement!, 'isStable', {
+            Object.defineProperty((binder as any).rootNElement!, 'isStable', {
                 get: () => false
             });
 
@@ -964,7 +989,7 @@ describe('ContextBinder', () => {
             const el = document.createElement('div');
             binder.bind(el, {} as any, false, false);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             detectSpy.mockClear();
 
             binder.disableChangeDetection();
@@ -979,7 +1004,7 @@ describe('ContextBinder', () => {
     describe('htmlSanitizer fallback to global', () => {
         it('should fall back to global htmlSanitizer when config has none', () => {
             const globalSanitizer = jest.fn((html: string) => `<safe>${html}</safe>`);
-            const binder = new ContextBinder(
+            const binder = new ContextBinder(null, null, 
                 { pessimisticChangeDetectionStrategy: false } as any,
                 false,
                 () => 'nb-hidden',
@@ -996,7 +1021,7 @@ describe('ContextBinder', () => {
 
         it('should fall back to global htmlSanitizer when contextConfig is undefined', () => {
             const globalSanitizer = jest.fn((html: string) => `<safe>${html}</safe>`);
-            const binder = new ContextBinder(
+            const binder = new ContextBinder(null, null, 
                 undefined,
                 false,
                 () => 'nb-hidden',
@@ -1028,7 +1053,7 @@ describe('ContextBinder', () => {
 
         it('should sanitize nb-html through the global sanitizer when contextConfig is undefined', () => {
             const globalSanitizer = jest.fn((html: string) => html.replace(/<img[^>]*>/g, ''));
-            const binder = new ContextBinder(
+            const binder = new ContextBinder(null, null, 
                 undefined,
                 false,
                 () => 'nb-hidden',
@@ -1051,7 +1076,7 @@ describe('ContextBinder', () => {
         });
 
         it('should be undefined when neither config nor global has sanitizer', () => {
-            const binder = new ContextBinder(
+            const binder = new ContextBinder(null, null, 
                 { pessimisticChangeDetectionStrategy: false } as any,
                 false,
                 () => 'nb-hidden',
@@ -1377,7 +1402,7 @@ describe('ContextBinder', () => {
             const context: any = { text: 'v1' };
             const { binder } = bindTree('<span data-out nb-value="this.text"></span>', context);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             detectSpy.mockClear();
 
             binder.disableChangeDetection();
@@ -1391,7 +1416,7 @@ describe('ContextBinder', () => {
             const context: any = { text: 'v1' };
             const { binder } = bindTree('<span data-out nb-value="this.text"></span>', context);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             detectSpy.mockClear();
 
             binder.disableChangeDetection();
@@ -1412,7 +1437,7 @@ describe('ContextBinder', () => {
             const context: any = { text: 'v1' };
             const { binder } = bindTree('<span data-out nb-value="this.text"></span>', context);
 
-            const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+            const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
             detectSpy.mockClear();
 
             binder.disableChangeDetection();
@@ -1434,7 +1459,7 @@ describe('ContextBinder', () => {
             const context: any = { text: 'v1' };
             const { binder } = bindTree('<span data-out nb-value="this.text"></span>', context);
 
-            const rootNElement = binder.rootNElement as any;
+            const rootNElement = (binder as any).rootNElement as any;
             const detectSpy = jest.spyOn(rootNElement, 'detectChanges');
             detectSpy.mockClear();
 
@@ -1481,7 +1506,7 @@ describe('ContextBinder', () => {
             binder.bind(root, host, true, false);
             jest.runAllTimers();
 
-            const childBinder = (binder.rootNElement as any)._children[0]._disposeSequence.find((handler: any) => handler instanceof Container).contextBinder;
+            const childBinder = ((binder as any).rootNElement as any)._children[0]._disposeSequence.find((handler: any) => handler instanceof Container).contextBinder;
 
             return { binder, host, childContext, childBinder, root };
         }
@@ -1552,7 +1577,7 @@ describe('ContextBinder', () => {
         let errorSpy: jest.SpyInstance;
 
         function createPessimisticBinder(): ContextBinder {
-            return new ContextBinder(undefined, true, () => 'nb-hidden', undefined,
+            return new ContextBinder(null, null, undefined, true, () => 'nb-hidden', undefined,
                                      () => false, () => undefined, () => undefined);
         }
 
@@ -1665,16 +1690,46 @@ describe('ContextBinder', () => {
             root.remove();
         });
 
-        it('pessimistic: an unregistered name no longer spins the stabilization loop (still logs once per cycle)', () => {
-            // characterization: the not-found branch resets the stored names, so the next bind
-            // retries the lookup - one "not found" per cycle - but it reports no change, so
-            // pessimistic mode no longer re-runs it up to the 10-cycle cap
+        it('pessimistic: an unregistered name logs once and then settles (no per-cycle retry)', () => {
+            // the not-found branch now remembers the failed name (_previousContextName = name), so later
+            // cycles see an unchanged name: no re-lookup, no second "not found", no fallback rebuild, and
+            // pessimistic mode takes a single pass per trigger. A name that failed is looked up again only
+            // when it changes (dependencies are declared up front - L-32 / R2-9).
             const { binder, root } = build('R64NotRegistered', true);
+            expect(notFoundErrors()).toBe(1);
+            const fallback = root.querySelector('[data-fallback]');
+            expect(fallback).not.toBeNull();
             errorSpy.mockClear();
 
             expect(trigger(binder)).toBe(1);
-            expect(notFoundErrors()).toBe(1);
+            expect(trigger(binder)).toBe(1);
+            expect(notFoundErrors()).toBe(0);
             expect(stabilizeErrors()).toBe(0);
+            expect(root.querySelector('[data-fallback]')).toBe(fallback);
+
+            root.remove();
+        });
+
+        it('optimistic: a failed name -> a different failed name logs again; back to a real name renders it', () => {
+            Environment.addContainer('R64Real', class { } as any, [], '<span data-child>child</span>', undefined);
+
+            const { binder, host, root } = build('R64Real', false);
+            expect(root.querySelector('[data-child]')).not.toBeNull();
+
+            host.view = 'R64Missing1';
+            errorSpy.mockClear();
+            trigger(binder);
+            expect(notFoundErrors()).toBe(1);
+            expect(root.querySelector('[data-fallback]')).not.toBeNull();
+
+            host.view = 'R64Missing2';
+            trigger(binder);
+            expect(notFoundErrors()).toBe(2);
+
+            host.view = 'R64Real';
+            trigger(binder);
+            expect(root.querySelector('[data-child]')).not.toBeNull();
+            expect(root.querySelector('[data-fallback]')).toBeNull();
 
             root.remove();
         });
@@ -1698,8 +1753,8 @@ describe('ContextBinder', () => {
         }
 
         function build(context: any, detectors: string[], execs: string[], values: string[] = [], pessimistic = false): { binder: ContextBinder; root: Element; passes: () => number } {
-            const binder = new ContextBinder(undefined, pessimistic, () => 'nb-hidden', undefined,
-                                             () => false, () => detectors, () => undefined);
+            const binder = new ContextBinder(null, null, undefined, pessimistic, () => 'nb-hidden', undefined,
+                                             () => false, () => new Set(detectors), () => undefined);
             const root = document.createElement('div');
 
             for (const exec of execs) {
@@ -2257,7 +2312,7 @@ describe('RootContextBinder', () => {
 
         binder.bind(el, {} as any, false);
         expect(binder.context).toBeDefined();
-        expect(binder.rootNElement).toBeDefined();
+        expect((binder as any).rootNElement).toBeDefined();
 
         document.body.removeChild(el);
     });
@@ -2293,7 +2348,7 @@ describe('RootContextBinder', () => {
 
         binder.bind(el, {} as any, false);
 
-        const detectSpy = jest.spyOn(binder.rootNElement as any, 'detectChanges');
+        const detectSpy = jest.spyOn((binder as any).rootNElement as any, 'detectChanges');
         detectSpy.mockClear();
 
         binder.detectChanges();

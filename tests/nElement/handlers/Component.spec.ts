@@ -13,6 +13,8 @@ describe('Component handler', () => {
     const mockGetSubscriptions = () => ({} as any);
     const mockGetEventDispatcher = () => ({} as any);
     const mockIsVisible = () => true;
+    const mockParentBinder = {} as any;
+    const mockParentNElement = {} as any;
 
     /** Mock Environment.components for the handler to use */
     function mockComponentsEnv(opts: {
@@ -49,7 +51,7 @@ describe('Component handler', () => {
         const el = document.createElement(tagName);
         (el as any).$bind = jest.fn();
         const attrs = new Attributes(el, () => false);
-        const handler = new Component(el, attrs, mockGetManipulations, mockGetSubscriptions,
+        const handler = new Component(el, attrs, mockParentBinder, mockParentNElement, mockGetManipulations, mockGetSubscriptions,
                                       mockGetEventDispatcher, mockIsVisible);
         return { el, attrs, handler };
     }
@@ -61,7 +63,7 @@ describe('Component handler', () => {
     it('should have no expression for unregistered element', () => {
         const el = document.createElement('div');
         const attrs = new Attributes(el, () => false);
-        const handler = new Component(el, attrs, mockGetManipulations, mockGetSubscriptions, 
+        const handler = new Component(el, attrs, mockParentBinder, mockParentNElement, mockGetManipulations, mockGetSubscriptions, 
                                       mockGetEventDispatcher, mockIsVisible);
 
         expect(handler.hasNExpression).toBe(false);
@@ -73,10 +75,10 @@ describe('Component handler', () => {
             expect(Component.isNApplicable(el)).toBe(false);
         });
 
-        it('should return false for non-element node', () => {
-            const textNode = document.createTextNode('text');
-            // Text nodes have nodeType 3, not 1
-            expect(Component.isNApplicable(textNode as any)).toBe(false);
+        // The nodeType guard was removed: TreeBuilder only hands elements to isNApplicable.
+        it('should return false for an unregistered tag', () => {
+            mockComponentsEnv({ has: false });
+            expect(Component.isNApplicable(document.createElement('not-registered'))).toBe(false);
         });
 
         it('should return true for a registered component element', () => {
@@ -126,7 +128,7 @@ describe('Component handler', () => {
             const el = document.createElement('my-widget');
             (el as any).$bind = jest.fn();
             const attrs = new Attributes(el, () => false);
-            const handler = new Component(el, attrs, mockGetManipulations, mockGetSubscriptions,
+            const handler = new Component(el, attrs, mockParentBinder, mockParentNElement, mockGetManipulations, mockGetSubscriptions,
                                           mockGetEventDispatcher, mockIsVisible);
 
             handler.commit(); // first commit

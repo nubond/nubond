@@ -89,7 +89,7 @@ describe('Components', () => {
     });
 
     it('should return undefined for unknown component instantiateBinder', () => {
-        expect(components.instantiateBinder('nonexistent')).toBeUndefined();
+        expect(components.instantiateBinder('nonexistent', null as any, null as any)).toBeUndefined();
     });
 
     it('should handle component with styles', () => {
@@ -119,7 +119,7 @@ describe('Components', () => {
             '<div>template</div>', undefined, undefined,
             binderCreator, () => undefined, () => undefined, () => undefined);
 
-        const binder = components.instantiateBinder('binder-comp');
+        const binder = components.instantiateBinder('binder-comp', null as any, null as any);
         expect(binder).toBe(mockBinder);
     });
 
@@ -686,12 +686,110 @@ describe('Components', () => {
             expect(sheets.filter(el => el === sheet).length).toBe(1);
         });
 
+        // L-40: an unregistered (or never-fetchable) adopted-style name used to be skipped without a word
+        describe('L-40: unknown adopted-style names are reported', () => {
+            //the file-wide beforeEach spies on console.error; Console.error prefixes the display name
+            const adoptedStyleErrors = () => (console.error as jest.Mock).mock.calls
+                                                .filter(call => String(call[call.length - 1]).includes('adoptedStyle'));
+
+            it('should log one error naming the missing style, with the component host', () => {
+                adoptedStyles.add('l40-ready', '.r { color: red; }', () => undefined);
+                const sheet = adoptedStyles.get('l40-ready')!;
+
+                const shadowRoot = bindComponent(['l40-ready', 'l40-unregistered']);
+
+                expect(adoptedStyleErrors()).toEqual([
+                    [`${Constants.DISPLAY_NAME}: `, shadowRoot.host, 'unable to get l40-unregistered adoptedStyle for component.']
+                ]);
+                expect([...shadowRoot.adoptedStyleSheets]).toContain(sheet);
+            });
+
+            it('should NOT log for registered styles, ready or still loading', async () => {
+                adoptedStyles.add('l40-sync', '.s { color: red; }', () => undefined);
+                adoptedStyles.add('l40-async', { get: () => Promise.resolve('.a { color: blue; }') }, () => undefined);
+
+                bindComponent(['l40-sync', 'l40-async']);
+                //tryPrepare defers its ready callbacks through setTimeout
+                await new Promise(resolve => setTimeout(resolve, 0));
+                await new Promise(resolve => setTimeout(resolve, 0));
+
+                expect(adoptedStyleErrors()).toEqual([]);
+            });
+        });
+
         it('should adopt only the framework stylesheets when every name is unregistered', () => {
             const sheets = [...bindComponent(['r35-nope-1', 'r35-nope-2']).adoptedStyleSheets];
 
             expect(sheets.length).toBe(2);
             expect(sheets[0]).toBe(adoptedStyles.processingHideCSSStyleSheet);
             expect(sheets[1]).toBe(adoptedStyles.hideCSSStyleSheet);
+        });
+    });
+
+    describe('L-52a: with showDebugInfo on, a throwing sanitizer on the error template still releases the callbacks', () => {
+        const flushPromises = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+        const throwingSanitizer = () => (_text: string): string => { throw new Error('sanitize-boom'); };
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+            (globalThis as any).fetch = jest.fn().mockResolvedValue({
+                ok: true,
+                text: () => Promise.resolve('fetched content')
+            });
+            components = new Components(injectables, adoptedStyles, () => true);
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+            (globalThis as any).fetch = undefined;
+        });
+
+        it('component html', async () => {
+            class MyCtx implements IComponentContext {}
+            components.add('l52-comp', MyCtx as any, [], undefined, '/l52.html', undefined, undefined,
+                mockBinderCreator, throwingSanitizer, () => undefined, () => undefined);
+
+            const cb = jest.fn();
+            expect(components.tryPrepare('l52-comp', cb)).toBe(true);
+            await flushPromises();
+            jest.runAllTimers();
+
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `,
+                "fetchData errorCallBack failed for template '/l52.html' with exception: Error: sanitize-boom");
+            expect(cb).toHaveBeenCalledWith(true);
+            expect(components.isReady('l52-comp')).toBe(false);
+
+            // Not stuck in progress: the next attempt fetches again.
+            const cb2 = jest.fn();
+            expect(components.tryPrepare('l52-comp', cb2)).toBe(true);
+            await flushPromises();
+            jest.runAllTimers();
+            expect(cb2).toHaveBeenCalledWith(true);
+            expect((globalThis as any).fetch).toHaveBeenCalledTimes(2);
+        });
+
+        it('component style', async () => {
+            class MyCtx implements IComponentContext {}
+            components.add('l52-style-comp', MyCtx as any, [], undefined, '<div>html ready</div>', '/l52.css', undefined,
+                mockBinderCreator, () => undefined, throwingSanitizer, () => undefined);
+
+            const cb = jest.fn();
+            expect(components.tryPrepare('l52-style-comp', cb)).toBe(true);
+            await flushPromises();
+            jest.runAllTimers();
+
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `,
+                "fetchData errorCallBack failed for template '/l52.css' with exception: Error: sanitize-boom");
+            expect(cb).toHaveBeenCalledWith(true);
+            expect(components.isReady('l52-style-comp')).toBe(false);
+
+            // Not stuck in progress: the next attempt fetches again.
+            const cb2 = jest.fn();
+            expect(components.tryPrepare('l52-style-comp', cb2)).toBe(true);
+            await flushPromises();
+            jest.runAllTimers();
+            expect(cb2).toHaveBeenCalledWith(true);
+            expect((globalThis as any).fetch).toHaveBeenCalledTimes(2);
         });
     });
 });

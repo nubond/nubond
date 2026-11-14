@@ -2,13 +2,14 @@ import { IExpressionDetails } from '../../../interfaces/expression/IExpressionDe
 import { IContextInExpressionDetails } from '../../../interfaces/nElement/bindings/IContextBaseBindings';
 import { IContextBaseBindings } from '../../../interfaces/nElement/bindings/IContextBaseBindings';
 
+import { INElement } from '../../../interfaces/nElement/INElement';
 import { IHandler } from '../../../interfaces/nElement/IHandler';
 
 import { IDisposable } from '../../../interfaces/IDisposable'
 
 import { InitializableBase } from './InitializableBase';
 
-import { IContextBinder } from '../../../ContextBinder';
+import { IContextBinder } from '../../../interfaces/contextBinders/IContextBinder';
 
 import { Attributes } from '../Attributes';
 
@@ -51,6 +52,9 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
     protected readonly isElementVisible: (() => boolean) | undefined;
     protected readonly notifyContextAttached: ((context: object) => void) | undefined;
     protected readonly notifyContextDetached: ((context: object) => void) | undefined;
+
+    protected readonly parentContextBinder: IContextBinder | undefined;
+    protected readonly parentNElement: INElement | undefined;
 
     protected contextBinder: IContextBinder | undefined;
 
@@ -96,6 +100,7 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
     }
 
     constructor(expression: string | undefined, nativeElement: Element, attributes: Attributes,
+                parentContextBinder: IContextBinder, parentNElement: INElement,
                 handlerAttributeName: string,
                 isElementVisible: () => boolean,
                 notifyContextAttached?: (context: object) => void,
@@ -103,6 +108,8 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
         super(nativeElement, handlerAttributeName);
         
         if (Helpers.isString(expression)) {
+            this.parentContextBinder = parentContextBinder;
+            this.parentNElement = parentNElement;
             this.isElementVisible = isElementVisible;
             this.notifyContextAttached = notifyContextAttached;
             this.notifyContextDetached = notifyContextDetached;
@@ -121,12 +128,16 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
                         if (propertyName.length > 0) {
                             if (!Helpers.isUndefined(value)) {
                                 const normalizedHandlerName = Helpers.fromKebabToCamelCase(propertyName);
-                                if (!nInExpression.has(normalizedHandlerName)) {
-                                    nInExpression.set(normalizedHandlerName,
-                                                      new ContextInExpressionDetails(new ExpressionDetails(value!), 
-                                                                                     handlerName == Constants.IN_REF_HANDLER_ATTRIBUTE_NAME));  
+                                if (normalizedHandlerName != '__proto__') {
+                                    if (!nInExpression.has(normalizedHandlerName)) {
+                                        nInExpression.set(normalizedHandlerName,
+                                                        new ContextInExpressionDetails(new ExpressionDetails(value!), 
+                                                                                        handlerName == Constants.IN_REF_HANDLER_ATTRIBUTE_NAME));  
+                                    } else {
+                                        Console.error(nativeElement, `multiple handlers for one in (${normalizedHandlerName}) are not supported`);
+                                    }
                                 } else {
-                                    Console.error(nativeElement, `multiple handlers for one in (${normalizedHandlerName}) are not supported`);
+                                    Console.error(nativeElement, `${handlerName} handler should not change system native ${normalizedHandlerName} property`);
                                 }
                             } else {
                                 Console.error(nativeElement, `${handlerName} handler can't be empty`);

@@ -3,6 +3,7 @@ import { IAspectContext } from '../../interfaces/contexts/IAspectContext';
 import { IAspectBindings } from '../../interfaces/nElement/bindings/IAspectBindings';
 
 import { IHandler } from '../../interfaces/nElement/IHandler';
+import { IConstructable } from '../../interfaces/nElement/IConstructable';
 import { IDisposable } from '../../interfaces/IDisposable';
 
 import { Base } from './base/Base';
@@ -34,8 +35,15 @@ class AspectBindings implements IAspectBindings {
     }
 }
 
-export class Aspects extends Base implements IHandler<Map<string, IAspectBindings>>, IDisposable {
+export class Aspects extends Base implements IHandler<Map<string, IAspectBindings>>, IDisposable, IConstructable {
     private static readonly _adoptedCssStyleSheetsTracker = new Map<Document | ShadowRoot, Map<CSSStyleSheet, number>>();
+
+    private _nativeElement: Element | undefined;
+    private _attributes: Attributes | undefined;
+    private _getElementManipulations: (() => ElementManipulations) | undefined;
+    private _getElementSubscriptions: (() => ElementSubscriptions) | undefined;
+    private _getEventDispatcher: (() => EventDispatcher) | undefined;
+    private _requestDetectChanges: (() => void) | undefined;
 
     private _isDisposed = false;
 
@@ -59,23 +67,52 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
             this.hasNExpression = true;
             this.nExpression = new Map<string, IAspectBindings>();
 
+            this._nativeElement = nativeElement;
+            this._attributes = attributes;
+            this._getElementManipulations = getElementManipulations;
+            this._getElementSubscriptions = getElementSubscriptions;
+            this._getEventDispatcher = getEventDispatcher;
+            this._requestDetectChanges = requestDetectChanges;
+        } else {
+            this.hasNExpression = false;
+        }
+    }
+
+    public construct(): void {
+        if (this.hasNExpression) {
+            const nativeElement = this._nativeElement!;
+            const attributes = this._attributes!;
+            const getElementManipulations = this._getElementManipulations!;
+            const getElementSubscriptions = this._getElementSubscriptions!;
+            const getEventDispatcher = this._getEventDispatcher!;
+            const requestDetectChanges = this._requestDetectChanges!;
+
+            delete this._nativeElement;
+            delete this._attributes;
+            delete this._getElementManipulations;
+            delete this._getElementSubscriptions;
+            delete this._getEventDispatcher;
+            delete this._requestDetectChanges;
+
             let root: Document | ShadowRoot | undefined;
 
             for (const [key, value] of attributes.getAll(Constants.ASPECT_HANDLER_PREFIX_NAME, true)) {
                 const aspectName = key.replace(Constants.ASPECT_HANDLER_PREFIX_NAME + Constants.META_VALUE_SEPARATOR, '');
                 if (aspectName.length > 0) {
                     if (Environment.aspects.has(aspectName)) {//TODO: consider migration to bind or commit and on first bind\commit construct aspect
-                        if (!this.nExpression.has(aspectName)) {
+                        if (!this.nExpression!.has(aspectName)) {
                             const aspectMetaData = Environment.aspects.instantiate(aspectName, nativeElement, 
-                                                                               new ChangeDetector(() => requestDetectChanges()),
-                                                                               getElementManipulations(), getElementSubscriptions(), getEventDispatcher());
+                                                                                   new ChangeDetector(() => requestDetectChanges()),
+                                                                                   getElementManipulations(),
+                                                                                   getElementSubscriptions(), 
+                                                                                   getEventDispatcher());
                             if (!Helpers.isUndefined(aspectMetaData)) {
                                 const [aspect, hasStyles] = aspectMetaData!;
-                                this.nExpression.set(aspectName, new AspectBindings(Helpers.isNotEmptyString(value) ? new ExpressionDetails(value!) : undefined, 
-                                                                                    <IAspectContext>aspect));
+                                this.nExpression!.set(aspectName, new AspectBindings(Helpers.isNotEmptyString(value) ? new ExpressionDetails(value!) : undefined, 
+                                                                                     <IAspectContext>aspect));
 
                                 if (hasStyles) {
-                                    Environment.aspects.tryPrepare(aspectName, () => {
+                                    Environment.aspects.tryPrepare(aspectName, asyncCallBack => {
                                         if (!this._isDisposed) {
                                             const styles = Environment.aspects.getStyles(aspectName);
                                             if (Helpers.isArray(styles)) {
@@ -107,8 +144,8 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
                                                         const ownCssStyleSheetUsageCount = adoptedCssStyleSheetsTracker!.get(aspectCssStyleSheet!);
                                                         adoptedCssStyleSheetsTracker!.set(aspectCssStyleSheet!, 
                                                                                           (Helpers.isNumber(ownCssStyleSheetUsageCount) 
-                                                                                                    ? ownCssStyleSheetUsageCount! 
-                                                                                                    : 0) + 1);
+                                                                                                ? ownCssStyleSheetUsageCount! 
+                                                                                                : 0) + 1);
                                                     }
 
                                                     //handle adopted styles
@@ -128,8 +165,8 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
                                                                         const adoptedCssStyleSheetUsageCount = adoptedCssStyleSheetsTracker!.get(adoptedCssStyleSheet!);
                                                                         adoptedCssStyleSheetsTracker!.set(adoptedCssStyleSheet!,
                                                                                                           (Helpers.isNumber(adoptedCssStyleSheetUsageCount) 
-                                                                                                                       ? adoptedCssStyleSheetUsageCount! 
-                                                                                                                       : 0) + 1);
+                                                                                                                    ? adoptedCssStyleSheetUsageCount! 
+                                                                                                                    : 0) + 1);
                                                                     }
                                                                 }
                                                             }
@@ -144,6 +181,8 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
                                                             if (!prepareRequestResult) {
                                                                 adoptedStyleSheets.set(el, undefined);
                                                                 tryPushAdoptedStyleSheets();
+
+                                                                Console.error(nativeElement, `unable to get ${el} adoptedStyle for aspect with '${aspectName}' name.`);
                                                             }
                                                         }
                                                     }
@@ -165,8 +204,6 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
                     Console.error(nativeElement, `aspect name can't be empty`);
                 }
             }
-        } else {
-            this.hasNExpression = false;
         }
     }
 
@@ -212,33 +249,51 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
         if (this.hasNExpression) {
             this._isDisposed = true;
 
-            if (!Helpers.isUndefined(this._adoptedStylesRoot) && 
-                (Helpers.isArray(this._adoptedCssStyleSheet) && (this._adoptedCssStyleSheet!.length > 0))) {
-                const adoptedCssStyleSheetsTracker = Aspects._adoptedCssStyleSheetsTracker.get(this._adoptedStylesRoot!);
-                if (!Helpers.isUndefined(adoptedCssStyleSheetsTracker)) {
-                    for (const adoptedCssStyleSheet of this._adoptedCssStyleSheet!) {
-                        const adoptedCssStyleSheetUsageCount = adoptedCssStyleSheetsTracker!.get(adoptedCssStyleSheet);
-                        if (Helpers.isNumber(adoptedCssStyleSheetUsageCount)) {
-                            if (adoptedCssStyleSheetUsageCount! > 1) {
-                                adoptedCssStyleSheetsTracker!.set(adoptedCssStyleSheet!, adoptedCssStyleSheetUsageCount! - 1);
-                            } else {
-                                adoptedCssStyleSheetsTracker!.delete(adoptedCssStyleSheet);
-                                const adoptedCssStyleSheetIndex = this._adoptedStylesRoot!.adoptedStyleSheets.indexOf(adoptedCssStyleSheet);
-                                if (adoptedCssStyleSheetIndex >= 0) {
-                                    this._adoptedStylesRoot!.adoptedStyleSheets.splice(adoptedCssStyleSheetIndex, 1);
+            try {
+                if (!Helpers.isUndefined(this._adoptedStylesRoot) && 
+                    (Helpers.isArray(this._adoptedCssStyleSheet) && (this._adoptedCssStyleSheet!.length > 0))) {
+                    const adoptedCssStyleSheetsTracker = Aspects._adoptedCssStyleSheetsTracker.get(this._adoptedStylesRoot!);
+                    if (!Helpers.isUndefined(adoptedCssStyleSheetsTracker)) {
+                        for (const adoptedCssStyleSheet of this._adoptedCssStyleSheet!) {
+                            const adoptedCssStyleSheetUsageCount = adoptedCssStyleSheetsTracker!.get(adoptedCssStyleSheet);
+                            if (Helpers.isNumber(adoptedCssStyleSheetUsageCount)) {
+                                if (adoptedCssStyleSheetUsageCount! > 1) {
+                                    adoptedCssStyleSheetsTracker!.set(adoptedCssStyleSheet!, adoptedCssStyleSheetUsageCount! - 1);
+                                } else {
+                                    adoptedCssStyleSheetsTracker!.delete(adoptedCssStyleSheet);
+                                    const adoptedCssStyleSheetIndex = this._adoptedStylesRoot!.adoptedStyleSheets.indexOf(adoptedCssStyleSheet);
+                                    if (adoptedCssStyleSheetIndex >= 0) {
+                                        this._adoptedStylesRoot!.adoptedStyleSheets.splice(adoptedCssStyleSheetIndex, 1);
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    if (adoptedCssStyleSheetsTracker!.size == 0) {
-                        Aspects._adoptedCssStyleSheetsTracker.delete(this._adoptedStylesRoot!);
+                        if (adoptedCssStyleSheetsTracker!.size == 0) {
+                            Aspects._adoptedCssStyleSheetsTracker.delete(this._adoptedStylesRoot!);
+                        }
                     }
                 }
-            }
 
-            delete this._adoptedStylesRoot;
-            delete this._adoptedCssStyleSheet;
+                delete this._adoptedStylesRoot;
+                delete this._adoptedCssStyleSheet;
+            } finally {
+                const disposeErrors: Array<string> = [];
+                
+                for (const [key, value] of this.nExpression!) {
+                    if (Helpers.isFunction(value.aspect.onDispose)) {
+                        try {
+                            value.aspect.onDispose!();
+                        } catch (ex) {
+                            disposeErrors.push(`aspect ${key} context dispose failed with exception: ${ex}`);
+                        }
+                    }
+                }
+
+                if (disposeErrors.length > 0) {
+                    throw new Error(`one or more aspect context dispose failed: ${disposeErrors.join(',')}`);
+                }
+            }
         }
     }
 }

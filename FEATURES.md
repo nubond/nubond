@@ -42,7 +42,7 @@
 | Decorator | Purpose |
 |-----------|---------|
 | `@Detector()` | Marks a property for automatic change detection — **assigning** a new value triggers a change detection cycle (gated by deep-equal comparison; in-place mutation of a nested object is not detected). |
-| `@Eventer(eventName?)` | Marks a property as a custom event emitter — assignments dispatch a `CustomEvent` with the value in `event.detail`. The event name defaults to the kebab-cased property name. A non-`undefined` initial value also fires the event once after the first change-detection cycle. |
+| `@Eventer(eventName?)` | Marks a property as a custom event emitter — assignments dispatch a `CustomEvent` with the value in `event.detail`. The event name defaults to the kebab-cased property name and is always stored **lowercased** (so it matches an `nb-event:` attribute, which HTML lowercases). The event is dispatched on the entity's root element without `bubbles`/`composed` — by design, it reaches only listeners on that element (the parent template's `nb-event:`). A non-`undefined` initial value also fires the event once after the first change-detection cycle. |
 
 Both are implemented via `Object.defineProperty` and can only be applied to simple, configurable properties — properties with an existing getter/setter (or non-configurable ones) are rejected with a logged error.
 
@@ -63,6 +63,10 @@ Both are implemented via `Object.defineProperty` and can only be applied to simp
 
 All binding attributes use the `nb-` prefix by default (or `data-nb-` in W3C compliance mode).
 
+- Handlers that take a name are recognized only with their separator: `nb-var:total` is a binding, while look-alikes such as `nb-index`, `nb-variant` or `nb-repeated` are not. Those, like any other unknown `nb-*` attribute, stay plain HTML attributes: they are kept as written, visible through `element.attributes`, and can be changed at runtime. `nb-repeat` is the only one valid without a name.
+- A name-taking handler written without its name (`nb-var="…"`, `nb-event="…"`, `nb-in="…"`, …) binds nothing and logs `incorrect binding found, <attribute> should have meta value, …`.
+- The `nb-*-ready` markers the framework adds once a handler is set up are never exposed through `element.attributes`.
+
 ### Value & HTML Bindings
 
 | Attribute | Description | Example |
@@ -77,7 +81,9 @@ All binding attributes use the `nb-` prefix by default (or `data-nb-` in W3C com
 | `nb-class` | Dynamic class binding. Supports three formats: simple string, array, and conditional object. Entries in array/object form are separated by `;`. | `<p nb-class="{active: this.isActive; hidden: this.isHidden}">` |
 | `nb-style` | Dynamic inline style binding. Multiple properties separated by `;`. | `<p nb-style="opacity: this.fade; color: this.textColor">` |
 
-A literal `;` inside an `nb-class` (array/object form) or `nb-style` entry can be escaped as `\;` — e.g. `nb-style="background: url('a\;b.png')"`.
+`nb-style` property names are CSS names and are passed to `style.setProperty` verbatim, so write them in kebab-case (`background-color`). A camelCase name (`backgroundColor`) is silently ignored by the browser. Custom properties (`--myColor`) work as written.
+
+A `;` inside a string literal (`'…'`, `"…"` or `` `…` ``) of an `nb-class` (array/object form) or `nb-style` entry is text, not a separator — e.g. `nb-style="background: url('a;b.png')"` — and the literal keeps its JavaScript escapes, so `'a\\;b'` is the string `a\;b`. Elsewhere a literal `;` is escaped as `\;` (still accepted inside a literal too: `url('a\;b.png')` is `url('a;b.png')`). A quote right after a letter or digit does not start a literal (`@it's`, `@5'` are `@` constant text), and a quote that is never closed is treated as text, so such entries split as before. A `;` inside a regex literal still needs `\;`.
 
 An `nb-style` value ending in `!important` is applied as a CSS priority (`style.setProperty(prop, value, 'important')`), matched case-insensitively — e.g. `nb-style="color: this.warnColor + ' !important'"`. The flag must be a contiguous token and must not be the whole value: `! important` and a bare `!important` are passed through as plain values and dropped by the CSS parser.
 
@@ -98,6 +104,7 @@ An `nb-style` value ending in `!important` is applied as a CSS priority (`style.
 - **Array entries share classes.** When two entries yield the same class, it stays as long as at least one of them still yields it — including a one-time (`#`) entry, whose frozen class counts every cycle.
 - **Conditional keys must be unique.** A repeated class name (`{on: a; on: b}`, compared after trimming, case-sensitive) keeps the first entry and logs `duplicated class name (on) found.`.
 - Array entries are separated by `;` — `[this.a, this.b]` is a **single** entry (the comma operator yields `this.b`).
+- **The simple form binds one value.** A result like `'foo bar'` renders both classes, but it is tracked as one token, so `element.classes.has('foo')` is `false` and the next value replaces `foo bar` as a whole. Use the array form (`[this.a; this.b]`) when the classes should be tracked individually.
 
 ### Attribute & Property Bindings
 
@@ -113,7 +120,7 @@ Multiple attribute/property bindings can be applied to the same element:
 ```
 
 - `nb-prop` names are converted from kebab-case to camelCase: `nb-prop:read-only` → `readOnly`.
-- Guard rails: `nb-attr:class` / `nb-attr:style` and `nb-prop:className` / `nb-prop:classList` / `nb-prop:style` / `nb-prop:textContent` / `nb-prop:innerText` / `nb-prop:innerHTML` are rejected with an error pointing to the dedicated handler (`nb-class`, `nb-style`, `nb-value`, `nb-html`).
+- Guard rails: `nb-attr:class` / `nb-attr:style` and `nb-prop:className` / `nb-prop:classList` / `nb-prop:style` / `nb-prop:textContent` / `nb-prop:innerText` / `nb-prop:innerHTML` are rejected with an error pointing to the dedicated handler (`nb-class`, `nb-style`, `nb-value`, `nb-html`). `nb-prop:outerHTML` and `nb-prop:__proto__` are rejected outright (`outerHTML cannot be changed`, `__proto__ cannot be changed`).
 
 ### Conditional Rendering
 
@@ -157,7 +164,7 @@ Multiple attribute/property bindings can be applied to the same element:
 
 **`item` semantics per data type:** for arrays/typed arrays/strings/`Set`, `item` is the element; for `Map`, `item` is a `[key, value]` pair; for objects, iteration goes over enumerable property names and `item` is the property **value**; for a number `N`, the element repeats `⌊N⌋` times with `item` = `index + 1` (1-based) while `index` stays 0-based.
 
-With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `outerIndex`, `outerCount`. A prefix whose generated parameter names (`outerItem`, `outerIndex`, `outerCount`) collide with a registered transformer name is rejected with an error.
+With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `outerIndex`, `outerCount`. A prefix whose generated parameter names (`outerItem`, `outerIndex`, `outerCount`) collide with a registered transformer name is rejected with an error. One element runs one loop: if it carries both `nb-repeat` and `nb-repeat:prefix`, the attribute that comes first in the markup is used and the other is ignored without a diagnostic (by design). Nest two elements for two loops.
 
 ```html
 <!-- Nested repeat -->
@@ -182,7 +189,7 @@ With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `o
 | `nativeElement` | The underlying DOM `Element` |
 | `element` | `ElementManipulations` facade for the current element |
 | `event` | Native DOM `Event` object |
-| `data` | Custom event detail payload (`event.detail`) |
+| `data` | Custom event detail payload (`event.detail`); `null` when the event was dispatched without data or with `undefined` (a `CustomEvent` cannot carry an `undefined` detail) |
 | `unSubscribe` | Function to manually unsubscribe from the event |
 | `router` | `Router` instance (only injected when the router is configured) |
 
@@ -199,6 +206,8 @@ With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `o
 <!-- Event with debounce -->
 <input nb-event:input:300="this.search(event)" />
 ```
+
+> **Event names are lowercase — by design.** HTML lowercases attribute names, so `nb-event:itemSelected` subscribes to `itemselected`. The framework's dispatching sites match that: `EventDispatcher.dispatch('itemSelected')` and `@Eventer` both dispatch the lowercased name, so camelCase works on both sides. A pre-built `Event` passed to `dispatch(event)` is dispatched as-is, and a plain `addEventListener('itemSelected', …)` outside the templates will not receive a `dispatch('itemSelected')` — listen for `itemselected` (or use kebab-case names throughout).
 
 ### Variables
 
@@ -230,7 +239,9 @@ With a named prefix (e.g., `nb-repeat:outer`), parameters become `outerItem`, `o
 | `nb-projection` | Marks content for projection into a container or component slot. | `<em nb-projection="@header">Title</em>` |
 
 **`nb-in` / `nb-in-ref` notes:**
+- Inputs are read only by the `nb-container` or component handler on the **same element**. On any other element they do nothing: they don't make the element bound, the expression is never evaluated, and the runtime logs nothing (the VS Code extension flags it). They are still system attributes, so `nb-attr:nb-in:…` is rejected.
 - Kebab-case input names map to camelCase properties on the child: `nb-in:some-name` sets `someName`.
+- An input is assigned as a plain property on the context instance. A **method** lives on the class prototype, so an input with the same name creates an own property that hides the method for the rest of the context's life, and `this.method()` then fails in the child (by design). With `nb-in`, the only signal is a misleading `<name> input initial value cannot be cloned` warning. With `nb-in-ref` there is none, and an `undefined` parent value wipes the method too. Keep input names distinct from method names. Passing a function through `nb-in-ref` to override a method on purpose works: it is called with the child as `this`. Accessors are not hidden: a setter runs, and a getter-only property logs `<name> input set error`. `nb-in:__proto__` / `nb-in-ref:__proto__` are rejected at construction (`in handler should not change system native __proto__ property`) and never delivered.
 - Input updates are gated by **deep-equal comparison** (`Helpers.equals`) of the bound value — a new object with identical contents will **not** trigger an update (or `onInputsRefreshDone`).
 - An **in-place mutation** of the bound object *is* delivered for `nb-in`: the comparison baseline is a clone snapshot of the previous value, not the parent's live reference, so the mutated object compares deep-unequal. It is **not** delivered for `nb-in-ref`, where the child shares the parent's object — the child's data is already correct, but no input update is detected, so its change detection is not triggered and its DOM stays stale until some other trigger.
 - If an `nb-in` value cannot be `structuredClone`d, an error is logged suggesting `nb-in-ref` instead, and the value is **not delivered** — `nb-in` never falls back to handing over the live reference. This includes **functions**: every non-primitive goes through the clone, so callbacks must be passed with `nb-in-ref`.
@@ -247,7 +258,7 @@ Expressions are JavaScript/TypeScript code snippets evaluated against the curren
 |--------|------|----------|
 | *(none)* | Continuous binding | Re-evaluated on every change detection cycle. |
 | `#` | Single/one-time binding | Re-evaluated each cycle **until the first non-`undefined` result**, then frozen. (An expression that initially returns `undefined` — e.g. data still loading — keeps evaluating until it produces a value.) |
-| `@` | Constant binding | Treated as a literal constant value (no evaluation). |
+| `@` | Constant binding | Treated as a literal constant value (no evaluation). Numbers and the exact (lowercase) words `true`, `false`, `null` and `undefined` keep their type; anything else becomes a string (`@Hello` → `'Hello'`, `@NULL` → `'NULL'`). |
 | `%` | Route slot | Binds a container to a named route slot. |
 
 ```html
@@ -321,6 +332,8 @@ export class RemoteContainer { }
 The same string/provider/URL sources apply to `@Component` templates and styles, `@Aspect` styles, `$Template`, and `$AdoptedStyle`.
 
 The inline vs. URL/provider distinction is also the **trust boundary** for sanitization: inline content is treated as authored code and stored as-is, while URL- and provider-resolved content passes through the configured sanitizer. See [§19](#19-sanitization--trusted-content).
+
+**When loading fails.** A URL or provider template that can't be loaded is retried on later use, up to `MAX_PREPARE_ATTEMPTS` (3) attempts. Each failed attempt logs `Invalid container '<name>': …`, including when the sanitizer throws on a fetched template (`… successCallBack failed with exception: …`). Once the attempts are used up, the `nb-container` element logs `invalid operation: Container with name '<name>' is unable to get HTML template.` and shows its fallback content. The message is distinct from `… not found.`, which means the name was never registered. Fallback content is restored from the host's element and text children only; a comment directly under the host is not kept (by design).
 
 ### Input / Output
 
@@ -465,6 +478,8 @@ export class Tooltip {
 
 Aspects can optionally include styles (CSS) and adopted stylesheets. The `data` setter is called whenever the bound expression value changes.
 
+An aspect context may implement an optional `onDispose()` (declared on `IAspectContext`), called when the element's bindings are disposed — release timers or global listeners acquired in the constructor there. The aspect's styles are released first; every aspect on the element gets its `onDispose()` even if an earlier one throws, and the failures are logged together as one dispose error. Note that aspects are constructed when the element's tree is built, including elements that are never shown (e.g. under a false `nb-if`).
+
 ---
 
 ## 7. Transformers
@@ -521,7 +536,9 @@ $Template('dynamic-template', { get: () => '<em>Dynamic</em>' });
 <div nb-template="@page-header"></div>
 ```
 
-Templates are looked up case-insensitively. Inline string templates are compiled into a `<template>` element at registration time; URL- and provider-based templates are fetched/resolved lazily on first use.
+Templates are looked up case-insensitively, once, when the `nb-template` element is built. A template must therefore be registered (its module imported) before the tree that uses it is built: one registered later is never picked up, and the element logs `invalid operation: template '<name>' not found` (by design: declare the dependency up front). Inline string templates are compiled into a `<template>` element at registration time; URL- and provider-based templates are fetched/resolved lazily on first use. When a URL or provider template fails to load, the `nb-template` element shows its fallback instead — its children without `nb-projection`, bound by the context that uses the template (or nothing, if it has none). Once the template has used up its `MAX_PREPARE_ATTEMPTS`, a newly built `nb-template` element for it logs `invalid operation: Template with name '<name>' is unable to get HTML template.` and keeps its original children, unbound.
+
+`nb-template` replaces the element's content, so it can't be combined with another content binding (`nb-value`, `nb-html`, `nb-switch`, `nb-container`, a component). Such an element logs `element can't have nb-<other> and nb-template bindings at the same time.`, and **neither** binding runs: the template is not injected, and the element keeps its authored children, unbound.
 
 The optional third argument of `$Template` is an HTML sanitizer, applied to URL- and provider-resolved content only — inline content is trusted and stored verbatim. See [§19](#19-sanitization--trusted-content).
 
@@ -562,21 +579,30 @@ Content projection allows parent templates to inject content into named slots of
 
 Containers, components and templates support projections with the same syntax.
 
-**Projected content binds against the *receiving* context, not the one that authored it.** The marked nodes are cloned into the child's template before it is bound, so every expression inside them — `this`, `nb-event` handlers, `{{ }}` — is evaluated by the child's binder: in `<div nb-container="@Card"><p nb-projection>{{ this.title }}</p></div>`, `this` is the `Card` instance. This differs from Web Component slots and from content projection in other frameworks. Hand parent data to the child through `nb-in` / `nb-in-ref`, and handle projected events in the child (or re-dispatch them).
+**Projected content binds against the *authoring* context — the one whose template wrote it — not the receiving one.** Every expression inside it — `this`, `nb-event` handlers, `{{ }}`, `nb-if`, nested containers — is evaluated by the parent: in `<div nb-container="@Card"><p nb-projection>{{ this.title }}</p></div>`, `this` is the parent, not the `Card` instance. The parent's scope comes along too (an enclosing `nb-repeat`'s `item` / `index` / `count`, an enclosing `nb-var`), and the content re-renders on the parent's change detection, not the child's. This matches Web Component slots and content projection in other frameworks.
 
 ```html
-<!-- parent: `this` inside the projected button is the Card, not the parent -->
-<div nb-container="@Card" nb-in:title="this.title">
+<!-- parent: `this` inside the projected button is the parent, not the Card -->
+<div nb-container="@Card">
     <button nb-projection="@footer" nb-event:click="this.like()">Like</button>
 </div>
 ```
 
+How it works: the host removes the marked children, and each slot receives its own clone, tagged with the system attribute `nb-encapsulated` (`data-nb-encapsulated` in W3C mode). When the child's tree is built, a tagged element is handed to the parent's binder and attached under the host element in the parent's tree, while staying linked to the element of the child's template that holds the slot: the copy is disposed with that element and skipped while it is hidden. `nb-projection` stays on the clone. `nb-encapsulated` is reserved — it cannot be set through `nb-attr:` and must not be written by hand.
+
+`nb-template` is the exception: a template has no context of its own, so content projected into it is bound by the context that uses the template (inside a container's template, that is the container).
+
 **Projection rules:**
 - Slot names are plain strings matched verbatim between `nb-projection` and `nb-project-to` / `nb-project-instead` — the leading `@` is a convention, not the constant prefix, so write the same text on both sides.
-- Only one element may use the unnamed (default) slot per host; a second one logs `Projection without name can't be used when there are multiple projections.` and is ignored. Wrap several elements in one. A repeated *named* projection replaces the earlier one (last wins).
-- A slot that receives no projection keeps its own markup, so content inside an `nb-project-to` / `nb-project-instead` element is its fallback.
-- Projected nodes are cloned, so one projection fills every slot with that name.
-- Host children without `nb-projection` are kept aside and restored when the container is emptied (its name becomes empty or names no registered container).
+- Only **direct children** of the host element are projections. An `nb-projection` element nested inside a wrapper is not projected: the wrapper is fallback content (see the last rule). An `nb-projection` element that is not projected (outside any host, inside the fallback, or written by the receiving template itself) is an ordinary element bound by its own context.
+- Only one element may use the unnamed (default) slot per host; a second one logs `Projection without name can't be used when there are multiple projections.` and is ignored. Wrap several elements in one. A repeated *named* projection is ignored as well: the first one is kept and each later one logs `Projection with duplicated name found: <name>.` and is dropped.
+- A slot that receives no projection keeps its own markup, bound by the receiving context, so content inside an `nb-project-to` / `nb-project-instead` element is its fallback. The fallback of a slot that does receive a projection is never instantiated.
+- Projected nodes are cloned, so one projection fills every slot with that name, each with its own bound copy.
+- A slot may sit inside, or on, an `nb-repeat` of the receiving template: every row gets its own copy, bound by the parent with working handlers. Rows the repeat adds later are bound right away; a removed row disposes its copy (nested containers included).
+- A projection may be passed on: the receiving template can project it again into a nested container (`<em nb-projection="a" nb-project-to="a">`), and it stays bound by the original author.
+- While its slot is hidden (an `nb-if` or an inactive `nb-case` anywhere above it in the receiving template), a projected copy is not evaluated.
+- Content handlers (`nb-value`, `nb-html`, `nb-switch`, `nb-container`, …) may sit on the projected element itself.
+- Host children without `nb-projection` are the host's fallback: they are restored and bound by the outer context whenever the container shows no entity — its name is empty (also from the first bind) or names no registered container, or its template could not be loaded. A name that failed is not looked up again until it changes.
 
 ---
 
@@ -619,7 +645,7 @@ export class MyContainer {
 
 Each parameter is resolved by its **declared class**: the injectables registry is consulted first (your `@Injectable`s and `Router`), and only if the type is not registered there is it matched by `instanceof` against the built-in instances for that entity.
 
-**Parameters must be typed with a class.** Resolution relies on the `design:paramtypes` metadata TypeScript emits, and for a parameter typed as an interface, `any`, `unknown`, a union or a generic type parameter, TypeScript emits `Object` — it has no class to resolve. Such a parameter is **not** injected: it receives `undefined` and the framework logs `Injection 'Object' cannot be resolve.`
+**Parameters must be typed with a class.** Resolution relies on the `design:paramtypes` metadata TypeScript emits, and for a parameter typed as an interface, `any`, `unknown`, a union or a generic type parameter, TypeScript emits `Object` — it has no class to resolve. Such a parameter is **not** injected: it receives `undefined` and the framework logs `Injection 'Object' cannot be resolved.`
 
 ```typescript
 interface IMyConfig { apiUrl: string; }
@@ -727,6 +753,8 @@ Hash-based or path-based routing with state management, history navigation, and 
 CONSTANT — static path segment
 ```
 
+A malformed route template throws when the router is created: an empty slot name, more than one `=`, or a `[` / `{` not closed by its own pair (`{page`, `[panel}`). A segment with only a stray closing bracket (`page}`) is an ordinary constant.
+
 ### Setup
 
 ```typescript
@@ -757,7 +785,7 @@ export class App {
 
 | Member | Description |
 |--------|-------------|
-| `router.state` | Current route state object with all slot values. |
+| `router.state` | Current route state with all slot values — a frozen snapshot (assigning to it throws in strict code; use `router.go()`), replaced on each state change. |
 | `router.path` | Current path string. |
 | `router.hashBased` | Whether routing is hash-based. |
 | `router.isConfigured` | Whether the router has been set up. |
@@ -765,13 +793,16 @@ export class App {
 | `router.goBack()` | Navigate back in history. |
 | `router.goForward()` | Navigate forward in history. |
 | `router.goTo(offset)` | Navigate to a specific history offset. |
-| `router.onBeforeStateChange(callback)` | Hook before navigation. Callback receives `(preventChange, oldState, newState, oldPath, newPath)`; call `preventChange()` to cancel. Returns an unsubscribe function. |
+| `router.onBeforeStateChange(callback)` | Hook before navigation. Callback receives `(preventChange, oldState, newState, oldPath, newPath)`; call `preventChange()` to cancel. A guard that redirects must call **both** `router.go(target)` and `preventChange()` — without `preventChange()` the blocked state is committed first and stays in history under the redirect. Returns an unsubscribe function. |
 | `router.onAfterStateChange(callback)` | Hook after navigation. Callback receives `(oldState, newState, oldPath, newPath)`. Returns an unsubscribe function. |
 
 ### Behavior Notes
 
 - **All Router methods throw** an `Error` when the router is not configured (no route template provided) — unlike the rest of the framework, which soft-fails via `Console.error`. Check `router.isConfigured` before use when routing is optional.
-- Setting a **container slot** (`[NAME]`) to a name that does not match a registered container is rejected with a logged error; the slot keeps its previous value.
+- **`router.go()` is all-or-nothing.** If any value is rejected — a **container slot** (`[NAME]`) set to a name that is not a registered container, or a key that names no slot — the whole call is dropped: no slot changes, no callbacks fire, history is untouched. Each rejection is logged regardless of `showDebugInfo`: an unknown container with `Console.error`, an unknown key with `Console.warn`.
+- **Navigation from a state-change callback is queued.** `go()` / `goBack()` / `goForward()` / `goTo()` called from `onBeforeStateChange` or `onAfterStateChange` runs only after the current change has finished — after every `onAfterStateChange` subscriber got the current change — and `goBack()` / `goForward()` / `goTo()` work out their target at that point. If several are called, only the last one runs.
+- **URL input is lenient.** On startup and for hash links / typed URLs, a container slot naming an unknown container keeps its current value (logged), the other slots are applied, and the URL is rewritten to the canonical form.
+- A default container (`[NAME=DEFAULT]`) is not checked when the router is created, since containers may register later. If it is still unregistered when a rejected or prevented change has to roll back to it, the rollback fails and logs `Router is not able roll-back to previous change, check route configuration`; the rejected container name then stays in the slot and is applied by the next navigation.
 - When an earlier slot in the route template has no value, subsequent slot values are serialized as **query parameters** (`/?name=value`) instead of path segments. On startup, query parameters are matched to slot names case-insensitively.
 
 ---
@@ -793,6 +824,8 @@ $AdoptedStyle('shared-theme', { get: () => fetch('/theme.css').then(r => r.text(
 @Component(html, css, ['shared-theme'])
 export class ThemedComponent { }
 ```
+
+An adopted-style name that is not registered (a typo, or a `$AdoptedStyle` module that was never imported), or one whose fetch has failed `MAX_PREPARE_ATTEMPTS` (3) times, is skipped and logged once per host element: `unable to get <name> adoptedStyle for component.` (for aspects: `… for aspect with '<aspect>' name.`). The remaining styles are still adopted in declared order.
 
 ### Usage in Aspects
 
@@ -941,7 +974,7 @@ Built-in services available for constructor injection:
 | Service | Description |
 |---------|-------------|
 | `ChangeDetector` | Triggers manual change detection via `detect()`. |
-| `EventDispatcher` | Dispatches events on the entity's root element: `dispatch(name, data?)` creates a `CustomEvent` with `data` as `detail`; `dispatch(event)` dispatches a pre-built `Event`. Returns `boolean` (`false` if a handler called `preventDefault()`). |
+| `EventDispatcher` | Dispatches events on the entity's root element: `dispatch(name, data?)` creates a `CustomEvent` named `name` **lowercased** (see the event-name note in [Event Handling](#event-handling)) with `data` as `detail`; `dispatch(event)` dispatches a pre-built `Event`. Returns `boolean` (`false` if a handler called `preventDefault()`). |
 | `ElementManipulations` | Facade for element DOM manipulation: properties (`get`/`set`), attributes (`has`/`get`/`getAll`/`set`/`remove`), styles (`has`/`get`/`getAll`/`set`/`remove`), classes (`has`/`getAll`/`add`/`remove`/`toggle`). |
 | `ElementSubscriptions` | Manages event subscriptions with `subscribe(eventName, callback, options?, debounce?)`. Each call registers its own listener and returns the unsubscribe function for that subscription only. |
 | `Router` | Route navigation and state management (see [Routing](#12-routing)). |
@@ -982,14 +1015,14 @@ The `Helpers` module provides type checking and conversion utilities:
 | `isBigInt(value)` | BigInt type check |
 | `isValidElementName(value)` | Checks for valid HTML element name |
 | `isValidCustomElementName(value)` | Checks for valid custom element name (must contain a hyphen) |
-| `stringify(value)` | Safe string conversion |
-| `equals(a, b)` | Deep equality comparison |
+| `stringify(value)` | Safe string conversion: strings as-is; numbers, booleans and BigInts via `${value}`; `undefined`, `null`, symbols and functions → `''`; objects via `JSON.stringify`. A BigInt inside an object renders as its decimal string (`{"n":"10"}`) and a reference back to an ancestor as `"[circular reference]"`; an object referenced in two places (not a cycle) is rendered in full in both. What still cannot be serialized (a throwing `toJSON` or getter) returns `''` and is logged via `Console.error` on every call |
+| `equals(a, b)` | Deep equality comparison. Cyclic values are supported and nothing is logged: a pair of objects met again through a cycle counts as equal and the comparison already running for that pair decides, so a parent ↔ child model compares quietly and a moved back-pointer is still found |
 | `fromKebabToCamelCase(value)` | `my-name` → `myName` |
 | `fromCamelToKebabCase(value)` | `myName` → `my-name` |
 | `toCamelCase(value)` | Lowercases the **first character** only (`MyName` → `myName`; does not handle separators) |
 | `toPascalCase(value)` | Uppercases the **first character** only (`myName` → `MyName`; does not handle separators) |
 | `format(template, ...args)` | `{0}/{1}`-style string interpolation (`null` → empty string, `undefined` leaves the placeholder) |
-| `split(value, separatorChar, escapeChar)` | Splits by a separator that can be escaped (e.g. `\;`); entries are trimmed and empty entries dropped — used by `nb-class`/`nb-style` parsing |
+| `split(value, separatorChar, escapeChar)` | Splits by a separator that can be escaped (e.g. `\;`); a separator inside a `'…'` / `"…"` / `` `…` `` literal is not split on and the literal is copied verbatim (except that an escaped separator loses its escape); entries are trimmed and empty entries dropped — used by `nb-class`/`nb-style` parsing |
 
 The package also exports `CallBackEvent<T>` — a typed callback-list event with `subscribe(callBack)` (returns an unsubscribe function; duplicate callbacks are ignored) and `raise(...data)` (invokes every callback; if any throw, the rest still run and a combined `Error` is thrown afterwards).
 

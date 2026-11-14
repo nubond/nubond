@@ -4,6 +4,9 @@ import { IAspectContextConstructor } from './interfaces/contexts/IAspectContext'
 import { ITransformerContextConstructor } from './interfaces/contexts/ITransformerContext';
 import { IInjectableConstructor, IInjectable } from './interfaces/IInjectable';
 
+import { INElement } from './interfaces/nElement/INElement';
+import { IContextBinder } from './interfaces/contextBinders/IContextBinder';
+
 import { IShadowRootConfig } from './interfaces/IShadowRootConfig';
 
 import { Router } from './Router';
@@ -147,17 +150,23 @@ export class Environment {
                                                         () => this._showDebugInfo!,
                                                         (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
                                                         (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor));
+        let unRegisterRootContext: (() => void) | undefined;
+        
         try {
-            const unRegister = this._injectables.register(context, dependencies);
+            unRegisterRootContext = this._injectables.register(context, dependencies);
             rootContextBinder.onDispose(() => {
                 this._elementsToContextsMapping.delete(element);
-                unRegister();
+                unRegisterRootContext!();
             });
 
             rootContextBinder.bind(element, <IContext>this._injectables.resolve(context, new ChangeDetector(() => rootContextBinder!.detectChanges()),
-                                                                                new EventDispatcher(element)), true);
+                                                                                new EventDispatcher(element)));
             this._elementsToContextsMapping.set(element, rootContextBinder);
         } catch (ex) {
+            if (Helpers.isFunction(unRegisterRootContext)) {
+                unRegisterRootContext!();
+            }
+
             rootContextBinder.dispose();
             throw ex;
         }
@@ -167,17 +176,19 @@ export class Environment {
                                htmlTemplateOrPathOrProvider: string | ITemplateProvider,
                                contextConfig: IContextConfig | undefined): void {
         if (!Helpers.isNotEmptyString(name) && (context.name.length <= this.MIN_CLASS_NAME_LENGTH)) {
-            Console.warn(`Container has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+            Console.warn(`Container has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification may disrupt the dependency resolution, configure your minifier to do not minify class names`);
         }
 
         this._containers.add(Helpers.isNotEmptyString(name) ? name! : context.name,
                              context, dependencies,
                              htmlTemplateOrPathOrProvider,
-                             () => new ContextBinder(contextConfig, this._pessimisticChangeDetectionStrategy,
-                                                     () => Constants.DEFAULT_HIDE_CLASS_NAME, this._htmlSanitizer,
-                                                     () => this._showDebugInfo!,
-                                                     (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
-                                                     (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor)),
+                             (parentContextBinder: IContextBinder,
+                              parentNElement: INElement) => new ContextBinder(parentContextBinder, parentNElement,
+                                                                              contextConfig, this._pessimisticChangeDetectionStrategy,
+                                                                              () => Constants.DEFAULT_HIDE_CLASS_NAME, this._htmlSanitizer,
+                                                                              () => this._showDebugInfo!,
+                                                                              (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
+                                                                              (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor)),
                              () => Helpers.isFunction(contextConfig?.htmlSanitizer) 
                                      ? html => contextConfig!.htmlSanitizer!(html) 
                                      : (Helpers.isFunction(this._htmlSanitizer)
@@ -192,7 +203,7 @@ export class Environment {
                                adoptedStyleNames: Array<string> | undefined,
                                contextConfig: IComponentContextConfig | undefined): void {
         if (!Helpers.isNotEmptyString(name) && (context.name.length <= this.MIN_CLASS_NAME_LENGTH)) {
-            Console.warn(`Component has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+            Console.warn(`Component has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification may disrupt the dependency resolution, configure your minifier to do not minify class names`);
         }
 
         this._components.add(Helpers.isNotEmptyString(name)
@@ -203,11 +214,13 @@ export class Environment {
                              context, dependencies,
                              elementContext,                                                                                            
                              htmlTemplateOrPathOrProvider, styleTemplateOrPathOrProvider, adoptedStyleNames,
-                             () => new ContextBinder(contextConfig, this._pessimisticChangeDetectionStrategy,
-                                                     () => Constants.DEFAULT_HIDE_CLASS_NAME, this._htmlSanitizer,
-                                                     () => this._showDebugInfo!,
-                                                     (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
-                                                     (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor)),
+                             (parentContextBinder: IContextBinder,
+                              parentNElement: INElement) => new ContextBinder(parentContextBinder, parentNElement,
+                                                                              contextConfig, this._pessimisticChangeDetectionStrategy,
+                                                                              () => Constants.DEFAULT_HIDE_CLASS_NAME, this._htmlSanitizer,
+                                                                              () => this._showDebugInfo!,
+                                                                              (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
+                                                                              (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor)),
                              () => Helpers.isFunction(contextConfig?.htmlSanitizer) 
                                      ? html => contextConfig!.htmlSanitizer!(html) 
                                      : (Helpers.isFunction(this._htmlSanitizer)
@@ -227,7 +240,7 @@ export class Environment {
                             styleTemplateOrPathOrProvider: string | ITemplateProvider | undefined, adoptedStyleNames: Array<string> | undefined,
                             styleSanitizer: ((style: string) => string) | undefined): void {
         if (!Helpers.isNotEmptyString(name) && (context.name.length <= this.MIN_CLASS_NAME_LENGTH)) {
-            Console.warn(`Aspect  has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+            Console.warn(`Aspect has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification may disrupt the dependency resolution, configure your minifier to do not minify class names`);
         }
 
         this._aspects.add(Helpers.isNotEmptyString(name)
@@ -246,7 +259,7 @@ export class Environment {
 
     public static addTransformer(name: string | undefined, context: ITransformerContextConstructor, dependencies: Array<IInjectableConstructor>): void {
         if (!Helpers.isNotEmptyString(name) && (context.name.length <= this.MIN_CLASS_NAME_LENGTH)) {
-            Console.warn(`Transformer  has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+            Console.warn(`Transformer has no explicit name, but class name (${context.name}) looks like a minified class name.\nClass name minification may disrupt the dependency resolution, configure your minifier to do not minify class names`);
         }
 
         this._transformers.add(Helpers.toCamelCase(Helpers.isNotEmptyString(name) ? name! : context.name), context, dependencies);
@@ -255,7 +268,7 @@ export class Environment {
     public static registerInjectable(injectable: IInjectableConstructor, dependencies: Array<IInjectableConstructor>,
                                      singleton: boolean): void {
         if (injectable.name.length <= this.MIN_CLASS_NAME_LENGTH) {
-            Console.warn(`Injectable class name (${injectable.name}) looks like a minified class name.\nClass name minification can brake dependency resolution, configure your minifier to do not minify class names`);
+            Console.warn(`Injectable class name (${injectable.name}) looks like a minified class name.\nClass name minification may disrupt the dependency resolution, configure your minifier to do not minify class names`);
         }
 
         this._injectables.register(injectable, dependencies, singleton);

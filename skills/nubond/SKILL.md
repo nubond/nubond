@@ -243,7 +243,7 @@ Used as `{{ localize('save_button_text') }}`.
 
 **Expression prefixes:** *(none)* = re-evaluated every cycle · `#` = one-time, frozen after first
 non-`undefined` result · `@` = constant — a coercion grammar, never evaluated: `@true`→boolean,
-`@5`/`@0x10`→number, `@NaN`/`@null`→**strings**, `@{min: 0}`→the **string** `"{min: 0}"`,
+`@null`/`@undefined`→`null`/`undefined`, `@5`/`@0x10`→number, `@NaN`→**string**, `@{min: 0}`→the **string** `"{min: 0}"`,
 `@007`→**SyntaxError**, anything else→string · `%` = route slot (containers only).
 
 **Event params:** `nativeElement`, `element` (ElementManipulations), `event`, `data`
@@ -315,7 +315,7 @@ in `references/known-limitations.md`.
   `$GlobalShadowRootConfig({...})` in a tiny module that `index.ts` imports first. (Every global
   config setting works from `@AppRoot`.)
 - **Inject concrete classes only.** An interface-, `any`- or union-typed constructor parameter is not
-  injected — it arrives `undefined` with `Injection 'Object' cannot be resolve.` Also declare an
+  injected — it arrives `undefined` with `Injection 'Object' cannot be resolved.` Also declare an
   explicit constructor on every decorated class: inherited constructors resolve to zero arguments.
 - **Import every entity eagerly from the app root.** Components, aspects and templates resolve at
   tree-construction time; anything registered later is permanently inert in existing trees. Lazy
@@ -332,7 +332,8 @@ in `references/known-limitations.md`.
   query string and follows real hash links; path mode owns the whole URL, so an app under `/app/`
   reads `app` as its first slot.
 - **Route anything non-cloneable through `nb-in-ref`** — functions, DOM nodes, class instances (cloned
-  into method-less plain objects), cyclic graphs, `Set`s of objects (rule 7, rule 8).
+  into method-less plain objects) — and large `Set`s / `Map`s of objects, which compare pairwise
+  every pass (rule 7, rule 8).
 - **Toggle only classes that are not in the markup.** `nb-class` never removes a class authored in the
   element's `class="…"`; `class="active" nb-class="{active: …}"` is rejected with an error.
 - **Sanitize untrusted values yourself.** No sanitizer runs by default. A configured `htmlSanitizer`

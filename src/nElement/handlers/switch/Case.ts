@@ -66,13 +66,14 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
             } else {
                 this.hasNExpression = false;
 
-                Console.error(nativeElement, `invalid operation: ${Constants.DEFAULT_PREFIX}-case must have direct ${Constants.DEFAULT_PREFIX}-switch parent`);
+                Console.error(nativeElement, `invalid operation: ${Constants.DEFAULT_PREFIX}-case must have direct ${Constants.DEFAULT_PREFIX}-switch ${Constants.DISPLAY_NAME} parent`);
             }
         } else {
             this.hasNExpression = false;
         }
     }
-    
+
+    //TODO: binds in switch context, so it will not see local context like var, fix??
     public bind(executionParams: ExecutionParams | undefined,
                 executeExpression: (expression: string | null | undefined, 
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {

@@ -34,6 +34,15 @@ describe('Eventers', () => {
         expect(map!.get('onHover')).toBe('hover');
     });
 
+    // L-26: a dashed name passes through registration verbatim, so 'Item-Selected' would be
+    // dispatched with capitals that no (lowercased) nb-event attribute can subscribe to.
+    it('should store the event name lowercased (L-26)', () => {
+        class MyClass {}
+        eventers.add(MyClass.prototype, 'Item-Selected', 'selected');
+
+        expect(eventers.get(MyClass as any)!.get('selected')).toBe('item-selected');
+    });
+
     it('should keep separate registries for different classes', () => {
         class ClassA {}
         class ClassB {}

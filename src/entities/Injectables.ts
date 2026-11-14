@@ -38,7 +38,7 @@ export class Injectables {
         if (!Helpers.isUndefined(injectableMetaData)) {
             return this.resolveInternal(injectableMetaData!, contextDependantInjections);
         } else {
-            Console.error(`Injection '${injectable.name}' cannot be resolve.`);
+            Console.error(`Injection '${injectable.name}' cannot be resolved.`);
         }
     }
     
@@ -92,10 +92,10 @@ export class Injectables {
                         resolvedDependency = this.resolveInternal(dependencyMetaData!, undefined, injectionsCurrentlyBeingResolved);
 
                         if (Helpers.isUndefined(resolvedDependency)) {
-                            Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolve.`);
+                            Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolved.`);
                         }
                     } else {
-                        Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolve as it is a circular reference: `, 
+                        Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolved as it is a circular reference: `, 
                                       [...injectionsCurrentlyBeingResolved.keys(), dependency].map(el => el.name).join('->'));
                     }
 
@@ -110,13 +110,13 @@ export class Injectables {
                     }
 
                     if (Helpers.isUndefined(contextDependency)) {
-                        Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolve.`);
+                        Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolved.`);
                     }
 
                     injections.push(contextDependency);
                 } else {
                     injections.push(undefined);
-                    Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolve.`);
+                    Console.error(injectableMetaData.injectable, `Injection '${dependency.name}' cannot be resolved.`);
                 }
             }
 

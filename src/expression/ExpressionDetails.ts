@@ -15,7 +15,8 @@ export class ExpressionDetails implements IExpressionDetails {
 
             if (firstChar === Constants.CONSTANT_BIND_PREFIX_CHAR) {
                 this.expression = cleanExpression.length > 0
-                                            ? (((cleanExpression === 'true') || (cleanExpression === 'false'))
+                                            ? (((cleanExpression === 'true') || (cleanExpression === 'false') ||
+                                                (cleanExpression === 'null') || (cleanExpression === 'undefined'))
                                                         ? cleanExpression
                                                         : (!isNaN(Number(cleanExpression))
                                                                 ? cleanExpression

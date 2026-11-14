@@ -36,7 +36,7 @@ export class EventDispatcher {
     public dispatch(name: string, data?: any): boolean;
     public dispatch(nameOrEvent: string | Event, data?: any): boolean {
         return this._nativeElement.dispatchEvent(Helpers.isString(nameOrEvent) 
-                                                        ? new CustomEvent(<string>nameOrEvent, Helpers.isUndefined(data) ? data : { detail: data }) 
+                                                        ? new CustomEvent((<string>nameOrEvent).toLowerCase(), { detail: data }) 
                                                         : <Event>nameOrEvent);
     }
 }

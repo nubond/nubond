@@ -253,6 +253,24 @@ describe('Styles handler', () => {
             expect(errorSpy).not.toHaveBeenCalled();
         });
 
+        it('should not split on an unescaped ";" inside a string literal (L-15)', () => {
+            const el = createElementWithAttr(`content: 'a;b'; font-family: "it's; ok"; color: ctx.c`);
+            const handler = new Styles(el, new Attributes(el, () => false));
+
+            expect(handler.nExpression!.size).toBe(3);   // pre-fix: broken entries + "incorrect style expression" errors
+            expect(handler.nExpression!.get('content')!.expression).toBe(`'a;b'`);
+            expect(handler.nExpression!.get('font-family')!.expression).toBe(`"it's; ok"`);
+            expect(errorSpy).not.toHaveBeenCalled();
+        });
+
+        it('should keep a backslash before ";" inside a string literal (L-15)', () => {
+            const el = createElementWithAttr(String.raw`content: 'a\\;b'; color: ctx.c`);
+            const handler = new Styles(el, new Attributes(el, () => false));
+
+            expect(handler.nExpression!.size).toBe(2);
+            expect(handler.nExpression!.get('content')!.expression).toBe(String.raw`'a\\;b'`);   // pre-fix: 'a\;b' ("a;b")
+        });
+
         it('should not register an expression for an empty nb-style value', () => {
             // An empty/whitespace nb-style is rejected up-front by the Attributes layer
             // ("incorrect binding found ..."), so the value never reaches the Styles

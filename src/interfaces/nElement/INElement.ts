@@ -1,51 +1,58 @@
-import { IClassesBindings } from './bindings/IClassesBindings';
-import { IAspectBindings } from './bindings/IAspectBindings';
-import { IEventsBindings } from './bindings/IEventsBindings';
-import { IContextBaseBindings } from './bindings/IContextBaseBindings';
+// import { IClassesBindings } from './bindings/IClassesBindings';
+// import { IAspectBindings } from './bindings/IAspectBindings';
+// import { IEventsBindings } from './bindings/IEventsBindings';
+// import { IContextBaseBindings } from './bindings/IContextBaseBindings';
+// import { ITemplateBindings } from './bindings/ITemplateBindings';
 
 import { IHandler } from './IHandler';
 import { IDisposable } from '../IDisposable';
 import { IVisible } from './IVisible';
-import { IVisibilityHandler } from './IVisibilityHandler';
+//import { IVisibilityHandler } from './IVisibilityHandler';
 
 import { IExpressionDetails } from '../expression/IExpressionDetails';
 import { ExecutionParams } from '../../expression/ExpressionExecParamsHelper';
 
-import { Attributes } from '../../nElement/handlers/Attributes';
-import { Classes } from '../../nElement/handlers/Classes';
-import { Styles } from '../../nElement/handlers/Styles';
-import { Value } from '../../nElement/handlers/Value';
-import { Html } from '../../nElement/handlers/Html';
-import { If } from '../../nElement/handlers/If';
-import { Events } from '../../nElement/handlers/Events';
-import { Properties } from '../../nElement/handlers/Properties';
+// import { Attributes } from '../../nElement/handlers/Attributes';
+// import { Classes } from '../../nElement/handlers/Classes';
+// import { Styles } from '../../nElement/handlers/Styles';
+// import { Value } from '../../nElement/handlers/Value';
+// import { Html } from '../../nElement/handlers/Html';
+// import { If } from '../../nElement/handlers/If';
+// import { Events } from '../../nElement/handlers/Events';
+// import { Properties } from '../../nElement/handlers/Properties';
 import { Repeat } from '../../nElement/handlers/Repeat';
-import { Container } from '../../nElement/handlers/Container';
-import { Exec } from '../../nElement/handlers/Exec';
+// import { Container } from '../../nElement/handlers/Container';
+// import { Exec } from '../../nElement/handlers/Exec';
 import { Switch } from '../../nElement/handlers/switch/Switch';
-import { Case } from '../../nElement/handlers/switch/Case';
-import { Default } from '../../nElement/handlers/switch/Default';
-import { Aspects } from '../../nElement/handlers/Aspects';
-import { Component } from '../../nElement/handlers/Component';
-import { Template } from '../../nElement/handlers/Template';
-import { Bound } from '../../nElement/handlers/Bound';
-import { Variables } from '../../nElement/handlers/Variables';
+// import { Case } from '../../nElement/handlers/switch/Case';
+// import { Default } from '../../nElement/handlers/switch/Default';
+// import { Aspects } from '../../nElement/handlers/Aspects';
+// import { Component } from '../../nElement/handlers/Component';
+// import { Template } from '../../nElement/handlers/Template';
+// import { Bound } from '../../nElement/handlers/Bound';
+// import { Variables } from '../../nElement/handlers/Variables';
+//import { Projection } from '../../nElement/handlers/Projection';
 
 export interface INTreeElement extends IDisposable {
     readonly isSubTreeHandled: boolean;
 
+    readonly isVisible: boolean;
     readonly isStable: boolean;
 
     readonly nativeElement: Element;
 
     addChild(nElement: INTreeElement): void;
-    removeChild(nElement: INTreeElement): void;
+    removeChild(nElement: INTreeElement, debounced: boolean): void;
 
     detectChanges(context: object, executionParams?: ExecutionParams): void;
+
+    onDispose(callBack: () => void): () => void;
 }
 
-export interface INElement extends INTreeElement {    
+export interface INElement extends INTreeElement {
     readonly nativeElementForClone: Node | undefined;
+    readonly parent: INElement | INTreeElement | null;
+    readonly immediateParent: INElement | undefined;
 
     // readonly attributes: Attributes & IHandler<Map<string, IExpressionDetails>>;
     // readonly classes: Classes & (IHandler<IClassesBindings<IExpressionDetails> | 
@@ -68,6 +75,7 @@ export interface INElement extends INTreeElement {
 
     // readonly container: Container & IHandler<IContextBaseBindings> & IDisposable;
     // readonly component: Component & IHandler<IContextBaseBindings> & IDisposable;
-    // readonly aspects: Aspects & IHandler<Map<string, IAspectBindings>> & IDisposable;
-    // readonly template: Template & IHandler<IExpressionDetails>;
+    // readonly aspects: Aspects & IHandler<Map<string, IAspectBindings>> & IDisposable & IConstructable;
+    // readonly template: Template & IHandler<ITemplateBindings> & IConstructable;
+    // readonly projection: Projection & IHandler<IExpressionDetails> & IConstructable;
 }

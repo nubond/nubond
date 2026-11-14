@@ -151,6 +151,9 @@ the host element it is attached to.
   removed when the last aspect using them is disposed.
 - Aspects are instantiated eagerly when the element is constructed — not on first bind, and (unlike
   components and containers) also for elements that are hidden.
+- An aspect may implement an optional **`onDispose()`** (`IAspectContext`), called when the element's
+  bindings are disposed, after its stylesheets are released — release timers and global listeners
+  there. Every aspect on the element gets its call even if another one throws; the failures are logged.
 - `nb-aspect:name` may be used **without a value** — the aspect is attached and its `data` setter is
   never called.
 
@@ -187,7 +190,7 @@ Registers a class in the DI container. **Transient by default** — pass `true` 
 | Decorator | Effect |
 |---|---|
 | `@Detector()` | Assigning a new value triggers a change-detection cycle (gated by deep equality). |
-| `@Eventer(eventName?)` | Assigning dispatches a `CustomEvent` with the value in `event.detail` (an `undefined` value arrives as `null`). Name defaults to the kebab-cased property name. A non-`undefined` initial value is announced once after the first cycle — unless the property was assigned something else before then (that assignment has already dispatched the newer value). It does **not** schedule detection itself — the parent's `nb-event` subscriber does. |
+| `@Eventer(eventName?)` | Assigning dispatches a `CustomEvent` with the value in `event.detail` (an `undefined` value arrives as `null`). Name defaults to the kebab-cased property name; an explicit name is lowercased. A non-`undefined` initial value is announced once after the first cycle — unless the property was assigned something else before then (that assignment has already dispatched the newer value). It does **not** schedule detection itself — the parent's `nb-event` subscriber does. |
 
 Both are implemented with `Object.defineProperty` and are supported only on **plain, configurable
 fields declared on the context class itself**. An *own* property that already has a getter/setter, or
@@ -285,7 +288,7 @@ recursively; circular references are detected and logged, yielding `undefined`.
 1. **Inject concrete classes only.** TypeScript emits `Object` for interface-, `any`-, `unknown`-,
    union- and generic-typed parameters, and `Object` is deliberately never matched against the
    per-entity services. `constructor(private cfg: IMyConfig)` therefore receives `undefined` and logs
-   `Injection 'Object' cannot be resolve.` — with the class being constructed as the first console
+   `Injection 'Object' cannot be resolved.` — with the class being constructed as the first console
    argument, which is how you find the offending constructor.
 2. **Declare an explicit constructor on every decorated class.** The bundled `Reflect` polyfill does
    not walk the prototype chain, so a decorated subclass that inherits its constructor finds no
@@ -296,7 +299,7 @@ recursively; circular references are detected and logged, yielding `undefined`.
 3. **Per-entity services are not available to `@Injectable`s or transformers.** `ChangeDetector`,
    `EventDispatcher`, `ElementManipulations`, `ElementSubscriptions` and the host element are handed
    only to the entity being constructed — not down the dependency chain. A service that asks for
-   `ChangeDetector` gets `undefined` plus `Injection 'ChangeDetector' cannot be resolve.` Services
+   `ChangeDetector` gets `undefined` plus `Injection 'ChangeDetector' cannot be resolved.` Services
    expose a `CallBackEvent`; the consuming entity subscribes and calls its own `detect()`.
 
 ```typescript
@@ -341,9 +344,10 @@ for components too, since the tree builder wraps the shadow root's *host* as the
 not propagate further up on its own: re-dispatch at each level, or build
 `new CustomEvent(name, { detail, bubbles: true })` yourself.
 
-**Use lowercase or kebab-case event names.** `dispatch('myEvent')` can never be caught by
-`nb-event:myEvent`, because HTML lowercases the attribute to `myevent`. (`@Eventer` is safe — it
-kebab-cases names on registration.)
+**Event names are lowercased.** HTML lowercases `nb-event:myEvent` to `myevent`, so
+`dispatch('myEvent')` and `@Eventer` lowercase the name they dispatch — camelCase works between
+templates. A plain `addEventListener('myEvent', …)` will not receive it (listen for `myevent`), and a
+pre-built `Event` passed to `dispatch(event)` keeps its name. Kebab-case names sidestep all of this.
 
 ### Injecting the host element
 
@@ -471,11 +475,11 @@ or an `nb-prop` value counts as changed. Its exact semantics matter at scale:
 | `RegExp` | compared by `source` + `flags` |
 | `NaN` vs `NaN` | equal |
 | Array / typed array | same length, then element-wise deep |
-| `Set` | same size, then `b.has(el)` — **identity, not deep**; sets of objects compare by reference |
-| `Map` | same size, then deep per key |
+| `Set` | same size; members are matched by identity first, and only the leftovers on both sides are deep-matched pairwise (order-free, each member used once) |
+| `Map` | same size; values of keys found by identity are compared deep, leftover entries are deep-matched as whole `[key, value]` pairs |
 | Plain object / class instance | same enumerable key set (`for…in`, so prototype methods and getters are skipped), then deep per key |
 | Functions | **never equal** unless identical reference |
-| Circular reference | treated as **equal**, and an error is logged |
+| Circular reference | a pair met again through a cycle counts as equal; the comparison already running for that pair decides — nothing is logged |
 
 Two consequences to design around:
 
@@ -483,16 +487,19 @@ Two consequences to design around:
   (`public onClick = () => {}`) are own+enumerable, so any object carrying one is never deep-equal to
   another — a `@Detector()` holding it fires on every assignment. Use prototype methods (`onClick() {}`),
   which are non-enumerable and skipped.
-- **`Set` members and `Map` keys are compared by identity**, so a `Set` of objects never equals its
-  own `structuredClone` — through `nb-in` such a value is re-delivered on every pass. Use arrays, or
-  `nb-in-ref`.
-- **Cyclic graphs are reported equal** after logging `deep equality comparison detected a circular
-  reference`. Never pass a cyclic object through `nb-in` or a `@Detector()` property; pass a flat
-  projection of it, or use `nb-in-ref` plus a manual `detect()`.
+- **`Set` members and `Map` keys are deep-matched only as a fallback.** Identity is tried first, so
+  primitives and shared references are cheap; members that miss are matched pairwise, which is
+  quadratic in the number of misses. A `Set` of objects therefore equals its own `structuredClone`
+  (no re-delivery through `nb-in`), but every pass pays that pairwise match — prefer arrays or
+  `nb-in-ref` for large collections of objects.
+- **Cyclic graphs compare quietly.** A pair of objects met again through a cycle counts as equal and
+  the comparison already running for that pair decides, so a parent ↔ child model is fine and a moved
+  back-pointer is still detected. Nothing is logged.
 
 Conversions: `stringify`, `equals` (deep), `fromKebabToCamelCase`, `fromCamelToKebabCase`,
 `toCamelCase` (lowercases **first char only**), `toPascalCase` (uppercases first char only),
-`format('{0}/{1}', a, b)`, `split(value, separator, escapeChar)`.
+`format('{0}/{1}', a, b)`, `split(value, separator, escapeChar)` (a separator inside a `'…'` / `"…"` /
+`` `…` `` literal is not split on; trims entries and drops empty ones).
 
 `CallBackEvent<T>` — typed callback list with `subscribe(cb)` (returns unsubscribe; duplicates
 ignored) and `raise(...data)` (runs every callback even if some throw, then throws a combined error).

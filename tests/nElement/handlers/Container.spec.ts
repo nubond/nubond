@@ -21,8 +21,8 @@ describe('Container handler', () => {
     function createHandler(expression?: string) {
         const el = createElementWithAttr(expression);
         const attrs = new Attributes(el, () => false);
-        const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
-                                      mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
+                                      mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
         return { el, attrs, handler };
     }
 
@@ -66,6 +66,10 @@ describe('Container handler', () => {
     const mockGetEventDispatcher = () => ({} as any);
     const mockIsVisible = () => true;
     const mockRequestParentsDetect = jest.fn();
+    const mockConstructSubTree = jest.fn();
+    const mockRemoveChildren = jest.fn();
+    const mockParentBinder = {} as any;
+    const mockParentNElement = {} as any;
     const mockContainerAttached = jest.fn();
     const mockContainerDetached = jest.fn();
 
@@ -81,8 +85,8 @@ describe('Container handler', () => {
         class MockContainer {}
         Environment.addContainer('myContainer', MockContainer as any, [], '<div></div>', undefined);
 
-        const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
-                                      mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
+                                      mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
 
         expect(handler.hasNExpression).toBe(true);
     });
@@ -90,8 +94,8 @@ describe('Container handler', () => {
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
         const attrs = new Attributes(el, () => false);
-        const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
-                                      mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
+                                      mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
 
         expect(handler.hasNExpression).toBe(false);
     });
@@ -158,7 +162,7 @@ describe('Container handler', () => {
 
             expect(containers.has).toHaveBeenCalledWith('mycontainer');
             expect(containers.isReady).toHaveBeenCalledWith('mycontainer');
-            expect(containers.instantiateBinder).toHaveBeenCalledWith('mycontainer');
+            expect(containers.instantiateBinder).toHaveBeenCalledWith('mycontainer', mockParentBinder, mockParentNElement);
             expect(containers.instantiateContext).toHaveBeenCalled();
         });
 
@@ -202,8 +206,8 @@ describe('Container handler', () => {
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}`, '#this.name');
             el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}cfg`, 'this.cfg');
             const attrs = new Attributes(el, () => false);
-            const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
-                                          mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
+                                          mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
             const envMock = mockContainersEnv({ has: true, isReady: true });
 
             const exec1 = jest.fn((expression: string | null | undefined) => expression === 'this.name' ? 'containerA' : 1);
@@ -211,7 +215,7 @@ describe('Container handler', () => {
             handler.commit();
 
             expect(envMock.containers.instantiateBinder).toHaveBeenCalledTimes(1);
-            expect(envMock.containers.instantiateBinder).toHaveBeenCalledWith('containera');
+            expect(envMock.containers.instantiateBinder).toHaveBeenCalledWith('containera', mockParentBinder, mockParentNElement);
 
             // instantiating a context re-runs bindInputs for the new context; that must not
             // release the single-bind state of the container-name expression itself
@@ -259,8 +263,8 @@ describe('Container handler', () => {
             const el = createElementWithAttr('this.name');
             el.innerHTML = '<p id="fallback">Static fallback</p>text';
             const attrs = new Attributes(el, () => false);
-            const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
-                                          mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
+                                          mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
             mockContainersEnv({ has: true, isReady: true });
 
             handler.bind(undefined, jest.fn().mockReturnValue(''));
@@ -282,7 +286,7 @@ describe('Container handler', () => {
             handler.commit();
 
             expect(containers.instantiateBinder).toHaveBeenCalledTimes(1);
-            expect(containers.instantiateBinder).toHaveBeenCalledWith('mycontainer');
+            expect(containers.instantiateBinder).toHaveBeenCalledWith('mycontainer', mockParentBinder, mockParentNElement);
             expect(containers.instantiateContext).toHaveBeenCalledTimes(1);
             // the template of the real container replaced the (empty) host children
             expect(el.innerHTML).toBe('<span></span>');
@@ -292,8 +296,8 @@ describe('Container handler', () => {
             const el = createElementWithAttr('this.name');
             el.innerHTML = '<p id="fallback">Static fallback</p>';
             const attrs = new Attributes(el, () => false);
-            const handler = new Container(el, attrs, mockGetEventDispatcher, mockIsVisible,
-                                          mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
+                                          mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
             const { containers, mockContextBinder } = mockContainersEnv({ has: true, isReady: true });
 
             handler.bind(undefined, jest.fn().mockReturnValue(''));
@@ -376,6 +380,28 @@ describe('Container handler', () => {
             handler.commit();
 
             // Should not throw — disposeInternal(true) + cleanUp called
+        });
+
+        it('should report a failed template fetch, not "not found", when tryPrepare gives up (L-30)', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            const { handler, el } = createHandler('this.name');
+            mockContainersEnv({ has: true, isReady: false, tryPrepareResult: false });
+
+            const exec = jest.fn().mockReturnValue('remote-container');
+            handler.bind(undefined, exec);
+            handler.commit();
+
+            expect(consoleSpy).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                el,
+                "invalid operation: Container with name 'remote-container' is unable to get HTML template.",
+            );
+            expect(consoleSpy).not.toHaveBeenCalledWith(
+                expect.anything(),
+                expect.anything(),
+                expect.stringContaining('not found'),
+            );
+            consoleSpy.mockRestore();
         });
 
         it('should invoke tryPrepare callback to schedule re-commit', () => {

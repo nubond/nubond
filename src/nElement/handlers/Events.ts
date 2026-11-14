@@ -21,7 +21,7 @@ import { Console } from '../../Console';
 class EventsBindings implements IEventsBindings {
     readonly nExpression: IExpressionDetails;
 
-    debounce: number | undefined;
+    readonly debounce: number | undefined;
 
     constructor(nExpression: IExpressionDetails, debounce: number | undefined) {
         this.nExpression = nExpression;

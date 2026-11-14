@@ -1,11 +1,13 @@
 import { IContext, IContextConstructor } from '../interfaces/contexts/IContext';
 
+import { INElement } from '../interfaces/nElement/INElement';
+import { IContextBinder } from '../interfaces/contextBinders/IContextBinder'; 
+import { IBindableContextBinder } from '../interfaces/contextBinders/IBindableContextBinder';
+
 import { ITemplateProvider } from '../interfaces/ITemplateProvider';
 import { IInjectableConstructor } from '../interfaces/IInjectable';
 
 import { Injectables } from './Injectables';
-
-import { ContextBinder } from '../ContextBinder';
 
 import { TemplateEntity, TemplateEntityMetaData, TemplateEntityData } from './base/TemplateEntity';
 
@@ -13,9 +15,9 @@ import { Helpers } from '../Helpers';
 import { Console } from '../Console';
 
 export class TemplateEntityBinderData extends TemplateEntityData {
-    public readonly contextBinder: ContextBinder;
+    public readonly contextBinder: IBindableContextBinder;
 
-    constructor(contextBinder: ContextBinder, template: Node) {
+    constructor(contextBinder: IBindableContextBinder, template: Node) {
         super(template);
         this.contextBinder = contextBinder;
     }
@@ -33,10 +35,10 @@ class TemplateEntityWithContextMetaData extends TemplateEntityMetaData {
 
     public readonly name: string;
     public readonly context: IContextConstructor;
-    public readonly binderCreator: () => ContextBinder;
+    public readonly binderCreator: (parentContextBinder: IContextBinder, parentNElement: INElement) => IBindableContextBinder;
 
     constructor (name: string, context: IContextConstructor, 
-                 binderCreator: () => ContextBinder,
+                 binderCreator: (parentContextBinder: IContextBinder, parentNElement: INElement) => IBindableContextBinder,
                  htmlTemplateOrPathOrProvider: string | ITemplateProvider, 
                  htmlSanitizerCreator: () => ((html: string) => string) | undefined,
                  getShowDebugInfo: () => boolean) {
@@ -63,16 +65,17 @@ class TemplateEntityWithContextMetaData extends TemplateEntityMetaData {
                 const triggerReadyCallBacks = () => {
                     //to unwrap error if any
                     setTimeout(() => {
-                        for (const el of this._readyCallBacks) {
+                        const readyCallBacks = this._readyCallBacks;
+                        this._readyCallBacks = [];
+                        this._fetchInProgress = false;
+
+                        for (const el of readyCallBacks) {
                             try {
                                 el(true);
                             } catch (ex) {
                                 Console.error(el, `Container readyCallBack failed with exception: ${ex}`);
                             }
                         }
-
-                        this._readyCallBacks = [];
-                        this._fetchInProgress = false;
                     });
                 };
                 
@@ -93,11 +96,13 @@ class TemplateEntityWithContextMetaData extends TemplateEntityMetaData {
 
                         Console.error(errorMessage);
 
-                        if (this._getShowDebugInfo()) {
-                            this.setHtmlTemplate(errorMessage);
+                        try {
+                            if (this._getShowDebugInfo()) {
+                                this.setHtmlTemplate(errorMessage);
+                            }
+                        } finally {
+                            triggerReadyCallBacks();
                         }
-                        
-                        triggerReadyCallBacks();
                     });
                 } else {
                     triggerReadyCallBacks();
@@ -117,13 +122,13 @@ export class Containers extends TemplateEntity<TemplateEntityWithContextMetaData
         super();
     }
 
-    public instantiateBinder(name: string): TemplateEntityBinderData | undefined {
+    public instantiateBinder(name: string, parentContextBinder: IContextBinder, parentNElement: INElement): TemplateEntityBinderData | undefined {
         const lowerCasedName = name.toLowerCase();
         const containerMetaData = this.data.get(lowerCasedName);
 
         if (!Helpers.isUndefined(containerMetaData)) {
             if (containerMetaData!.isReady) {
-                return new TemplateEntityBinderData(containerMetaData!.binderCreator(),
+                return new TemplateEntityBinderData(containerMetaData!.binderCreator(parentContextBinder, parentNElement),
                                                     containerMetaData!.htmlTemplate!.content.cloneNode(true));
             } else {
                 Console.error(`Container '${name}' is not ready`);    
@@ -146,7 +151,7 @@ export class Containers extends TemplateEntity<TemplateEntityWithContextMetaData
 
     public add(name: string, context: IContextConstructor, dependencies: Array<IInjectableConstructor>,
                htmlTemplateOrPathOrProvider: string | ITemplateProvider,
-               binderCreator: () => ContextBinder, 
+               binderCreator: (parentContextBinder: IContextBinder, parentNElement: INElement) => IBindableContextBinder,
                htmlSanitizerCreator: () => ((html: string) => string) | undefined): void {
         const lowerCasedName = name.toLowerCase();
 

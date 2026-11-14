@@ -71,9 +71,16 @@ describe('Template handler', () => {
         const constructSubTree = jest.fn();
         const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
 
-        new Template(el, attrs, constructSubTree, jest.fn());
+        const handler = new Template(el, attrs, constructSubTree, jest.fn());
 
-        // a ready template is injected synchronously from the constructor
+        // nothing happens until construct() — NElement calls it after validate() (L-33)
+        expect(constructSubTree).not.toHaveBeenCalled();
+        expect(el.innerHTML).toBe('');
+        expect(el.hasAttribute(readyAttr)).toBe(false);
+
+        handler.construct();
+
+        // a ready template is injected synchronously from construct()
         expect(constructSubTree).toHaveBeenCalledTimes(1);
         expect(el.innerHTML).toBe('<p>content</p>');
         // written by the handler itself — Attributes is no longer involved
@@ -114,7 +121,8 @@ describe('Template handler', () => {
 
             expect(handler.hasNExpression).toBe(true);
             expect(handler.nExpression).toBeDefined();
-            expect(handler.nExpression!.expression).toBe('"my-template"');
+            expect(handler.nExpression!.name).toBe('my-template');
+            expect(handler.nExpression!.nExpression.expression).toBe('"my-template"');
         });
     });
 
@@ -143,6 +151,7 @@ describe('Template handler', () => {
             const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
 
             const handler = new Template(el, attrs, constructSubTree, requestDetectChanges);
+            handler.construct();
 
             expect(handler.hasNExpression).toBe(true);
             // the ready marker is written by the handler itself, so nothing has to be flushed
@@ -173,12 +182,67 @@ describe('Template handler', () => {
             const commitSpy = jest.spyOn(attrs, 'commit');
 
             const handler = new Template(el, attrs, constructSubTree, requestDetectChanges);
+            handler.construct();
 
             expect(handler.hasNExpression).toBe(true);
             expect(constructSubTree).toHaveBeenCalled();
             // Sync: commit and requestDetectChanges should NOT be called
             expect(commitSpy).not.toHaveBeenCalled();
             expect(requestDetectChanges).not.toHaveBeenCalled();
+        });
+
+        // L-56: when tryPrepare gives up (attempts used up) the element still gets its fallback: the original
+        // children are restored and tree-built synchronously, without requesting another detection.
+        it('should report a failed template fetch when tryPrepare gives up and build the fallback', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            const templates = {
+                has: jest.fn().mockReturnValue(true),
+                tryPrepare: jest.fn().mockReturnValue(false),
+                get: jest.fn(),
+            };
+            (Environment as any)._templates = templates;
+            Object.defineProperty(Environment, 'templates', { get: () => templates, configurable: true });
+
+            const el = createElementWithAttr('@failed-tpl');
+            el.innerHTML = '<i>original</i>';
+            const attrs = new Attributes(el, () => false);
+            const constructSubTree = jest.fn();
+            const requestDetectChanges = jest.fn();
+            const handler = new Template(el, attrs, constructSubTree, requestDetectChanges);
+
+            expect(consoleSpy).not.toHaveBeenCalled();
+
+            handler.construct();
+
+            expect(consoleSpy).toHaveBeenCalledTimes(1);
+            expect(consoleSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el,
+                                                    "invalid operation: Template with name 'failed-tpl' is unable to get HTML template.");
+            expect(constructSubTree).toHaveBeenCalledTimes(1);
+            expect(requestDetectChanges).not.toHaveBeenCalled();
+            expect(el.innerHTML).toBe('<i>original</i>');
+            consoleSpy.mockRestore();
+        });
+
+        it('should empty the element when tryPrepare gives up and there is no fallback content (L-56)', () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            const templates = {
+                has: jest.fn().mockReturnValue(true),
+                tryPrepare: jest.fn().mockReturnValue(false),
+                get: jest.fn(),
+            };
+            (Environment as any)._templates = templates;
+            Object.defineProperty(Environment, 'templates', { get: () => templates, configurable: true });
+
+            const el = createElementWithAttr('@failed-tpl');
+            el.innerHTML = '<!-- c -->';
+            const constructSubTree = jest.fn();
+            const handler = new Template(el, new Attributes(el, () => false), constructSubTree, jest.fn());
+
+            handler.construct();
+
+            expect(constructSubTree).not.toHaveBeenCalled();
+            expect(el.childNodes.length).toBe(0);
+            consoleSpy.mockRestore();
         });
     });
 });

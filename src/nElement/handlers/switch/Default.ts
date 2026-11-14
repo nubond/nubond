@@ -62,7 +62,7 @@ export class Default extends Base implements IHandler<IExpressionDetails>, IDisp
                 } else {
                     this.hasNExpression = false;
 
-                    Console.error(nativeElement, `invalid operation: ${Constants.DEFAULT_PREFIX}-default must have direct ${Constants.DEFAULT_PREFIX}-switch parent`);
+                    Console.error(nativeElement, `invalid operation: ${Constants.DEFAULT_PREFIX}-default must have direct ${Constants.DEFAULT_PREFIX}-switch ${Constants.DISPLAY_NAME} parent`);
                 }
             } else {
                 this.hasNExpression = false;

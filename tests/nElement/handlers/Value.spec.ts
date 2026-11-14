@@ -149,4 +149,25 @@ describe('Value handler', () => {
         expect(handler.commit()).toBe(false);
         expect(el.textContent).toBe('');
     });
+
+    it('should render an object holding a BigInt and a back-reference, without logging, on every pass (L-14)', () => {
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        try {
+            const el = createElementWithAttr('this.stats');
+            const handler = new Value(el, new Attributes(el, () => false));
+            const stats: any = { users: BigInt(10) };
+            stats.self = stats;
+
+            for (let pass = 0; pass < 3; pass++) {
+                handler.bind(undefined, () => stats);
+                handler.commit();
+            }
+
+            expect(el.textContent).toBe('{"users":"10","self":"[circular reference]"}');   // pre-fix: '' (and, with log-only, 3 errors)
+            expect(errorSpy).not.toHaveBeenCalled();
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
 });

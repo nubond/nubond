@@ -1,14 +1,14 @@
 import { INElement, INTreeElement } from './interfaces/nElement/INElement';
+import { IContextBinder } from './interfaces/contextBinders/IContextBinder';
 
 import { NElement, NTreeElement } from './nElement/NElement';
-
-import { ContextBinder } from './ContextBinder';
+import { NElementProjection } from './nElement/NElementProjection';
 
 export class TreeBuilder {
     private constructor() {}
 
-    public static constructTree(contextBinder: ContextBinder, nativeElement: Element | ShadowRoot, bindNativeElement: boolean): INTreeElement {
-        const newNElement = bindNativeElement
+    public static constructTree(contextBinder: IContextBinder, nativeElement: Element | ShadowRoot, bindRootElement: boolean): INTreeElement {
+        const newNElement = bindRootElement
                                 ? (nativeElement instanceof ShadowRoot 
                                             ? this.createNElement(contextBinder, null, (<ShadowRoot>nativeElement).host)
                                             : this.createNElement(contextBinder, null, nativeElement))
@@ -21,17 +21,35 @@ export class TreeBuilder {
         return newNElement;
     }
 
-    private static constructTreePrivate(contextBinder: ContextBinder, nTreeElementParent: INTreeElement, nativeElement: ParentNode): void {
+    private static constructTreePrivate(contextBinder: IContextBinder, nTreeElementParent: INElement | INTreeElement, nativeElement: ParentNode): void {
         let child = nativeElement.firstElementChild;
 
         while(child !== null) {
-            if (NElement.isNApplicable(child)) {
-                const newNElement = this.createNElement(contextBinder, nTreeElementParent, child);
+            const isApplicableNElement = NElement.isNApplicable(child);
+            const isApplicableNElementProjection = NElementProjection.isProjection(child);
 
-                nTreeElementParent.addChild(newNElement);
+            if (isApplicableNElement || isApplicableNElementProjection) {
+                let newNElementContextBinder: IContextBinder;
+                let newNElementNTreeElementParent: INTreeElement;
+                let immediateParent: INElement | undefined;
+
+                if (isApplicableNElementProjection && 
+                    (contextBinder.parent !== null) && (contextBinder.parentNElement !== null) && 
+                    NElementProjection.isEncapsulatedProjection(child)) {
+                    newNElementContextBinder = contextBinder.parent!;
+                    newNElementNTreeElementParent = contextBinder.parentNElement!;
+                    immediateParent = <INElement>nTreeElementParent;
+                } else {
+                    newNElementContextBinder = contextBinder;
+                    newNElementNTreeElementParent = nTreeElementParent;
+                }
+
+                const newNElement = this.createNElement(newNElementContextBinder, newNElementNTreeElementParent, child, undefined, immediateParent);
+
+                newNElementNTreeElementParent.addChild(newNElement);
 
                 if (!newNElement.isSubTreeHandled) {
-                    this.constructTreePrivate(contextBinder, newNElement, child);
+                    this.constructTreePrivate(newNElementContextBinder, newNElement, child);
                 }
             } else {
                 this.constructTreePrivate(contextBinder, nTreeElementParent, child);
@@ -41,24 +59,25 @@ export class TreeBuilder {
         }
     }
 
-    private static cloneTree(contextBinder: ContextBinder, nElementParent: INElement | INTreeElement, nElement: INElement): void {
+    private static cloneTree(contextBinder: IContextBinder, nTreeElementParent: INElement | INTreeElement, nElement: INElement): void {
         const newElement = <Element>nElement.nativeElementForClone!.cloneNode(true);
         nElement.nativeElement.insertAdjacentElement('afterend', newElement);
         
-        const newNElement = this.createNElement(contextBinder, nElementParent, newElement, nElement);
+        const newNElement = this.createNElement(contextBinder, nTreeElementParent, newElement, nElement);
 
-        nElementParent.addChild(newNElement);
+        nTreeElementParent.addChild(newNElement);
 
         if (!newNElement.isSubTreeHandled) {
             this.constructTreePrivate(contextBinder, newNElement, newElement);
         }
     }
 
-    private static createNElement(contextBinder: ContextBinder, nElementParent: INTreeElement | null, nativeElement: Element, 
-                                  cloneOfNElement?: INElement): INTreeElement {
-        return new NElement(contextBinder, nElementParent, nativeElement, cloneOfNElement,
-                            (nElementsParent, nElement) => this.cloneTree(contextBinder, nElementsParent, nElement),
-                            nElementsParent => this.constructTreePrivate(contextBinder, nElementsParent, nativeElement));
+    private static createNElement(contextBinder: IContextBinder, nElementParent: INTreeElement | null, nativeElement: Element, 
+                                  cloneOfNElement?: INElement, immediateParent?: INElement): INElement {
+        return new NElement(contextBinder, nElementParent, nativeElement,
+                            cloneOfNElement, immediateParent,
+                            (nTreeElementParent, nElement) => this.cloneTree(contextBinder, nTreeElementParent, nElement),
+                            (nTreeElementParent) => this.constructTreePrivate(contextBinder, nTreeElementParent, nativeElement));
     }
 
     private static createNTreeElement(nativeElement: Element): INTreeElement {

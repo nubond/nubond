@@ -1,4 +1,5 @@
-import { IDisposable } from './interfaces/IDisposable';
+import { IContextBinder } from './interfaces/contextBinders/IContextBinder';
+import { IBindableContextBinder } from './interfaces/contextBinders/IBindableContextBinder';
 
 import { IContextConfig } from './interfaces/contexts/configs/IContextConfig';
 import { INElement, INTreeElement } from './interfaces/nElement/INElement';
@@ -14,24 +15,11 @@ import { TreeBuilder } from './TreeBuilder';
 import { Helpers } from './Helpers';
 import { Console } from './Console';
 
-export interface IContextBinder extends IDisposable {
-    readonly changeDetectionEnabled: boolean;
-    readonly context: IContext | IComponentContext | undefined;
-
-    enableChangeDetection(): void;
-    disableChangeDetection(): void;
-    
-    detectChanges(): void;
-    inputsRefreshIsDone(): void;
-
-    onDispose(onDisposeCallBack: () => void): () => void;
-}
-
-export class ContextBinder implements IContextBinder {
+export class ContextBinder implements IBindableContextBinder {
     private readonly MAX_CHANGE_DETECTION_CYCLES = 10; 
 
-    private readonly _getDetectors: (obj: object) => Array<string> | undefined;
-    private readonly _getEventers: (obj: object) => Map<string, string> | undefined
+    private readonly _getDetectors: (obj: object) => ReadonlySet<string> | undefined;
+    private readonly _getEventers: (obj: object) => ReadonlyMap<string, string> | undefined
 
     private readonly _onContainerAttachedCallBackEvent = new CallBackEvent<(context: IContext) => void>();
     private readonly _onContainerDetachedCallBackEvent = new CallBackEvent<(context: IContext) => void>();
@@ -47,6 +35,8 @@ export class ContextBinder implements IContextBinder {
     private _detectorsValueContainer: Map<string, any> | undefined;
     private _eventersValueContainer: Map<string, any> | undefined;
 
+    protected rootNElement: INElement | INTreeElement | undefined;
+
     private _isDisposed = false;
     public get isDisposed(): boolean {
         return this._isDisposed;
@@ -61,26 +51,35 @@ export class ContextBinder implements IContextBinder {
         return this._changeDetectionEnabled;
     }
 
-    private _rootNElement: INElement | INTreeElement | undefined;
-    public get rootNElement(): INElement | INTreeElement | undefined {
-        return this._rootNElement;
+    private _parent: IContextBinder | null;
+    public get parent(): IContextBinder | null {
+        return this._parent;
+    }
+
+    private _parentNElement: INElement | null;
+    public get parentNElement(): INElement | null {
+        return this._parentNElement;
     }
 
     private _context: IContext | IComponentContext | undefined;
     public get context(): IContext | IComponentContext | undefined {
         return this._context;
     }
+
     public readonly getShowDebugInfo: () => boolean;
     public readonly getHiddenClassName: () => string;
     public readonly htmlSanitizer: ((html: string) => string) | undefined;
     public readonly expressionExecutor: ExpressionExecutor;
     
-    constructor(contextConfig: IContextConfig | undefined,
+    constructor(parent: IContextBinder | null, parentNElement: INElement | null,
+                contextConfig: IContextConfig | undefined,
                 pessimisticChangeDetectionStrategyDefault: boolean,
                 getHiddenClassName: () => string, htmlSanitizer: ((html: string) => string) | undefined,
                 getShowDebugInfo: () => boolean,
-                getDetectors: (obj: object) => Array<string> | undefined,
-                getEventers: (obj: object) => Map<string, string> | undefined) {
+                getDetectors: (obj: object) => ReadonlySet<string> | undefined,
+                getEventers: (obj: object) => ReadonlyMap<string, string> | undefined) {
+        this._parent = parent;
+        this._parentNElement = parentNElement;
         this.getShowDebugInfo = getShowDebugInfo;
         this.getHiddenClassName = getHiddenClassName;
         this._getDetectors = getDetectors;
@@ -108,8 +107,8 @@ export class ContextBinder implements IContextBinder {
         this.expressionExecutor = new ExpressionExecutor(this.getShowDebugInfo);
     }
 
-    public bind(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean, debounced: boolean = true): void {
-        this.bindInternal(element, context, elementBindable, debounced);
+    public bind(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean, debounced: boolean = true): boolean {
+        return this.bindInternal(element, context, elementBindable, debounced);
     }
 
     public detectChanges(): void {
@@ -140,8 +139,8 @@ export class ContextBinder implements IContextBinder {
                 delete this._detectChangesTimeout;
             }
 
-            if (!Helpers.isUndefined(this._rootNElement)) {
-                this._rootNElement!.dispose();
+            if (!Helpers.isUndefined(this.rootNElement)) {
+                this.rootNElement!.dispose();
             }
 
             this.expressionExecutor.dispose();
@@ -149,10 +148,13 @@ export class ContextBinder implements IContextBinder {
             try {
                 this._onDisposeCallBackEvent.raise();
             } catch(ex) {
-                Console.error(this._rootNElement, `onDispose call back execution error: ${ex}`);
+                Console.error(this.rootNElement, `onDispose call back execution error: ${ex}`);
             }
 
-            delete this._rootNElement;
+            this._parent = null;
+            this._parentNElement = null;
+
+            delete this.rootNElement;
             delete this._context;
             delete this._detectorsSelfTriggeringCounts;
             delete this._detectorsValueContainer;
@@ -186,7 +188,7 @@ export class ContextBinder implements IContextBinder {
         try {
             this._onContainerAttachedCallBackEvent.raise(context);
         } catch(ex) {
-             Console.error(this._rootNElement, `onContainerAttached call back execution error: ${ex}`);
+             Console.error(this.rootNElement, `onContainerAttached call back execution error: ${ex}`);
         }
     }
 
@@ -194,7 +196,7 @@ export class ContextBinder implements IContextBinder {
         try {
             this._onContainerDetachedCallBackEvent.raise(context);
         } catch(ex) {
-             Console.error(this._rootNElement, `onContainerDetached call back execution error: ${ex}`);
+             Console.error(this.rootNElement, `onContainerDetached call back execution error: ${ex}`);
         }
     }
 
@@ -202,7 +204,7 @@ export class ContextBinder implements IContextBinder {
         try {
             this._onInputsRefreshDoneCallBackEvent.raise();
         } catch(ex) {
-            Console.error(this._rootNElement, `onInputsRefreshDone call back execution error: ${ex}`);
+            Console.error(this.rootNElement, `onInputsRefreshDone call back execution error: ${ex}`);
         }
     }
 
@@ -211,26 +213,28 @@ export class ContextBinder implements IContextBinder {
             try {
                 this._onDetectChangesDoneCallBackEvent.raise();
             } catch(ex) {
-                Console.error(this._rootNElement, `onDetectChangesDone call back execution error: ${ex}`);
+                Console.error(this.rootNElement, `onDetectChangesDone call back execution error: ${ex}`);
             }
         }
     }
 
     //TODO: implement @Detector() + @Eventer() support ?
-    protected bindInternal(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean, debounced: boolean): void {
+    protected bindInternal(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean, debounced: boolean): boolean {
+        let result = false;
+
         if (Helpers.isUndefined(this._context)) {
-            if (Helpers.isUndefined(this._rootNElement)) {
-                this._rootNElement = TreeBuilder.constructTree(this, element, elementBindable);
+            if (Helpers.isUndefined(this.rootNElement)) {
+                this.rootNElement = TreeBuilder.constructTree(this, element, elementBindable);
                 this._context = context;
 
                 const detectors = this._getDetectors(context);
-                if (Helpers.isArray(detectors) && (detectors!.length > 0)) {
+                if (!Helpers.isUndefined(detectors) && (detectors!.size > 0)) {
                     this._detectorsValueContainer = new Map<string, any>();
                     this._detectorsSelfTriggeringCounts = new Map<string, number>();
 
                     let detectorsChangeDetectionCycleUnSubscribes = new Map<string, () => void>();
 
-                    this.getSetifyFromArray(this._context, this._detectorsValueContainer!, detectors!, false, (propertyName: string, newValue: any) => {
+                    this.getSetifyFromArrayOrSet(this._context, this._detectorsValueContainer!, detectors!, false, (propertyName: string, newValue: any) => {
                         let count = this._detectorsSelfTriggeringCounts!.get(propertyName);
 
                         if (Helpers.isUndefined(count)) {
@@ -270,7 +274,7 @@ export class ContextBinder implements IContextBinder {
                 if (!Helpers.isUndefined(eventers) && (eventers!.size > 0)) {
                     this._eventersValueContainer = new Map<string, any>();
                     this.getSetifyFromMap(this._context, this._eventersValueContainer!, eventers!, true, (eventName: string, propertyName: string, newValue: any) => {
-                        this._rootNElement!.nativeElement.dispatchEvent(new CustomEvent(eventName, Helpers.isUndefined(newValue) ? newValue : { detail: newValue }));
+                        this.rootNElement!.nativeElement.dispatchEvent(new CustomEvent(eventName, Helpers.isUndefined(newValue) ? newValue : { detail: newValue }));
                     });
                 }
 
@@ -301,12 +305,16 @@ export class ContextBinder implements IContextBinder {
                     this.processChangeDetection();
                     this.changeDetectionIsDone();
                 }
+
+                result = true;
             } else {
                 Console.error(element, 'invalid operation: context is already binded');
             }
         } else {
             Console.error(context, 'invalid operation: context is already set');
         }
+
+        return result;
     }
 
     protected detectChangesInternal(): void {
@@ -339,10 +347,10 @@ export class ContextBinder implements IContextBinder {
                 this._changeDetectionCycleId++;
             }
 
-            this._rootNElement!.detectChanges(this._context!);
+            this.rootNElement!.detectChanges(this._context!);
 
             if (!this.isDisposed && this._pessimisticChangeDetectionStrategy) {
-                if (!this._rootNElement!.isStable) {
+                if (!this.rootNElement!.isStable) {
                     if (cycle < this.MAX_CHANGE_DETECTION_CYCLES) {
                         this.processChangeDetection(cycle + 1);
                     } else {
@@ -355,8 +363,8 @@ export class ContextBinder implements IContextBinder {
         }
     }
 
-    private getSetifyFromArray(context: {[key: string]: any}, valueContainer: Map<string, any>, properties: Array<string>, 
-                               autoTrigger: boolean, action: (propertyName: string, newValue: any) => void): void {
+    private getSetifyFromArrayOrSet(context: {[key: string]: any}, valueContainer: Map<string, any>, properties: Array<string> | Set<string> | ReadonlySet<string>, 
+                                    autoTrigger: boolean, action: (propertyName: string, newValue: any) => void): void {
         for (const propertyName of properties) {
             try {
                 const descriptor = Object.getOwnPropertyDescriptor(context, propertyName);
@@ -406,7 +414,7 @@ export class ContextBinder implements IContextBinder {
         }
     }
 
-    private getSetifyFromMap(context: {[key: string]: any}, valueContainer: Map<string, any>, properties: Map<string, any>, 
+    private getSetifyFromMap(context: {[key: string]: any}, valueContainer: Map<string, any>, properties: Map<string, any> | ReadonlyMap<string, any>, 
                              autoTrigger: boolean, action: (metaData: any, propertyName: string, newValue: any) => void): void {
         for (const [propertyName, metaData] of properties) {
             try {
@@ -465,16 +473,16 @@ export class RootContextBinder extends ContextBinder {
                 pessimisticChangeDetectionStrategyDefault: boolean,
                 getHiddenClassName: () => string, htmlSanitizer: ((html: string) => string) | undefined,
                 getShowDebugInfo: () => boolean,
-                getDetectors: (obj: object) => Array<string> | undefined,
-                getEventers: (obj: object) => Map<string, string> | undefined) {
-        super(contextConfig, pessimisticChangeDetectionStrategyDefault,
+                getDetectors: (obj: object) => ReadonlySet<string> | undefined,
+                getEventers: (obj: object) => ReadonlyMap<string, string> | undefined) {
+        super(null, null, contextConfig, pessimisticChangeDetectionStrategyDefault,
               getHiddenClassName, htmlSanitizer, getShowDebugInfo,
               getDetectors, getEventers);
     }
 
-    public bind(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean): void {
+    public bind(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean = true): boolean {
         this._disposableRoot = element !== document.body;
-        this.bindInternal(element, context, elementBindable, false);
+        return this.bindInternal(element, context, elementBindable, false);
     }
 
     public detectChanges(): void {

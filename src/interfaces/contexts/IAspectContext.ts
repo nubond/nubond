@@ -12,6 +12,11 @@ export interface IAspectContext extends Object {
     * Aspect data.
     */
     data?: any;
+    
+    /**
+    * Invoked when the context is disposed.
+    */
+    onDispose?: () => void;
 }
 
 /**

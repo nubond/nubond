@@ -7,7 +7,7 @@ export class Eventers {
         return this._data.has(target.prototype);
     }
 
-    public get(target: ObjectConstructor): Map<string, string> | undefined {
+    public get(target: ObjectConstructor): ReadonlyMap<string, string> | undefined {
         return this._data.get(target.prototype);
     }
     
@@ -19,6 +19,6 @@ export class Eventers {
             this._data.set(targetPrototype, map);
         }
         
-        map!.set(propertyName, eventName);
+        map!.set(propertyName, eventName.toLowerCase());
     }
 }

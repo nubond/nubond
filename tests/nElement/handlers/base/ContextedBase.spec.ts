@@ -1,10 +1,12 @@
 import { ContextedBase, ContextInExpressionDetails, ContextBaseBindings } from '../../../../src/nElement/handlers/base/ContextedBase';
 import { Attributes } from '../../../../src/nElement/handlers/Attributes';
-import { IContextBinder } from '../../../../src/ContextBinder';
+import { ContextBinder } from '../../../../src/ContextBinder';
+import { IContextBinder } from '../../../../src/interfaces/contextBinders/IContextBinder';
 import { ExecutionParams } from '../../../../src/expression/ExpressionExecParamsHelper';
 import { ExpressionDetails } from '../../../../src/expression/ExpressionDetails';
 import { Constants } from '../../../../src/Constants';
 import { Helpers } from '../../../../src/Helpers';
+import { Environment } from '../../../../src/Environment';
 
 // ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
 function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
@@ -78,7 +80,7 @@ function createHandlerSimple(expression?: string) {
         el.setAttribute(`${PREFIX}container`, expression);
     }
     const attrs = new Attributes(el, () => false);
-    return new TestContextedBase(expression, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+    return new TestContextedBase(expression, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
 }
 
 function createHandlerWithIn(expression: string, inAttrs: Record<string, string>, inRefAttrs?: Record<string, string>) {
@@ -93,7 +95,7 @@ function createHandlerWithIn(expression: string, inAttrs: Record<string, string>
     }
     const el = createElement(attrMap);
     const attrs = new Attributes(el, () => false);
-    return new TestContextedBase(expression, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+    return new TestContextedBase(expression, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
 }
 
 // --- Tests -------------------------------------------------------------------
@@ -148,7 +150,7 @@ describe('ContextedBase', () => {
         it('marks the element ready under the handler attribute name it was constructed with', () => {
             const el = createElement();
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, () => true);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, () => true);
 
             handler.exposedMarkAsReady();
 
@@ -159,7 +161,7 @@ describe('ContextedBase', () => {
         it('sets hasNExpression=false when expression is undefined', () => {
             const el = createElement();
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const handler = new TestContextedBase(undefined, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             expect(handler.hasNExpression).toBe(false);
             expect(handler.nExpression).toBeUndefined();
         });
@@ -215,7 +217,7 @@ describe('ContextedBase', () => {
             };
             const el = createElement(attrMap);
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             const inMap = handler.nExpression!.nInExpression!;
             expect(inMap.size).toBe(1);
             expect(inMap.get('myProp')!.ref).toBe(false);
@@ -234,7 +236,7 @@ describe('ContextedBase', () => {
                 [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}`]: 'this.x',
             });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             // The property name after "in:" is empty → Console.error
             expect(consoleSpy).toHaveBeenCalled();
         });
@@ -283,7 +285,7 @@ describe('ContextedBase', () => {
         it('returns executionParams unchanged when hasNExpression is false', () => {
             const el = createElement();
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const handler = new TestContextedBase(undefined, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             const params = createParams([], []);
             const result = handler.bind(params, jest.fn());
             expect(result).toBe(params);
@@ -293,7 +295,7 @@ describe('ContextedBase', () => {
             let visible = false;
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
             const execExpr = jest.fn();
             handler.bind(undefined, execExpr);
             expect(handler.exposedIsVisible).toBe(false);
@@ -341,7 +343,7 @@ describe('ContextedBase', () => {
                 [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value',
             });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
             const mockBinder = createMockContextBinder({ myProp: 'old' });
             handler.entityChangeReturnValue = mockBinder;
 
@@ -408,7 +410,7 @@ describe('ContextedBase', () => {
             const attached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, attached);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, attached);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
             handler.entityChangeReturnValue = mockBinder;
@@ -644,7 +646,7 @@ describe('ContextedBase', () => {
             const attached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, attached);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, attached);
             const onCommit = jest.spyOn(handler as any, 'onCommit');
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
@@ -714,7 +716,7 @@ describe('ContextedBase', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
 
@@ -763,7 +765,7 @@ describe('ContextedBase', () => {
                 [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value'
             });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
             const ctx: Record<string, any> = { myProp: 'initial' };
             handler.entityChangeReturnValue = createMockContextBinder(ctx);
             handler.exposedIsEntityDataDirty = true;
@@ -793,7 +795,7 @@ describe('ContextedBase', () => {
         it('does nothing when hasNExpression is false', () => {
             const el = createElement();
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const handler = new TestContextedBase(undefined, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
             // Should not throw
             handler.dispose();
         });
@@ -802,7 +804,7 @@ describe('ContextedBase', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
             handler.entityChangeReturnValue = mockBinder;
@@ -1297,9 +1299,9 @@ describe('ContextedBase', () => {
                 expect((mockBinder.context as any).myProp).toEqual({ a: 1 });
             });
 
-            // bugs.md L-50: Helpers.equals(Object.create(null), null) is true, so the first compare
-            // reports "unchanged". Flip this test when Helpers.equals is fixed.
-            it('known gap: null followed by an empty null-prototype object is not delivered (L-50)', () => {
+            // bugs.md L-50 (fixed): Helpers.equals(Object.create(null), null) was true, so the first
+            // compare reported "unchanged" and the child kept null
+            it('delivers an empty null-prototype object that follows null (L-50)', () => {
                 let value: any = null;
                 const { mockBinder, cycle } = createInputHandler(() => value, 'initial');
 
@@ -1307,10 +1309,26 @@ describe('ContextedBase', () => {
                 expect((mockBinder.context as any).myProp).toBeNull();
 
                 value = Object.create(null);
-                expect(cycle()).toBe(false);
+                expect(cycle()).toBe(true);   // pre-fix: false
+
+                expect((mockBinder.context as any).myProp).not.toBeNull();
+                expect((mockBinder.context as any).myProp).toEqual({});
+                expect(cloneSpy).toHaveBeenCalled();
+
+                expect(cycle()).toBe(false);   // an unchanged dictionary is not delivered again
+            });
+
+            it('delivers null that follows an empty null-prototype object (L-50)', () => {
+                let value: any = Object.create(null);
+                const { mockBinder, cycle } = createInputHandler(() => value, 'initial');
+
+                cycle();
+                expect((mockBinder.context as any).myProp).toEqual({});
+
+                value = null;
+                expect(cycle()).toBe(true);   // pre-fix: false
 
                 expect((mockBinder.context as any).myProp).toBeNull();
-                expect(cloneSpy).not.toHaveBeenCalled();
             });
         });
     });
@@ -1322,7 +1340,7 @@ describe('ContextedBase', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
             const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
             const ctx1 = { prop: 'v1' };
             const mockBinder1 = createMockContextBinder(ctx1);
             const ctx2 = { prop: 'v2' };
@@ -1505,6 +1523,157 @@ describe('ContextedBase', () => {
             handler.commit();
 
             expect(ctxB['cfg']).toEqual({ x: 7 });
+        });
+    });
+});
+
+describe('L-22: special-name guard on input targets', () => {
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+        errorSpy = jest.spyOn(console, 'error').mockImplementation();
+    });
+
+    afterEach(() => {
+        errorSpy.mockRestore();
+        Constants.changeCompliancyWithW3C(false);
+        jest.useRealTimers();
+        document.body.replaceChildren();
+    });
+
+    it.each([
+        [Constants.IN_HANDLER_ATTRIBUTE_NAME],
+        [Constants.IN_REF_HANDLER_ATTRIBUTE_NAME],
+    ])('rejects %s:__proto__ at construction and keeps the other inputs', (handlerName) => {
+        const el = createElement({
+            [`${PREFIX}container`]: 'this.data',
+            [`${PREFIX}${handlerName}${Constants.META_VALUE_SEPARATOR}__proto__`]: 'this.evil',
+            [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}label`]: 'this.label',
+        });
+        const handler = new TestContextedBase('this.data', el, new Attributes(el, () => false), null as any, null as any,
+                                              Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+
+        const inMap = handler.nExpression!.nInExpression!;
+        expect(inMap.has('__proto__')).toBe(false);
+        expect(inMap.has('label')).toBe(true);
+        expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el,
+            `${handlerName} handler should not change system native __proto__ property`);
+    });
+
+    it('rejects the W3C spelling too (data-nb-in--__proto__)', () => {
+        Constants.changeCompliancyWithW3C(true);
+        const el = createElement({
+            'data-nb-container': 'this.data',
+            'data-nb-in--__proto__': 'this.evil',
+        });
+        const handler = new TestContextedBase('this.data', el, new Attributes(el, () => false), null as any, null as any,
+                                              Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+
+        expect(handler.nExpression!.nInExpression!.has('__proto__')).toBe(false);
+        expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el,
+            'in handler should not change system native __proto__ property');
+    });
+
+    it('a real container keeps its prototype and methods', () => {
+        jest.useFakeTimers();
+        let child: any;
+        class L22Child {
+            public label: any;
+            constructor() { child = this; }
+            public greet(): string { return 'hi'; }
+        }
+        Environment.addContainer('L22Child', L22Child as any, [], '<span nb-value="this.greet()"></span>', undefined);
+
+        const host = { evil: { polluted: true }, label: 'ok' };
+        const root = document.createElement('div');
+        root.innerHTML = '<div nb-container="@L22Child" nb-in:__proto__="this.evil" nb-in:label="this.label"></div>';
+        document.body.appendChild(root);
+
+        const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined,
+                                         () => false, () => undefined, () => undefined);
+        binder.bind(root, host as any, true, false);
+        jest.runAllTimers();
+
+        expect(Object.getPrototypeOf(child)).toBe(L22Child.prototype);
+        expect(child.polluted).toBeUndefined();
+        expect(child.label).toBe('ok');
+        expect(root.querySelector('span')!.textContent).toBe('hi');
+
+        binder.dispose();
+    });
+
+    function bindRoot(html: string, host: object): { binder: ContextBinder; root: Element } {
+        jest.useFakeTimers();
+        const root = document.createElement('div');
+        root.innerHTML = html;
+        document.body.appendChild(root);
+        const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined,
+                                         () => false, () => undefined, () => undefined);
+        binder.bind(root, host as any, true, false);
+        jest.runAllTimers();
+        return { binder, root };
+    }
+
+    it('rejects nb-prop:__proto__ and keeps the DOM element prototype', () => {
+        const { binder, root } = bindRoot('<p nb-prop:__proto__="this.evil" nb-prop:title="this.title"></p>',
+                                          { evil: { polluted: true }, title: 'kept' });
+        const p = root.querySelector('p')!;
+
+        expect(Object.getPrototypeOf(p)).toBe(HTMLParagraphElement.prototype);
+        expect((p as any).polluted).toBeUndefined();
+        expect(p.title).toBe('kept');
+        expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, p, '__proto__ cannot be changed');
+
+        binder.dispose();
+    });
+
+    describe('by design: an input named like a context method replaces it (L-22)', () => {
+        let unique = 0;
+
+        function bindShadowed(attr: string, host: object): { child: any; root: Element; binder: ContextBinder } {
+            let child: any;
+            class L22Shadowed {
+                public tag = 'child';
+                constructor() { child = this; }
+                public greet(): string { return 'hi'; }
+            }
+            const name = `L22Shadowed${unique++}`;
+            Environment.addContainer(name, L22Shadowed as any, [], '<span nb-value="this.greet()"></span>', undefined);
+
+            const { binder, root } = bindRoot(`<div nb-container="@${name}" ${attr}></div>`, host);
+            return { child, root, binder };
+        }
+
+        it.each(['nb-in', 'nb-in-ref'])('%s:greet with a string shadows greet() and breaks this.greet() in the child', (handler) => {
+            const { child, root, binder } = bindShadowed(`${handler}:greet="this.value"`, { value: 'not a function' });
+
+            expect(Object.prototype.hasOwnProperty.call(child, 'greet')).toBe(true);
+            expect(child.greet).toBe('not a function');
+            expect(root.querySelector('span')!.textContent).toBe('');
+            // no diagnostic about the collision: the only error is the child's failing expression
+            expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.anything(),
+                expect.stringContaining('this.greet is not a function'));
+            expect(errorSpy).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('greet input'));
+
+            binder.dispose();
+        });
+
+        it('nb-in-ref:greet with an undefined parent value wipes the method', () => {
+            const { child, binder } = bindShadowed('nb-in-ref:greet="this.missing"', {});
+
+            expect(Object.prototype.hasOwnProperty.call(child, 'greet')).toBe(true);
+            expect(child.greet).toBeUndefined();
+
+            binder.dispose();
+        });
+
+        it('nb-in-ref:greet with a function overrides the method, called with the child as this', () => {
+            const { root, binder } = bindShadowed('nb-in-ref:greet="this.fn"',
+                { tag: 'parent', fn: function (this: any) { return `${this.tag}-this`; } });
+
+            expect(root.querySelector('span')!.textContent).toBe('child-this');
+
+            binder.dispose();
         });
     });
 });

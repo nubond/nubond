@@ -1,3 +1,5 @@
+import { INElement } from '../../interfaces/nElement/INElement';
+
 import { ContextedBase } from './base/ContextedBase';
 
 import { Attributes } from './Attributes';
@@ -5,7 +7,9 @@ import { Attributes } from './Attributes';
 import { Environment } from '../../Environment';
 
 import { IComponentContext } from '../../interfaces/contexts/IComponentContext';
-import { IContextBinder, ContextBinder } from '../../ContextBinder';
+
+import { IContextBinder } from '../../interfaces/contextBinders/IContextBinder';
+import { IBindableContextBinder } from '../../interfaces/contextBinders/IBindableContextBinder';
 
 import { ChangeDetector } from '../../models/injections/ChangeDetector';
 import { ElementManipulations } from '../../models/injections/ElementManipulations';
@@ -18,9 +22,9 @@ import { Console } from '../../Console';
 
 class ComponentContextEntityData {
     public readonly context: IComponentContext;
-    public readonly contextBinder: ContextBinder;
+    public readonly contextBinder: IBindableContextBinder;
 
-    constructor(context: IComponentContext, contextBinder: ContextBinder) {
+    constructor(context: IComponentContext, contextBinder: IBindableContextBinder) {
         this.context = context;
         this.contextBinder = contextBinder;
     }
@@ -36,19 +40,21 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
     private _previousComponentName = '';
     private _currentComponentName = '';
 
-    constructor(nativeElement: Element, attributes: Attributes, 
+    constructor(nativeElement: Element, attributes: Attributes,
+                parentContextBinder: IContextBinder, parentNElement: INElement,
                 getElementManipulations: () => ElementManipulations, getElementSubscriptions: () => ElementSubscriptions, getEventDispatcher: () => EventDispatcher,
                 isElementVisible: () => boolean) {
         super(Environment.components.has(nativeElement.tagName) ? `@${nativeElement.tagName.toLowerCase()}` : undefined,
-              nativeElement, attributes,
+              nativeElement, attributes, parentContextBinder, parentNElement,
               Constants.COMPONENT_MARKER_ATTRIBUTE_NAME,
               isElementVisible);
 
         if (this.hasNExpression) {
-            this._currentComponentName = nativeElement.tagName.toLowerCase();
             this._getElementManipulations = getElementManipulations;
             this._getElementSubscriptions = getElementSubscriptions;
             this._getEventDispatcher = getEventDispatcher;
+
+            this._currentComponentName = nativeElement.tagName.toLowerCase();
             this.isEntityDataDirty = true;
         }
     }
@@ -66,15 +72,15 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
                 }
 
                 if (Environment.components.isReady(this._currentComponentName)) {
-                    const contextBinder = Environment.components.instantiateBinder(this._currentComponentName);
+                    const contextBinder = Environment.components.instantiateBinder(this._currentComponentName, this.parentContextBinder!, this.parentNElement!);
                     if (!Helpers.isUndefined(contextBinder)) {
                         try {
                             const context = Environment.components.instantiateContext(this._currentComponentName, 
-                                                                                  this.nativeElement!,
-                                                                                  new ChangeDetector(() => contextBinder!.detectChanges()),
-                                                                                  this._getElementManipulations!(),
-                                                                                  this._getElementSubscriptions!(),
-                                                                                  this._getEventDispatcher!());
+                                                                                      this.nativeElement!,
+                                                                                      new ChangeDetector(() => contextBinder!.detectChanges()),
+                                                                                      this._getElementManipulations!(),
+                                                                                      this._getElementSubscriptions!(),
+                                                                                      this._getEventDispatcher!());
                             if (!Helpers.isUndefined(context)) {
                                 result = new ComponentContextEntityData(context!, contextBinder!);                    
                                 this._previousComponentName = this._currentComponentName;
@@ -111,7 +117,7 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
     }
 
     protected onEntityDataChange(entityData: ComponentContextEntityData): IContextBinder {
-        (<Element & { $bind: (contextBinder: ContextBinder, context: IComponentContext, 
+        (<Element & { $bind: (contextBinder: IBindableContextBinder, context: IComponentContext, 
                               hasInputs: boolean) => void }>this.nativeElement!).$bind(entityData.contextBinder, entityData.context, 
                                                                                        this.nExpression!.hasNInExpression);
         
@@ -131,6 +137,6 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
     }
 
     public static isNApplicable(nativeElement: Element): boolean {
-        return (nativeElement.nodeType === Node.ELEMENT_NODE) && Environment.components.has(nativeElement.tagName);
+        return Environment.components.has(nativeElement.tagName);
     }
 }

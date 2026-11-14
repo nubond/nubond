@@ -285,6 +285,70 @@ describe('Templates', () => {
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('Unable to get template'));
         });
 
+        describe('a ready callback re-entering tryPrepare after a failed fetch (snapshot before invoking)', () => {
+            // A ready callback (Container/Template commit) calls tryPrepare again. The pending callbacks must
+            // be moved out and _fetchInProgress cleared BEFORE they are invoked; otherwise the re-entrant
+            // call is appended to the array being iterated and the loop never ends (OOM / CPU spin). The cap
+            // turns such a regression into a failing assertion instead of a hung Jest worker.
+            const CAP = 50;
+
+            it('retries until MAX_PREPARE_ATTEMPTS and then stops (provider always rejects)', async () => {
+                const get = jest.fn().mockRejectedValue(new Error('boom'));
+                templates.add('reenter-always', { get } as any, () => undefined);
+
+                let calls = 0;
+                const cb = () => {
+                    if (++calls > CAP) { return; }
+                    templates.tryPrepare('reenter-always', cb);
+                };
+                templates.tryPrepare('reenter-always', cb);
+
+                for (let i = 0; i < 10; i++) { await flushPromises(); jest.runAllTimers(); }
+
+                expect(calls).toBe(3);
+                expect(get).toHaveBeenCalledTimes(3);
+                expect(templates.tryPrepare('reenter-always', jest.fn())).toBe(false);
+            });
+
+            it('recovers when the provider rejects once and then resolves', async () => {
+                const get = jest.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue('<b>ok</b>');
+                templates.add('reenter-once', { get } as any, () => undefined);
+
+                const results: Array<boolean> = [];
+                let calls = 0;
+                // like a real Container/Template commit: only a not-yet-ready entity is asked again
+                const cb = (async: boolean) => {
+                    results.push(async);
+                    if ((++calls > CAP) || !async) { return; }
+                    templates.tryPrepare('reenter-once', cb);
+                };
+                templates.tryPrepare('reenter-once', cb);
+
+                for (let i = 0; i < 10; i++) { await flushPromises(); jest.runAllTimers(); }
+
+                expect(get).toHaveBeenCalledTimes(2);
+                // failure -> async callback, success -> async callback, then the ready entity answers synchronously
+                expect(results).toEqual([true, true, false]);
+            });
+
+            it('invokes queued callbacks in registration order', async () => {
+                let resolve: (s: string) => void = () => {};
+                const get = jest.fn(() => new Promise<string>(r => { resolve = r; }));
+                templates.add('reenter-order', { get } as any, () => undefined);
+
+                const order: Array<number> = [];
+                templates.tryPrepare('reenter-order', () => order.push(1));
+                templates.tryPrepare('reenter-order', () => order.push(2));
+                templates.tryPrepare('reenter-order', () => order.push(3));
+                resolve('<b>ok</b>');
+
+                for (let i = 0; i < 5; i++) { await flushPromises(); jest.runAllTimers(); }
+
+                expect(order).toEqual([1, 2, 3]);
+                expect(get).toHaveBeenCalledTimes(1);
+            });
+        });
+
         it('should queue multiple callbacks when fetch is in progress', async () => {
             (globalThis as any).fetch = jest.fn().mockResolvedValue({
                 ok: true,
@@ -378,6 +442,47 @@ describe('Templates', () => {
 
             expect(cb).toHaveBeenCalledWith(true);
             expect(console.error).toHaveBeenCalled();
+        });
+    });
+
+    describe('L-52a: with showDebugInfo on, a throwing sanitizer on the error template still releases the callbacks', () => {
+        const flushPromises = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+        const throwingSanitizer = () => (_text: string): string => { throw new Error('sanitize-boom'); };
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+            (globalThis as any).fetch = jest.fn().mockResolvedValue({
+                ok: true,
+                text: () => Promise.resolve('fetched content')
+            });
+            templates = new Templates(() => true);
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+            (globalThis as any).fetch = undefined;
+        });
+
+        it('template', async () => {
+            templates.add('l52', '/l52.html', throwingSanitizer);
+
+            const cb = jest.fn();
+            expect(templates.tryPrepare('l52', cb)).toBe(true);
+            await flushPromises();
+            jest.runAllTimers();
+
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `,
+                "fetchData errorCallBack failed for template '/l52.html' with exception: Error: sanitize-boom");
+            expect(cb).toHaveBeenCalledWith(true);
+            expect(templates.isReady('l52')).toBe(false);
+
+            // Not stuck in progress: the next attempt fetches again.
+            const cb2 = jest.fn();
+            expect(templates.tryPrepare('l52', cb2)).toBe(true);
+            await flushPromises();
+            jest.runAllTimers();
+            expect(cb2).toHaveBeenCalledWith(true);
+            expect((globalThis as any).fetch).toHaveBeenCalledTimes(2);
         });
     });
 });

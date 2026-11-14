@@ -60,6 +60,27 @@ describe('ExpressionDetails', () => {
             expect(details.isSingleBinded).toBe(true);
         });
 
+        // L-47: '@null' / '@undefined' used to be quoted into the strings "null" / "undefined"
+        it('should preserve "null" as the null literal (L-47)', () => {
+            const details = new ExpressionDetails('@null');
+            expect(details.expression).toBe('null');
+            expect(details.isSingleBinded).toBe(true);
+            expect(new Function(`return ${details.expression};`)()).toBeNull();
+        });
+
+        it('should preserve "undefined" as the undefined literal (L-47)', () => {
+            const details = new ExpressionDetails('@ undefined ');
+            expect(details.expression).toBe('undefined');
+            expect(details.isSingleBinded).toBe(true);
+            expect(new Function(`return ${details.expression};`)()).toBeUndefined();
+        });
+
+        it('should still quote other casings of null/undefined (case-sensitive like true/false)', () => {
+            expect(new ExpressionDetails('@NULL').expression).toBe('"NULL"');
+            expect(new ExpressionDetails('@Undefined').expression).toBe('"Undefined"');
+            expect(new ExpressionDetails('@"null"').expression).toBe('"\\"null\\""');
+        });
+
         it('should NOT recognize uppercase "TRUE" as a boolean (case-sensitive) and wrap as string', () => {
             // Only lowercase 'true'/'false' are treated as bare boolean literals; everything else
             // non-numeric is wrapped in double quotes.

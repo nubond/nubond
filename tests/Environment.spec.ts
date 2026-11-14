@@ -279,6 +279,42 @@ describe('Environment', () => {
             const result = Environment.detectors.get(TestCtx as unknown as ObjectConstructor);
             expect(result).toContain('myProp');
         });
+
+        // L-44: a double-decorated property used to be registered twice; the binder's second pass then found
+        // the accessor installed by the first and logged 'has getter or setter' once per instance.
+        it('L-44: a property decorated twice is intercepted once and still triggers detection', () => {
+            jest.useFakeTimers();
+            try {
+                (console.error as jest.Mock).mockClear();
+                class DoubleDecoratedCtx { public count = 1; }
+                Environment.addDetector(DoubleDecoratedCtx.prototype, 'count');
+                Environment.addDetector(DoubleDecoratedCtx.prototype, 'count');
+                expect(Array.from(Environment.detectors.get(DoubleDecoratedCtx as unknown as ObjectConstructor)!)).toEqual(['count']);
+
+                const div = document.createElement('div');
+                div.innerHTML = `<span ${Constants.DEFAULT_PREFIX}-value="this.count"></span>`;
+                document.body.appendChild(div);
+                try {
+                    Environment.addApp(div, DoubleDecoratedCtx as any, []);
+                    const binder = (Environment as any)._elementsToContextsMapping.get(div);
+                    const context = binder.context as DoubleDecoratedCtx;
+
+                    expect(div.querySelector('span')!.textContent).toBe('1');
+                    expect(console.error as jest.Mock).not.toHaveBeenCalledWith(
+                        `${Constants.DISPLAY_NAME}: `, context, expect.stringContaining('has getter or setter'));
+
+                    context.count = 2;
+                    jest.runAllTimers();
+                    expect(div.querySelector('span')!.textContent).toBe('2');
+
+                    binder.dispose();
+                } finally {
+                    div.remove();
+                }
+            } finally {
+                jest.useRealTimers();
+            }
+        });
     });
 
     describe('addEventer', () => {
@@ -374,7 +410,7 @@ describe('Environment', () => {
             class InstantiateContainer {}
             Environment.addContainer('instantiate-container', InstantiateContainer as any, [],
                                      '<div>inst</div>', undefined);
-            const result = Environment.containers.instantiateBinder('instantiate-container');
+            const result = Environment.containers.instantiateBinder('instantiate-container', null as any, null as any);
             expect(result).toBeDefined();
             expect(result!.contextBinder).toBeDefined();
             // Invoke the lazy lambdas passed to the ContextBinder to cover their bodies
@@ -388,7 +424,7 @@ describe('Environment', () => {
                                      '<div>fb</div>', undefined);
             // The sanitizer creator lambda is the 6th arg to _containers.add
             // We can't directly access it, but we can verify it was created without error
-            const result = Environment.containers.instantiateBinder('sanitizer-fallback-container');
+            const result = Environment.containers.instantiateBinder('sanitizer-fallback-container', null as any, null as any);
             expect(result).toBeDefined();
         });
     });
@@ -398,7 +434,7 @@ describe('Environment', () => {
             class InstBinder {}
             Environment.addComponent('inst-binder-comp', InstBinder as any, [],
                                      undefined, '<div>inst</div>', undefined, undefined, undefined);
-            const binder = Environment.components.instantiateBinder('inst-binder-comp');
+            const binder = Environment.components.instantiateBinder('inst-binder-comp', null as any, null as any);
             expect(binder).toBeDefined();
             // Invoke getHiddenClassName/getShowDebugInfo to cover lambdas
             expect(binder!.getHiddenClassName()).toBe(Constants.DEFAULT_HIDE_CLASS_NAME);
@@ -413,7 +449,7 @@ describe('Environment', () => {
             };
             Environment.addComponent('sanitizer-lambda-comp', SanitizerLambdaComp as any, [],
                                      undefined, '<div>x</div>', undefined, undefined, contextConfig);
-            const binder = Environment.components.instantiateBinder('sanitizer-lambda-comp');
+            const binder = Environment.components.instantiateBinder('sanitizer-lambda-comp', null as any, null as any);
             expect(binder).toBeDefined();
             // The sanitizer is stored in the binder's htmlSanitizer property
             expect(binder!.htmlSanitizer).toBeDefined();
@@ -735,6 +771,65 @@ describe('Environment', () => {
             binder.dispose();
             expect(map.has(div)).toBe(false);
         });
+
+        it('L-45: disposing the app reaches the aspect context onDispose through the element tree', () => {
+            const instances: Array<{ onDispose: jest.Mock }> = [];
+            class LifeAspect {
+                public onDispose = jest.fn();
+                constructor() { instances.push(this); }
+            }
+            Environment.addAspect('life-aspect', LifeAspect as any, [], undefined, undefined, undefined);
+
+            const div = document.createElement('div');
+            div.innerHTML = `<span ${Constants.DEFAULT_PREFIX}-aspect:life-aspect></span><i ${Constants.DEFAULT_PREFIX}-aspect:life-aspect></i>`;
+            document.body.appendChild(div);
+            testElements.push(div);
+
+            class AspectHostCtx {}
+            Environment.addApp(div, AspectHostCtx as any, []);
+
+            expect(instances.length).toBe(2);
+            expect(instances.every(el => el.onDispose.mock.calls.length === 0)).toBe(true);
+
+            const map = (Environment as any)._elementsToContextsMapping as Map<Element, any>;
+            map.get(div).dispose();
+
+            expect(instances.map(el => el.onDispose.mock.calls.length)).toEqual([1, 1]);
+        });
+
+        it('L-45: a throwing aspect onDispose is logged by the element and does not stop the rest of the teardown', () => {
+            (console.error as jest.Mock).mockClear();
+            const disposed: Array<string> = [];
+            class FailingAspect {
+                public onDispose(): void { disposed.push('failing'); throw new Error('aspect-boom'); }
+            }
+            class QuietAspect {
+                public onDispose(): void { disposed.push('quiet'); }
+            }
+            Environment.addAspect('failing-aspect', FailingAspect as any, [], undefined, undefined, undefined);
+            Environment.addAspect('quiet-aspect', QuietAspect as any, [], undefined, undefined, undefined);
+
+            const div = document.createElement('div');
+            div.innerHTML = `<span ${Constants.DEFAULT_PREFIX}-aspect:failing-aspect></span><i ${Constants.DEFAULT_PREFIX}-aspect:quiet-aspect></i>`;
+            document.body.appendChild(div);
+            testElements.push(div);
+
+            class FailingAspectHostCtx {}
+            Environment.addApp(div, FailingAspectHostCtx as any, []);
+
+            const map = (Environment as any)._elementsToContextsMapping as Map<Element, any>;
+            expect(() => map.get(div).dispose()).not.toThrow();
+
+            expect(disposed).toEqual(['failing', 'quiet']);
+            expect(map.has(div)).toBe(false);
+            expect(console.error as jest.Mock).toHaveBeenCalledWith(
+                `${Constants.DISPLAY_NAME}: `,
+                div.querySelector('span'),
+                'handler',
+                expect.anything(),
+                expect.stringContaining('aspect failing-aspect context dispose failed with exception: Error: aspect-boom'),
+            );
+        });
     });
 
     describe('global sanitizer fallback', () => {
@@ -749,7 +844,7 @@ describe('Environment', () => {
             Environment.addContainer('fallback-container', FallbackContainer as any, [],
                                      '<div></div>', contextConfig as any);
 
-            const result = Environment.containers.instantiateBinder('fallback-container');
+            const result = Environment.containers.instantiateBinder('fallback-container', null as any, null as any);
             expect(result).toBeDefined();
             expect(result!.contextBinder.htmlSanitizer).toBeDefined();
             expect(result!.contextBinder.htmlSanitizer!('<x/>')).toBe('[GLOBAL]<x/>');
@@ -765,7 +860,7 @@ describe('Environment', () => {
             Environment.addComponent('fallback-comp', FallbackComp as any, [],
                                      undefined, '<span></span>', undefined, undefined, contextConfig as any);
 
-            const binder = Environment.components.instantiateBinder('fallback-comp');
+            const binder = Environment.components.instantiateBinder('fallback-comp', null as any, null as any);
             expect(binder).toBeDefined();
             expect(binder!.htmlSanitizer).toBeDefined();
             expect(binder!.htmlSanitizer!('<a/>')).toBe('<H><a/></H>');
@@ -802,7 +897,7 @@ describe('Environment', () => {
             class NoSanContainer {}
             Environment.addContainer('no-san-container', NoSanContainer as any, [],
                                      '<div></div>', undefined);
-            const result = Environment.containers.instantiateBinder('no-san-container');
+            const result = Environment.containers.instantiateBinder('no-san-container', null as any, null as any);
             expect(result).toBeDefined();
             // No contextConfig is passed, so binder constructor's contextConfig branch is skipped
             // and htmlSanitizer is left undefined.

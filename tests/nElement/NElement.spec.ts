@@ -54,7 +54,7 @@ describe('NTreeElement', () => {
         const child = new NTreeElement(document.createElement('span'));
         parent.addChild(child);
         parent.removeChild(child);
-        parent.stabilizeChildren();
+        (parent as any).stabilizeChildren();
 
         // After removal and stabilization, child should be gone
         // We can verify by detecting changes — no error
@@ -106,7 +106,7 @@ describe('NTreeElement', () => {
         it('should call stabilizeChildren during detectChanges', () => {
             const parent = new NTreeElement(document.createElement('div'));
             const child = new NTreeElement(document.createElement('span'));
-            const stabSpy = jest.spyOn(parent, 'stabilizeChildren');
+            const stabSpy = jest.spyOn(parent as any, 'stabilizeChildren');
 
             parent.addChild(child);
             parent.detectChanges({});
@@ -155,7 +155,9 @@ describe('NTreeElement', () => {
                 addChild: jest.fn(),
                 removeChild: jest.fn(),
                 detectChanges: jest.fn(),
-                dispose: jest.fn()
+                dispose: jest.fn(),
+                isVisible: true,
+                onDispose: jest.fn()
             };
 
             parent.addChild(unstableChild);
@@ -171,7 +173,9 @@ describe('NTreeElement', () => {
                 addChild: jest.fn(),
                 removeChild: jest.fn(),
                 detectChanges: jest.fn(),
-                dispose: jest.fn()
+                dispose: jest.fn(),
+                isVisible: true,
+                onDispose: jest.fn()
             };
 
             parent.addChild(stableChild);
@@ -186,7 +190,7 @@ describe('NTreeElement', () => {
             expect(parent.isStable).toBe(true);
 
             parent.removeChild(child);
-            parent.stabilizeChildren();
+            (parent as any).stabilizeChildren();
             expect(parent.isStable).toBe(true);
         });
     });
@@ -202,7 +206,7 @@ describe('NTreeElement', () => {
 
             // Remove child1 only
             parent.removeChild(child1);
-            parent.stabilizeChildren();
+            (parent as any).stabilizeChildren();
 
             // child2 should still receive detectChanges
             const spy2 = jest.spyOn(child2, 'detectChanges');
@@ -233,7 +237,7 @@ describe('NTreeElement', () => {
             const orphan = new NTreeElement(document.createElement('span'));
 
             parent.removeChild(orphan);
-            expect(() => parent.stabilizeChildren()).not.toThrow();
+            expect(() => (parent as any).stabilizeChildren()).not.toThrow();
         });
 
         it('should handle removing the same child twice gracefully', () => {
@@ -243,7 +247,7 @@ describe('NTreeElement', () => {
 
             parent.removeChild(child);
             parent.removeChild(child);
-            expect(() => parent.stabilizeChildren()).not.toThrow();
+            expect(() => (parent as any).stabilizeChildren()).not.toThrow();
         });
     });
 });
@@ -279,17 +283,19 @@ describe('NElement', () => {
             expect(NElement.isNApplicable(el)).toBe(true);
         });
 
-        it('should return false for text node', () => {
-            const textNode = document.createTextNode('hello');
-            // NElement.isNApplicable expects Element, textNode is not an Element
-            // nodeType check inside Attributes.isNApplicable and Component.isNApplicable
-            // guards against non-ELEMENT_NODE. We cast to exercise the guard.
-            expect(NElement.isNApplicable(textNode as unknown as Element)).toBe(false);
-        });
+        // isNApplicable no longer guards nodeType: the tree walk only visits element children,
+        // so text and comment siblings never reach it. Pin that through a real bind.
+        it('text and comment siblings are skipped by the tree walk', () => {
+            const root = document.createElement('div');
+            root.append(document.createTextNode('t'), document.createComment('c'));
+            const span = document.createElement('span');
+            span.setAttribute('nb-value', 'this.v');
+            root.append(span, document.createTextNode('t2'));
+            const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined, () => false, () => undefined, () => undefined);
 
-        it('should return false for comment node', () => {
-            const comment = document.createComment('comment');
-            expect(NElement.isNApplicable(comment as unknown as Element)).toBe(false);
+            expect(() => binder.bind(root, { v: 'ok' } as any, true, false)).not.toThrow();
+            expect(span.textContent).toBe('ok');
+            binder.dispose();
         });
 
         it('should return true when element tag is a registered component', () => {
@@ -320,7 +326,7 @@ describe('NElement lifecycle via ContextBinder', () => {
     function createBoundElement(html: string, context: object = {}): { binder: ContextBinder, el: Element } {
         const el = document.createElement('div');
         el.innerHTML = html;
-        const binder = new ContextBinder(undefined, false, () => 'nb-hidden', undefined, () => false, () => undefined, () => undefined);
+        const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined, () => false, () => undefined, () => undefined);
         binder.bind(el, context as any, false, false);
         return { binder, el };
     }
@@ -332,7 +338,7 @@ describe('NElement lifecycle via ContextBinder', () => {
     describe('construction and nb-value', () => {
         it('should construct NElement with nb-value and set textContent', () => {
             const { binder, el } = createBoundElement('<span nb-value="this.name"></span>', { name: 'hello' });
-            expect(binder.rootNElement).toBeDefined();
+            expect((binder as any).rootNElement).toBeDefined();
             expect(el.querySelector('span')!.textContent).toBe('hello');
         });
 
@@ -342,7 +348,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(el.querySelector('span')!.textContent).toBe('first');
 
             (ctx as any).name = 'second';
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(el.querySelector('span')!.textContent).toBe('second');
         });
 
@@ -364,7 +370,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(el.querySelector('div')!.innerHTML).toBe('<i>italic</i>');
 
             (ctx as any).content = '<u>underline</u>';
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(el.querySelector('div')!.innerHTML).toBe('<u>underline</u>');
         });
     });
@@ -424,6 +430,49 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(() => createBoundElement('<div nb-switch="this.mode"><span nb-default nb-if="this.visible"></span></div>', { mode: 'x', visible: true })).not.toThrow();
             expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.anything(), conflictMessage);
         });
+
+        describe('L-33: a rejected nb-template is never injected', () => {
+            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+
+            beforeAll(() => {
+                Environment.addTemplate('l33-tpl', '<b nb-value="this.inner"></b>', undefined);
+            });
+
+            it.each([
+                ['nb-value', 'nb-value="this.outer"', 'value'],
+                ['nb-html', 'nb-html="this.outer"', 'html'],
+            ])('should not inject the template or bind its content when combined with %s', (_label, conflicting, name) => {
+                const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+                const tryPrepareSpy = jest.spyOn(Environment.templates, 'tryPrepare');
+                const ctx = { outer: 'OUTER', inner: 'INNER' };
+
+                const { binder, el } = createBoundElement(`<div nb-template="@l33-tpl" ${conflicting}><i>original</i></div>`, ctx);
+                (binder as any).rootNElement!.detectChanges(ctx);
+
+                const host = el.firstElementChild!;
+                expect(errorSpy).toHaveBeenCalledTimes(1);
+                expect(errorSpy).toHaveBeenCalledWith(expect.any(String), host,
+                                                      `element can't have nb-${name} and nb-template bindings at the same time.`);
+                expect(tryPrepareSpy).not.toHaveBeenCalled();
+                expect(host.hasAttribute(readyAttr)).toBe(false);
+                // neither content changer runs, and the original children are left as authored
+                expect(host.innerHTML).toBe('<i>original</i>');
+                expect(host.querySelector('b')).toBeNull();
+            });
+
+            it('should still inject and bind a template that has no conflict', () => {
+                const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+                const ctx = { inner: 'INNER' };
+
+                const { binder, el } = createBoundElement('<div nb-template="@l33-tpl"></div>', ctx);
+                (binder as any).rootNElement!.detectChanges(ctx);
+
+                const host = el.firstElementChild!;
+                expect(errorSpy).not.toHaveBeenCalled();
+                expect(host.hasAttribute(readyAttr)).toBe(true);
+                expect(host.querySelector('b')!.textContent).toBe('INNER');
+            });
+        });
     });
 
     describe('nb-if binding', () => {
@@ -446,7 +495,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(span.classList.contains('nb-hidden')).toBe(false);
 
             (ctx as any).visible = false;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(span.classList.contains('nb-hidden')).toBe(true);
         });
     });
@@ -471,7 +520,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(el.querySelector('span')!.getAttribute('title')).toBe('first');
 
             (ctx as any).tip = 'second';
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(el.querySelector('span')!.getAttribute('title')).toBe('second');
         });
     });
@@ -582,7 +631,7 @@ describe('NElement lifecycle via ContextBinder', () => {
         it('should be true for element with nb-container', () => {
             jest.spyOn(console, 'error').mockImplementation();
             const { binder } = createBoundElement('<div nb-container="testContainer"></div>', {});
-            const rootNElement = binder.rootNElement as INTreeElement;
+            const rootNElement = (binder as any).rootNElement as INTreeElement;
             const child = (rootNElement as any)._children[0] as INElement;
             expect(child).toBeDefined();
             expect(child.isSubTreeHandled).toBe(true);
@@ -591,7 +640,7 @@ describe('NElement lifecycle via ContextBinder', () => {
         it('should be false for element with nb-template that is not registered', () => {
             jest.spyOn(console, 'error').mockImplementation();
             const { binder } = createBoundElement('<div nb-template="testTemplate"></div>', {});
-            const rootNElement = binder.rootNElement as INTreeElement;
+            const rootNElement = (binder as any).rootNElement as INTreeElement;
             const child = (rootNElement as any)._children[0] as INElement;
             // Template not registered (name doesn't start with @), so hasNExpression is false
             expect(child).toBeDefined();
@@ -600,7 +649,7 @@ describe('NElement lifecycle via ContextBinder', () => {
 
         it('should be true for element with nb-value (its textContent owns the subtree)', () => {
             const { binder } = createBoundElement('<span nb-value="this.x"></span>', { x: '' });
-            const rootNElement = binder.rootNElement as INTreeElement;
+            const rootNElement = (binder as any).rootNElement as INTreeElement;
             const child = (rootNElement as any)._children[0] as INElement;
             expect(child.isSubTreeHandled).toBe(true);
         });
@@ -625,7 +674,7 @@ describe('NElement lifecycle via ContextBinder', () => {
                 '<div nb-if="this.show"><span nb-value="this.name"></span></div>',
                 { show: true, name: 'nested' }
             );
-            expect(binder.rootNElement).toBeDefined();
+            expect((binder as any).rootNElement).toBeDefined();
             expect(() => binder.dispose()).not.toThrow();
         });
 
@@ -650,7 +699,7 @@ describe('NElement lifecycle via ContextBinder', () => {
 
             (ctx as any).name = 'updated';
             (ctx as any).color = 'green';
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(el.querySelector('span')!.textContent).toBe('updated');
             expect((el.querySelector('span') as HTMLElement).style.color).toBe('green');
         });
@@ -730,7 +779,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(el.querySelector('.c2')!.classList.contains('nb-hidden')).toBe(true);
 
             (ctx as any).tab = 'two';
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(el.querySelector('.c1')!.classList.contains('nb-hidden')).toBe(true);
             expect(el.querySelector('.c2')!.classList.contains('nb-hidden')).toBe(false);
         });
@@ -750,7 +799,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(span.classList.contains('nb-hidden')).toBe(false);
 
             (ctx as any).show = false;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(span.classList.contains('nb-hidden')).toBe(true);
         });
     });
@@ -776,7 +825,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(el.querySelectorAll('span').length).toBe(1);
 
             (ctx as any).items = ['a', 'b', 'c'];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(el.querySelectorAll('span').length).toBe(3);
         });
 
@@ -789,9 +838,9 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(el.querySelectorAll('span').length).toBe(3);
 
             (ctx as any).items = ['a'];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             // After shrinking, extra clones get removed
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             const spans = el.querySelectorAll('span');
             // At least the single item remains
             expect(spans[0].textContent).toBe('a');
@@ -821,7 +870,7 @@ describe('NElement lifecycle via ContextBinder', () => {
                 shadow.innerHTML = '<span nb-repeat="this.items" nb-value="item"></span>';
 
                 // The premise of the finding: an Element parent is absent, a Node parent is not.
-                const binder = new ContextBinder(undefined, false, () => 'nb-hidden', undefined,
+                const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined,
                                                  () => false, () => undefined, () => undefined);
                 binder.bind(shadow, { items: ['a', 'b', 'c'] } as any, false, false);
 
@@ -844,7 +893,7 @@ describe('NElement lifecycle via ContextBinder', () => {
         it('should construct element with nb-bound without error', () => {
             const ctx = { ref: null as any };
             const { binder } = createBoundElement('<span nb-bound="this.ref"></span>', ctx);
-            expect(binder.rootNElement).toBeDefined();
+            expect((binder as any).rootNElement).toBeDefined();
         });
     });
 
@@ -852,7 +901,7 @@ describe('NElement lifecycle via ContextBinder', () => {
         it('should handle expression errors gracefully', () => {
             const spy = jest.spyOn(console, 'error').mockImplementation();
             const { binder } = createBoundElement('<span nb-value="this.foo.bar.baz"></span>', {});
-            expect(binder.rootNElement).toBeDefined();
+            expect((binder as any).rootNElement).toBeDefined();
             // Should not throw, errors are caught internally
         });
     });
@@ -863,7 +912,7 @@ describe('NElement lifecycle via ContextBinder', () => {
                 '<span nb-repeat="this.items"></span>',
                 { items: [1] }
             );
-            const root = binder.rootNElement as INTreeElement;
+            const root = (binder as any).rootNElement as INTreeElement;
             const child = (root as any)._children[0] as INElement;
             expect(child.nativeElementForClone).toBeDefined();
         });
@@ -1234,9 +1283,9 @@ describe('NElement lifecycle via ContextBinder', () => {
 
             // Shrink to 1 item — clones beyond index 0 get _removed = true
             (ctx as any).items = ['a'];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             // Second detect to process the removals
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(el.querySelectorAll('span').length).toBe(1);
             expect(el.querySelector('span')!.textContent).toBe('a');
         });
@@ -1250,8 +1299,8 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(el.querySelectorAll('span').length).toBe(2);
 
             (ctx as any).items = [];
-            binder.rootNElement!.detectChanges(ctx);
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             // Template element remains but is hidden
             const spans = el.querySelectorAll('span');
             expect(spans.length).toBeGreaterThanOrEqual(1);
@@ -1280,7 +1329,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             const { binder } = createBoundElement('<span nb-value="this.name"></span>', ctx);
             binder.dispose();
             // After dispose, root is deleted - no crash
-            expect(binder.rootNElement).toBeUndefined();
+            expect((binder as any).rootNElement).toBeUndefined();
         });
     });
 
@@ -1372,7 +1421,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             );
             // The initial bind may or may not throw depending on how ContextBinder wraps
             // Re-detect should catch the error
-            expect(() => binder.rootNElement!.detectChanges(ctx)).not.toThrow();
+            expect(() => (binder as any).rootNElement!.detectChanges(ctx)).not.toThrow();
             errorSpy.mockRestore();
         });
     });
@@ -1385,7 +1434,7 @@ describe('NElement lifecycle via ContextBinder', () => {
                 '<span nb-value="this.name"></span>',
                 ctx
             );
-            const rootNElement = binder.rootNElement!;
+            const rootNElement = (binder as any).rootNElement!;
             const child = (rootNElement as any)._children[0];
             if (child && child._disposeSequence) {
                 // Inject a handler that throws on dispose
@@ -1423,7 +1472,7 @@ describe('NElement lifecycle via ContextBinder', () => {
 
             // Remove items to trigger the _removed callback
             (ctx as any).items = [];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             // Only original template span remains (hidden)
             const spans = el.querySelectorAll('span');
             expect(spans.length).toBe(1);
@@ -1457,7 +1506,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             const { binder } = createBoundElement(
                 `<div nb-switch="'a'"><span nb-case="'b'" ${caseAttributes}></span></div>`
             );
-            const caseNElement: any = (binder.rootNElement as any)._children[0]._children[0];
+            const caseNElement: any = ((binder as any).rootNElement as any)._children[0]._children[0];
             // handlers are no longer public fields of NElement — the case handler is found among
             // the parent-handled visibility handlers, the container by type in each sequence
             const caseHandler: Case = caseNElement._visibleParentHandlers.find((handler: any) => handler instanceof Case);
@@ -1521,7 +1570,7 @@ describe('NElement lifecycle via ContextBinder', () => {
     });
 
     describe('handlers are kept and sequenced only when they can be used', () => {
-        const firstChild = (binder: ContextBinder): any => (binder.rootNElement as any)._children[0];
+        const firstChild = (binder: ContextBinder): any => ((binder as any).rootNElement as any)._children[0];
         const hasHandler = (sequence: Array<unknown> | undefined, type: Function) => (sequence ?? []).some(handler => handler instanceof type);
 
         it('should leave every optional slot undefined for an element with only nb-exec', () => {
@@ -1591,6 +1640,44 @@ describe('NElement lifecycle via ContextBinder', () => {
             );
             expect(caseNElement._visibleParentHandlers).toBeUndefined();
             expect(el.querySelector('span')!.classList.contains('nb-hidden')).toBe(false);
+        });
+
+        // L-49: nb-html used to be labelled 'nb-value' in the child-content warning, and the message had a typo
+        describe('child-content warning (L-49)', () => {
+            function bindWithDebugInfo(html: string): Element {
+                const el = document.createElement('div');
+                el.innerHTML = html;
+                const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined, () => true, () => undefined, () => undefined);
+                binder.bind(el, {} as any, false, false);
+                return el;
+            }
+
+            it('should name nb-html when nb-html replaces authored children', () => {
+                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const el = bindWithDebugInfo(`<p nb-html="'<b>x</b>'">authored</p>`);
+
+                expect(warnSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el.querySelector('p'),
+                                                     'element original children will be replaced by nb-html');
+            });
+
+            it('should name nb-value when nb-value replaces authored children', () => {
+                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const el = bindWithDebugInfo(`<p nb-value="'x'"><i>authored</i></p>`);
+
+                expect(warnSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el.querySelector('p'),
+                                                     'element original children will be replaced by nb-value');
+            });
+        });
+
+        // L-49: the orphan message now names the rule correctly (the nearest nuBond element, not the direct DOM parent)
+        it('should name the nearest nuBond element in the orphaned nb-case / nb-default message (L-49)', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            const { el } = createBoundElement(`<div nb-if="true"><span nb-case="'a'">A</span><b nb-default>B</b></div>`, {});
+
+            expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el.querySelector('span'),
+                `invalid operation: nb-case must have direct nb-switch ${Constants.DISPLAY_NAME} parent`);
+            expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el.querySelector('b'),
+                `invalid operation: nb-default must have direct nb-switch ${Constants.DISPLAY_NAME} parent`);
         });
 
         describe('ready markers are written without an Attributes commit', () => {
@@ -1719,21 +1806,21 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(target.classList.contains('nb-hidden')).toBe(false);
 
             ctx.visible = false;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             ctx.items = [];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             //nb-if releases its own hold, nb-repeat still requires the element to stay hidden
             ctx.visible = true;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
             expect(target.textContent).toBe('');
 
             ctx.items = [7];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(false);
             expect(target.textContent).toBe('7');
         });
@@ -1744,20 +1831,20 @@ describe('NElement lifecycle via ContextBinder', () => {
             const target = el.querySelector('span')!;
 
             ctx.items = [];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             ctx.visible = false;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             //nb-repeat releases its own hold, nb-if still requires the element to stay hidden
             ctx.items = [1];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             ctx.visible = true;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(false);
         });
 
@@ -1768,18 +1855,18 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(target.classList.contains('nb-hidden')).toBe(false);
 
             ctx.visible = false;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             ctx.mode = 'no-such-case';
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             //nb-if releases its own hold, nb-switch still requires the element to stay hidden
             ctx.visible = true;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             ctx.mode = 'a';
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(false);
         });
 
@@ -1793,15 +1880,15 @@ describe('NElement lifecycle via ContextBinder', () => {
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             ctx.visible = true;
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             ctx.mode = 'a';
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(true);
 
             ctx.items = [1];
-            binder.rootNElement!.detectChanges(ctx);
+            (binder as any).rootNElement!.detectChanges(ctx);
             expect(target.classList.contains('nb-hidden')).toBe(false);
         });
     });

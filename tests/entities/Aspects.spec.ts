@@ -439,4 +439,46 @@ describe('Aspects', () => {
             expect(aspects.getStyles('case-a')?.[1]).toEqual(['Shared', 'shared']);
         });
     });
+
+    describe('L-52a: with showDebugInfo on, a throwing sanitizer on the error template still releases the callbacks', () => {
+        const flushPromises = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+        const throwingSanitizer = () => (_text: string): string => { throw new Error('sanitize-boom'); };
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+            (globalThis as any).fetch = jest.fn().mockResolvedValue({
+                ok: true,
+                text: () => Promise.resolve('fetched content')
+            });
+            aspects = new Aspects(injectables, () => true);
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+            (globalThis as any).fetch = undefined;
+        });
+
+        it('aspect style', async () => {
+            class MyAspect implements IAspectContext {}
+            aspects.add('l52', MyAspect as any, [], '/l52.css', undefined, throwingSanitizer);
+
+            const cb = jest.fn();
+            expect(aspects.tryPrepare('l52', cb)).toBe(true);
+            await flushPromises();
+            jest.runAllTimers();
+
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `,
+                "fetchData errorCallBack failed for template '/l52.css' with exception: Error: sanitize-boom");
+            expect(cb).toHaveBeenCalledWith(true);
+            expect(aspects.isReady('l52')).toBe(false);
+
+            // Not stuck in progress: the next attempt fetches again.
+            const cb2 = jest.fn();
+            expect(aspects.tryPrepare('l52', cb2)).toBe(true);
+            await flushPromises();
+            jest.runAllTimers();
+            expect(cb2).toHaveBeenCalledWith(true);
+            expect((globalThis as any).fetch).toHaveBeenCalledTimes(2);
+        });
+    });
 });

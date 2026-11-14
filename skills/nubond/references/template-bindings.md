@@ -36,8 +36,9 @@ is correct on both sides.
 
 ### `@` is a coercion grammar
 
-The remainder is inspected: `true`/`false` become booleans, anything `Number()` accepts is emitted as
-**raw source**, and everything else is emitted as an escaped double-quoted string.
+The remainder is inspected: `true`/`false` become booleans, `null`/`undefined` become those values,
+anything `Number()` accepts is emitted as **raw source**, and everything else is emitted as an escaped
+double-quoted string.
 
 | Written | Result |
 |---|---|
@@ -46,7 +47,7 @@ The remainder is inspected: `true`/`false` become booleans, anything `Number()` 
 | `@5` / `@0x10` | number (`5` / `16`) |
 | `@Infinity` | number `Infinity` |
 | `@NaN` | string `"NaN"` |
-| `@null` / `@undefined` | strings `"null"` / `"undefined"` |
+| `@null` / `@undefined` | `null` / `undefined` (exact lowercase only — `@NULL` is the string `"NULL"`) |
 | `@{min: 0}` | string `"{min: 0}"` — `@` cannot express objects; use `#{min: 0}` |
 | `@007`, `@08` | **`SyntaxError`** — strict-mode octal / leading-zero decimal; the binding dies |
 
@@ -114,7 +115,7 @@ Both run the result through `Helpers.stringify`:
 | `string` | as-is |
 | `number` / `boolean` / `bigint` | `` `${value}` `` |
 | `null`, `undefined`, symbol, function | `''` (empty — **not** `"null"`) |
-| object / array | `JSON.stringify(value)` |
+| object / array | `JSON.stringify(value)` — a `bigint` inside renders as its decimal string, a reference back to an ancestor as `"[circular reference]"`; a throwing `toJSON`/getter gives `''` and is logged |
 
 So `nb-value="this.missing"` renders nothing rather than `undefined`. Use `?? 'fallback'` when you
 want a placeholder.
@@ -206,7 +207,11 @@ A value ending in `!important` is applied with that priority —
 before it is optional; `! important` (whitespace inside the flag) is not recognized and the
 declaration is dropped.
 
-A literal `;` inside an entry is escaped as `\;` — e.g. `nb-style="background: url('a\;b.png')"`.
+A `;` inside a quoted literal (`'…'`, `"…"` or `` `…` ``) of an entry is text, not a separator —
+`nb-style="background: url('a;b.png')"` — and the literal keeps its JavaScript escapes. Elsewhere a
+literal `;` is escaped as `\;` (also accepted inside a literal). A quote right after a letter or digit
+does not open a literal, an unclosed quote is plain text, and a `;` inside a regex literal still needs
+`\;`.
 Each entry carries its own prefix: `nb-class="[this.a; #this.b]"` is legal.
 
 `nb-style` keeps a cache of what it last wrote. If code writes `element.style` directly (e.g. during a
@@ -243,7 +248,7 @@ kebab/camel spellings of one property) keep the **first** and log
 **Guard rails** (rejected with an error pointing at the dedicated handler): `nb-attr:class`,
 `nb-attr:style`, `nb-attr:` targeting a framework `nb-*` attribute, `nb-prop:className`,
 `nb-prop:classList`, `nb-prop:style`, `nb-prop:textContent`, `nb-prop:innerText`,
-`nb-prop:innerHTML`, `nb-prop:outerHTML`. Event-handler attributes are **not** rejected:
+`nb-prop:innerHTML`, `nb-prop:outerHTML`, `nb-prop:__proto__`. Event-handler attributes are **not** rejected:
 `nb-attr:onclick` still binds. With `showDebugInfo` on, any `nb-attr:` target starting with `on` logs
 a warning (`… looks like an HTML Event Attribute, event subscription should be done via nb-event`) —
 a plain name check, so `nb-attr:once` warns as well. Use `nb-event:` instead.
@@ -401,6 +406,10 @@ must be a valid identifier: `nb-repeat:outer-list` logs
 does not run — the element renders once, with no loop variables. Keep it a single lowercase word
 (`nb-repeat:outer`).
 
+One element runs one loop. If it carries both `nb-repeat` and `nb-repeat:prefix`, the attribute that
+comes first in the markup is used and the other is ignored without a diagnostic (by design). Nest two
+elements for two loops.
+
 ### How repeat actually works — index-positional, not keyed
 
 The repeated element is a clone chain. The authored element is clone #0 and keeps a pristine copy of
@@ -442,7 +451,7 @@ row is still bound on each pass — fine for short lists, wasteful for long ones
 | `nb-event:name:ms` | Same, with a debounce in milliseconds. |
 
 Injected params: `nativeElement`, `element` (`ElementManipulations`), `event`, `data` (`event.detail`
-for `CustomEvent`, else `undefined`), `unSubscribe`, and `router` when routing is configured.
+for `CustomEvent` — `null` when dispatched without data or with `undefined` — else `undefined`), `unSubscribe`, and `router` when routing is configured.
 
 ```html
 <button nb-event:click="this.onClick(event)">Click</button>
@@ -560,8 +569,9 @@ Pair it with a property setter when you need to react to the capture (see `patte
   `<name> input set error, object cannot be cloned, try to use nb-in-ref…` on every pass and sets the
   child's property to `undefined` (replacing the child's own default). A class instance clones without
   complaint but arrives as a plain object without its methods. Use `nb-in-ref` for all of these.
-- `Set`s of objects and `Map`s with object keys never deep-equal their own clone, so through `nb-in`
-  they are re-delivered on every pass. Pass arrays or plain objects, or use `nb-in-ref`.
+- `Set`s of objects and `Map`s with object keys equal their clone, but only through a pairwise deep
+  match on every pass (quadratic in size). Pass arrays or plain objects, or use `nb-in-ref`, for large
+  collections.
 - A `#`-bound input is delivered once per child *instance*: when an `nb-container` swaps to another
   container, the new context receives it again.
 - `nb-in:x` and `nb-in-ref:x` on one element share a key space: the `nb-in` one wins and the other is
@@ -594,23 +604,54 @@ Slots are declared in the child's template; content is supplied from the parent.
 <div nb-container="@Card"><em nb-projection>Default content</em></div>
 ```
 
-> **Projected content binds against the *child's* context, not the parent's.** The nodes are cloned into
-> the container/component subtree before that entity's binder builds the tree, so `this` inside a
-> `nb-projection` element means the child. This differs from web-component slots and from other
-> frameworks' content projection — pass parent data in through `nb-in` instead of expecting it in scope.
+> **Projected content binds against the *parent's* context — the template that wrote it — not the
+> child's.** `this`, `nb-event` handlers, `{{ }}`, `nb-if`, nested containers: everything inside a
+> `nb-projection` element is evaluated by the parent, with the parent's scope (an enclosing
+> `nb-repeat`'s `item` / `index` / `count`, an enclosing `nb-var`), and it re-renders on the parent's
+> change detection. This matches web-component slots and other frameworks' content projection.
+
+```html
+<!-- parent: `this.like()` and `this.likes` are the parent's, not the Card's -->
+<div nb-container="@Card">
+    <button nb-projection="@footer" nb-event:click="this.like()">Like ({{ this.likes }})</button>
+</div>
+```
+
+How it works: each slot receives its own clone, tagged with the system attribute `nb-encapsulated`
+(`data-nb-encapsulated` in W3C mode); when the child's tree is built, a tagged element is handed to the
+parent's binder, while staying linked to the child-template element that holds the slot. Don't write
+`nb-encapsulated` yourself (`nb-attr:` refuses to set it), and don't key CSS on it.
+
+**`nb-template` is the exception:** a global template has no context of its own, so content projected
+into it binds in the context that *uses* the template — inside a container's template, that container.
 
 - Slot names are plain strings matched **verbatim** between `nb-projection` and
   `nb-project-to`/`nb-project-instead` — the leading `@` is a naming convention, not the constant
   prefix, so use it on both sides or on neither. Names may contain `:` — `@content:left`,
   `@content:right` are used heavily in real templates.
+- Only **direct children** of the host are projections. One nested inside a wrapper is not projected —
+  the wrapper is fallback content — and one written by the receiving template itself is just an ordinary
+  element bound by its own context.
 - An unnamed `nb-projection` cannot be mixed with multiple projections on the same host (error).
-- Duplicate *named* projections silently let the last one win.
-- **A slot with no matching projection keeps its own markup**, so whatever you put inside a
-  `nb-project-to` element serves as fallback content.
-- Projected nodes are cloned, so the same source can feed several slots.
-- Host children *without* `nb-projection` are kept aside as fallback content and restored if the
-  container is disposed or its name resolves to nothing. A container whose name is empty from the
-  start is marked ready on its first pass, so its fallback is visible right away.
+- Duplicate *named* projections: the first wins; each later one is dropped with an error
+  (`Projection with duplicated name found: <name>.`).
+- **A slot with no matching projection keeps its own markup**, bound by the child, so whatever you put
+  inside a `nb-project-to` element serves as fallback content. The fallback of a slot that *does* get a
+  projection is never instantiated.
+- Projected nodes are cloned, so the same source can feed several slots — each copy bound on its own.
+- **Slots inside `nb-repeat` work fully:** every row of the child's repeat gets its own copy, bound by
+  the parent with working handlers; rows added later bind immediately, and a removed row disposes its
+  copy (nested containers included).
+- A projection can be passed on: the child's template can re-project it into a nested container
+  (`<em nb-projection="a" nb-project-to="a"></em>`) and it stays bound by the original author.
+- While its slot is hidden (an `nb-if` or an inactive `nb-case` anywhere above it in the child's
+  template), the projected copy is not evaluated.
+- Content handlers (`nb-value`, `nb-html`, `nb-switch`, `nb-container`, …) may sit on the projected
+  element itself: `<b nb-projection="@title" nb-value="this.title"></b>`.
+- Host children *without* `nb-projection` are the container's fallback content: they are restored and
+  **bound by the parent** whenever the container shows nothing — its name is empty (also from the very
+  first pass), names no registered container, or its template could not be loaded. A container whose
+  name is empty from the start is marked ready on its first pass, so its fallback is visible right away.
 - For components, projection moves light-DOM children into the shadow root's slots.
 
 ## Sub-tree ownership and which elements are tracked

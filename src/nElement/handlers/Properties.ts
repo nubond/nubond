@@ -36,8 +36,6 @@ export class Properties extends Base implements IHandler<Map<string, IExpression
             this.hasNExpression = true;
             this.nExpression = new Map<string, IExpressionDetails>();
 
-            const defaultPrefixAndSeparator = Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR;
-
             for (const [key, value] of attributes.getAll(Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME, true)) {
                 const rawPropertyName = key.replace(Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME + Constants.META_VALUE_SEPARATOR, '');
                 if (rawPropertyName.length > 0) {
@@ -46,15 +44,17 @@ export class Properties extends Base implements IHandler<Map<string, IExpression
                         const propertyNameLower = propertyName.toLowerCase();
 
                         if ((propertyNameLower == 'classlist') || (propertyNameLower == 'classname')) {
-                            Console.error(nativeElement, `classes should be changed via ${defaultPrefixAndSeparator}class`);
+                            Console.error(nativeElement, `classes should be changed via ${Constants.DEFAULT_PREFIX_AND_SEPARATOR}class`);
                         } else if (propertyNameLower == 'style') {
-                            Console.error(nativeElement, `styles should be changed via ${defaultPrefixAndSeparator}style`);
+                            Console.error(nativeElement, `styles should be changed via ${Constants.DEFAULT_PREFIX_AND_SEPARATOR}style`);
                         } else if ((propertyNameLower == 'textcontent') || (propertyNameLower == 'innertext')) {
-                            Console.error(nativeElement, `text content should be changed via ${defaultPrefixAndSeparator}value`);
+                            Console.error(nativeElement, `text content should be changed via ${Constants.DEFAULT_PREFIX_AND_SEPARATOR}value`);
                         } else if (propertyNameLower == 'innerhtml') {
-                            Console.error(nativeElement, `html content should be changed via ${defaultPrefixAndSeparator}html`);
+                            Console.error(nativeElement, `html content should be changed via ${Constants.DEFAULT_PREFIX_AND_SEPARATOR}html`);
                         } else if (propertyNameLower == 'outerhtml') {
                             Console.error(nativeElement, `outerHTML cannot be changed`);
+                        } else if (propertyNameLower == '__proto__') {
+                            Console.error(nativeElement, `__proto__ cannot be changed`);
                         } else {
                             if (!this.nExpression.has(propertyName)) {
                                 this.nExpression.set(propertyName, new ExpressionDetails(value!));   

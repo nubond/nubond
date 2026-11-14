@@ -18,7 +18,7 @@ export class InitializableBase extends Base {
     protected markAsReady(): void {
         if (!this.isReady) {
             this.isReady = true;
-            this.nativeElement!.setAttribute(Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR + 
+            this.nativeElement!.setAttribute(Constants.DEFAULT_PREFIX_AND_SEPARATOR + 
                                              this.handlerAttributeName + 
                                              Constants.DEFAULT_SEPARATOR + Constants.HANDLER_READY_ATTRIBUTE_SUFFIX, '');
         }

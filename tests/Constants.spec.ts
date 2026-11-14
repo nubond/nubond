@@ -474,8 +474,45 @@ describe('Constants', () => {
             expect(Constants.ASPECT_HANDLER_PREFIX_NAME).toBeDefined();
         });
 
-        it('should have PROJECTION_ATTRIBUTE_PREFIX_NAME defined', () => {
-            expect(Constants.PROJECTION_ATTRIBUTE_PREFIX_NAME).toBeDefined();
+        it('should have PROJECTION_ATTRIBUTE_NAME defined', () => {
+            expect(Constants.PROJECTION_ATTRIBUTE_NAME).toBe('projection');
+        });
+    });
+
+    describe('projection attribute names', () => {
+        afterEach(() => {
+            Constants.changeCompliancyWithW3C(false);
+        });
+
+        it('should expose the full projection / encapsulated / project-to / project-instead names', () => {
+            expect(Constants.FULL_PROJECTION_ATTRIBUTE_NAME).toBe('nb-projection');
+            expect(Constants.FULL_ENCAPSULATED_ATTRIBUTE_NAME).toBe('nb-encapsulated');
+            expect(Constants.FULL_PROJECT_TO_ATTRIBUTE_NAME).toBe('nb-project-to');
+            expect(Constants.FULL_PROJECT_INSTEAD_ATTRIBUTE_NAME).toBe('nb-project-instead');
+        });
+
+        it('should recompute every full projection name in W3C mode', () => {
+            Constants.changeCompliancyWithW3C(true);
+
+            expect(Constants.FULL_PROJECTION_ATTRIBUTE_NAME).toBe('data-nb-projection');
+            expect(Constants.FULL_ENCAPSULATED_ATTRIBUTE_NAME).toBe('data-nb-encapsulated');
+            expect(Constants.FULL_PROJECT_TO_ATTRIBUTE_NAME).toBe('data-nb-project-to');
+            expect(Constants.FULL_PROJECT_INSTEAD_ATTRIBUTE_NAME).toBe('data-nb-project-instead');
+        });
+
+        it('should register the encapsulated marker as a system attribute (both sets)', () => {
+            expect(Constants.KNOWN_HANDLER_EXTENSIONS.has('nb-encapsulated')).toBe(true);
+            expect(Constants.KNOWN_HANDLER_EXTENSIONS_WITHOUT_VALUES.has('nb-encapsulated')).toBe(true);
+
+            Constants.changeCompliancyWithW3C(true);
+
+            expect(Constants.KNOWN_HANDLER_EXTENSIONS.has('data-nb-encapsulated')).toBe(true);
+            expect(Constants.KNOWN_HANDLER_EXTENSIONS_WITHOUT_VALUES.has('data-nb-encapsulated')).toBe(true);
+        });
+
+        it('should not hide projected content in the processing-hide style', () => {
+            expect(Constants.DEFAULT_PROCESSING_HIDE_STYLE).not.toContain('[nb-projection]');
+            expect(Constants.DEFAULT_PROCESSING_HIDE_STYLE).not.toContain('[data-nb-projection]');
         });
     });
 });

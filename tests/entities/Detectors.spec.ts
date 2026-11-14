@@ -23,13 +23,13 @@ describe('Detectors', () => {
         expect(detectors.has(MyClass as any)).toBe(true);
     });
 
-    it('should get the array of property names', () => {
+    it('should get the set of property names', () => {
         class MyClass {}
         detectors.add(MyClass.prototype, 'prop1');
         detectors.add(MyClass.prototype, 'prop2');
 
         const props = detectors.get(MyClass as any);
-        expect(props).toEqual(['prop1', 'prop2']);
+        expect(props).toEqual(new Set(['prop1', 'prop2']));
     });
 
     it('should keep separate registries for different classes', () => {
@@ -39,8 +39,8 @@ describe('Detectors', () => {
         detectors.add(ClassA.prototype, 'propA');
         detectors.add(ClassB.prototype, 'propB');
 
-        expect(detectors.get(ClassA as any)).toEqual(['propA']);
-        expect(detectors.get(ClassB as any)).toEqual(['propB']);
+        expect(detectors.get(ClassA as any)).toEqual(new Set(['propA']));
+        expect(detectors.get(ClassB as any)).toEqual(new Set(['propB']));
     });
 
     it('should accumulate multiple properties on same target', () => {
@@ -49,7 +49,18 @@ describe('Detectors', () => {
         detectors.add(MyClass.prototype, 'b');
         detectors.add(MyClass.prototype, 'c');
 
-        expect(detectors.get(MyClass as any)).toEqual(['a', 'b', 'c']);
+        expect(detectors.get(MyClass as any)).toEqual(new Set(['a', 'b', 'c']));
+    });
+
+    // L-44: a property decorated twice used to be registered twice, so the binder's second pass
+    // found the accessor installed by the first and logged 'has getter or setter' once per instance.
+    it('should register a property added twice only once (L-44)', () => {
+        class MyClass {}
+        detectors.add(MyClass.prototype, 'a');
+        detectors.add(MyClass.prototype, 'b');
+        detectors.add(MyClass.prototype, 'a');
+
+        expect(Array.from(detectors.get(MyClass as any)!)).toEqual(['a', 'b']);
     });
 
     // Documented by-design limitation (see the @Detector() JSDoc): registration keys on the exact
@@ -62,7 +73,7 @@ describe('Detectors', () => {
 
             detectors.add(Base.prototype, 'baseProp');
 
-            expect(detectors.get(Base as any)).toEqual(['baseProp']);
+            expect(detectors.get(Base as any)).toEqual(new Set(['baseProp']));
             expect(detectors.get(Derived as any)).toBeUndefined();
             expect(detectors.has(Derived as any)).toBe(false);
         });
@@ -74,7 +85,7 @@ describe('Detectors', () => {
             detectors.add(Base.prototype, 'baseProp');
             detectors.add(Derived.prototype, 'derivedProp');
 
-            expect(detectors.get(Derived as any)).toEqual(['derivedProp']);
+            expect(detectors.get(Derived as any)).toEqual(new Set(['derivedProp']));
         });
     });
 });

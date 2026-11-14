@@ -963,4 +963,35 @@ describe('Repeat handler', () => {
             }
         });
     });
+
+    describe('L-20: nb-repeat and nb-repeat:prefix on one element (by design)', () => {
+        const REPEAT_ATTR = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}`;
+
+        function createWithBoth(prefixedFirst: boolean) {
+            const el = document.createElement('div');
+            const plain = (): void => el.setAttribute(REPEAT_ATTR, 'ctx.plain');
+            const prefixed = (): void => el.setAttribute(`${REPEAT_ATTR}${Constants.META_VALUE_SEPARATOR}row`, 'ctx.prefixed');
+            if (prefixedFirst) { prefixed(); plain(); } else { plain(); prefixed(); }
+            const attrs = new Attributes(el, () => false);
+            const classes = new Classes(el, attrs, () => hideClassName);
+            return { el, attrs, classes };
+        }
+
+        it.each([
+            ['plain first', false, 'item', 'rowItem', 'ctx.plain'],
+            ['prefixed first', true, 'rowItem', 'item', 'ctx.prefixed'],
+        ])('uses the attribute that comes first in markup (%s) and ignores the other without an error', (_label, prefixedFirst, used, ignored, expression) => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            const { el, attrs, classes } = createWithBoth(prefixedFirst as boolean);
+            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+
+            expect(handler.nExpression!.expression).toBe(expression);
+            const result = handler.bind(undefined, () => ['a']);
+
+            expect(result!.names).toContain(used);
+            expect(result!.names).not.toContain(ignored);
+            expect(errorSpy).not.toHaveBeenCalled();
+            errorSpy.mockRestore();
+        });
+    });
 });

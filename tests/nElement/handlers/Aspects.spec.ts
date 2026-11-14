@@ -15,6 +15,13 @@ describe('Aspects handler', () => {
     const mockGetEventDispatcher = () => ({} as any);
     const mockDetectChanges = jest.fn();
 
+    /** Helper: build the handler and run construct(), as NElement does after validate() (L-33) */
+    function constructAspects(...args: ConstructorParameters<typeof Aspects>): Aspects {
+        const handler = new Aspects(...args);
+        handler.construct();
+        return handler;
+    }
+
     /** Helper: create an element with an nb-aspect:xxx attribute */
     function createElementWithAspect(aspectKebabName: string, expression: string): Element {
         const el = document.createElement('div');
@@ -83,8 +90,8 @@ describe('Aspects handler', () => {
     it('should have no expression when no aspect attributes', () => {
         const el = document.createElement('div');
         const attrs = new Attributes(el, () => false);
-        const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                    mockGetEventDispatcher, mockDetectChanges);
+        const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                         mockGetEventDispatcher, mockDetectChanges);
 
         expect(handler.hasNExpression).toBe(false);
     });
@@ -92,8 +99,8 @@ describe('Aspects handler', () => {
     it('isDirty should be false initially', () => {
         const el = document.createElement('div');
         const attrs = new Attributes(el, () => false);
-        const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                    mockGetEventDispatcher, mockDetectChanges);
+        const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                         mockGetEventDispatcher, mockDetectChanges);
 
         expect(handler.isDirty).toBe(false);
     });
@@ -101,8 +108,8 @@ describe('Aspects handler', () => {
     it('should return executionParams from bind when no expression', () => {
         const el = document.createElement('div');
         const attrs = new Attributes(el, () => false);
-        const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                    mockGetEventDispatcher, mockDetectChanges);
+        const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                         mockGetEventDispatcher, mockDetectChanges);
 
         const params = { x: 1 } as any;
         // When hasNExpression is false, bind just returns params
@@ -117,8 +124,8 @@ describe('Aspects handler', () => {
 
             const el = createElementWithAspect('my-aspect', 'ctx.value');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             expect(handler.hasNExpression).toBe(true);
             expect(aspects.has).toHaveBeenCalledWith('my-aspect');
@@ -130,6 +137,55 @@ describe('Aspects handler', () => {
             expect(bindings.aspect).toBe(mockAspectInstance);
         });
 
+        it('should not instantiate anything until construct() is called (L-33)', () => {
+            const { aspects } = mockAspectsEnv({ has: true });
+
+            const el = createElementWithAspect('my-aspect', 'ctx.value');
+            const handler = new Aspects(el, new Attributes(el, () => false), mockGetManipulations, mockGetSubscriptions,
+                                        mockGetEventDispatcher, mockDetectChanges);
+
+            expect(handler.hasNExpression).toBe(true);
+            expect(aspects.has).not.toHaveBeenCalled();
+            expect(aspects.instantiate).not.toHaveBeenCalled();
+            expect(handler.nExpression!.size).toBe(0);
+
+            handler.construct();
+
+            expect(aspects.instantiate).toHaveBeenCalledTimes(1);
+            expect(handler.nExpression!.has('my-aspect')).toBe(true);
+        });
+
+        it('should construct every aspect when an earlier one has an already-loaded style', () => {
+            // regression: a ready style calls back synchronously from tryPrepare; the first
+            // cut of construct() released its captured dependencies there, mid-loop, and the
+            // next aspect threw "this._getElementManipulations is not a function"
+            const sheetA = new CSSStyleSheet();
+            const sheetB = new CSSStyleSheet();
+            const { aspects } = mockAspectsEnv({ has: true, tryPrepareSync: true });
+            aspects.instantiate.mockImplementation(() => [{ data: undefined }, true]);
+            aspects.getStyles.mockImplementation((name: string) => [name === 'styled-a' ? sheetA : sheetB, undefined]);
+
+            const manipulations = jest.fn(() => ({} as any));
+            const el = createElementWithAspect('styled-a', '');
+            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ASPECT_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}styled-b`, '');
+            document.body.appendChild(el);
+
+            let handler: Aspects | undefined;
+            expect(() => {
+                handler = constructAspects(el, new Attributes(el, () => false), manipulations, mockGetSubscriptions,
+                                           mockGetEventDispatcher, mockDetectChanges);
+            }).not.toThrow();
+
+            expect(aspects.instantiate).toHaveBeenCalledTimes(2);
+            expect(manipulations).toHaveBeenCalledTimes(2);
+            expect([...handler!.nExpression!.keys()]).toEqual(['styled-a', 'styled-b']);
+            expect(document.adoptedStyleSheets).toEqual([sheetA, sheetB]);
+
+            handler!.dispose();
+            el.remove();
+            expect(document.adoptedStyleSheets).toEqual([]);
+        });
+
         it('should handle aspect with no expression value (undefined value)', () => {
             mockAspectsEnv({ has: true });
 
@@ -139,8 +195,8 @@ describe('Aspects handler', () => {
                 ''
             );
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             expect(handler.hasNExpression).toBe(true);
             // Binding should exist but nExpression should be undefined
@@ -159,8 +215,8 @@ describe('Aspects handler', () => {
                 'ctx.x'
             );
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             expect(consoleSpy).toHaveBeenCalledWith(el, expect.stringContaining("can't be empty"));
             consoleSpy.mockRestore();
@@ -181,8 +237,8 @@ describe('Aspects handler', () => {
 
             const el = createElementWithAspect('broken-aspect', 'ctx.x');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             expect(consoleSpy).toHaveBeenCalledWith(el, expect.stringContaining('cannot be constructed'));
             consoleSpy.mockRestore();
@@ -197,8 +253,8 @@ describe('Aspects handler', () => {
 
             const el = createElementWithAspect('my-aspect', 'ctx.value');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             const params = {} as any;
             const executeExpression = jest.fn().mockReturnValue(42);
@@ -223,8 +279,8 @@ describe('Aspects handler', () => {
                 ''
             );
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             const executeExpression = jest.fn();
             handler.bind({} as any, executeExpression);
@@ -238,8 +294,8 @@ describe('Aspects handler', () => {
 
             const el = createElementWithAspect('my-aspect', 'ctx.value');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             handler.bind({} as any, jest.fn().mockReturnValue('hello'));
             expect(handler.commit()).toBe(true);
@@ -250,8 +306,8 @@ describe('Aspects handler', () => {
         it('commit should return false when not dirty', () => {
             const el = document.createElement('div');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             expect(handler.commit()).toBe(false);
         });
@@ -266,8 +322,8 @@ describe('Aspects handler', () => {
 
             const el = createElementWithAspect('unknown', 'ctx.x');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             expect(handler.hasNExpression).toBe(true);
             // The map should be empty — nothing was added
@@ -286,11 +342,84 @@ describe('Aspects handler', () => {
 
             const el = createElementWithAspect('my-aspect', 'ctx.x');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             // No styles → dispose should not throw
             expect(() => handler.dispose()).not.toThrow();
+        });
+
+        // L-45: aspects had no dispose lifecycle, so timers/listeners acquired in the constructor leaked.
+        describe('L-45: aspect context onDispose', () => {
+            function createElementWithAspects(names: Array<string>): Element {
+                const el = document.createElement('div');
+                for (const name of names) {
+                    el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.ASPECT_HANDLER_PREFIX_NAME}` +
+                                    `${Constants.META_VALUE_SEPARATOR}${name}`, '');
+                }
+                return el;
+            }
+
+            function createHandler(instances: {[name: string]: any}): Aspects {
+                const { aspects } = mockAspectsEnv({ has: true });
+                aspects.instantiate.mockImplementation((name: string) => [instances[name], false]);
+
+                const el = createElementWithAspects(Object.keys(instances));
+                return constructAspects(el, new Attributes(el, () => false), mockGetManipulations, mockGetSubscriptions,
+                                        mockGetEventDispatcher, mockDetectChanges);
+            }
+
+            it('should call the aspect context onDispose on dispose', () => {
+                const instance = { data: undefined, onDispose: jest.fn() };
+                const handler = createHandler({ 'my-aspect': instance });
+
+                expect(instance.onDispose).not.toHaveBeenCalled();
+                handler.dispose();
+                expect(instance.onDispose).toHaveBeenCalledTimes(1);
+            });
+
+            it('should be optional - an aspect without onDispose disposes cleanly', () => {
+                const handler = createHandler({ 'my-aspect': { data: undefined } });
+
+                expect(() => handler.dispose()).not.toThrow();
+            });
+
+            it('should call every aspect onDispose even when an earlier one throws, then throw one aggregated error', () => {
+                const first = { data: undefined, onDispose: jest.fn(() => { throw new Error('boom-a'); }) };
+                const second = { data: undefined, onDispose: jest.fn() };
+                const handler = createHandler({ 'aspect-a': first, 'aspect-b': second });
+
+                expect(() => handler.dispose()).toThrow(/one or more aspect context dispose failed: aspect aspect-a context dispose failed with exception: Error: boom-a/);
+                expect(first.onDispose).toHaveBeenCalledTimes(1);
+                expect(second.onDispose).toHaveBeenCalledTimes(1);
+            });
+
+            it('should release adopted styles before calling onDispose, even when onDispose throws', () => {
+                const cssSheet = new CSSStyleSheet();
+                const instance = {
+                    data: undefined,
+                    onDispose: jest.fn(() => {
+                        expect(document.adoptedStyleSheets).not.toContain(cssSheet);
+                        throw new Error('boom');
+                    })
+                };
+                // styles are attached in the tryPrepare callback, which the mock runs synchronously
+                const handler = createHandlerWithStyles(instance, cssSheet);
+                expect(document.adoptedStyleSheets).toContain(cssSheet);
+
+                expect(() => handler.dispose()).toThrow(/boom/);
+                expect(instance.onDispose).toHaveBeenCalledTimes(1);
+                expect(document.adoptedStyleSheets).not.toContain(cssSheet);
+            });
+
+            function createHandlerWithStyles(instance: any, cssSheet: CSSStyleSheet): Aspects {
+                const { aspects } = mockAspectsEnv({ has: true, getStylesReturn: [cssSheet, undefined] });
+                aspects.instantiate.mockImplementation(() => [instance, true]);
+
+                const el = createElementWithAspects(['styled-aspect']);
+                return constructAspects(el, new Attributes(el, () => false), mockGetManipulations, mockGetSubscriptions,
+                                        mockGetEventDispatcher, mockDetectChanges);
+            }
         });
 
         it('should remove adopted stylesheet from root when last usage is disposed', () => {
@@ -304,8 +433,8 @@ describe('Aspects handler', () => {
 
             const el = createElementWithAspect('styled', 'ctx.x');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             // The stylesheet should have been pushed to the document
             expect(document.adoptedStyleSheets).toContain(cssSheet);
@@ -327,15 +456,15 @@ describe('Aspects handler', () => {
             mockAspectsEnv(envOpts);
 
             const el1 = createElementWithAspect('styled', 'ctx.a');
-            const handler1 = new Aspects(el1, new Attributes(el1, () => false), mockGetManipulations, mockGetSubscriptions,
-                                         mockGetEventDispatcher, mockDetectChanges);
+            const handler1 = constructAspects(el1, new Attributes(el1, () => false), mockGetManipulations, mockGetSubscriptions,
+                                              mockGetEventDispatcher, mockDetectChanges);
 
             // Re-mock so instantiate returns a fresh aspect for the second handler
             mockAspectsEnv(envOpts);
 
             const el2 = createElementWithAspect('styled', 'ctx.b');
-            const handler2 = new Aspects(el2, new Attributes(el2, () => false), mockGetManipulations, mockGetSubscriptions,
-                                         mockGetEventDispatcher, mockDetectChanges);
+            const handler2 = constructAspects(el2, new Attributes(el2, () => false), mockGetManipulations, mockGetSubscriptions,
+                                              mockGetEventDispatcher, mockDetectChanges);
 
             expect(document.adoptedStyleSheets.filter(s => s === cssSheet).length).toBeGreaterThanOrEqual(1);
 
@@ -366,8 +495,8 @@ describe('Aspects handler', () => {
 
             const el = createElementWithAspect('fancy', 'ctx.y');
             const attrs = new Attributes(el, () => false);
-            const handler = new Aspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
-                                        mockGetEventDispatcher, mockDetectChanges);
+            const handler = constructAspects(el, attrs, mockGetManipulations, mockGetSubscriptions,
+                                             mockGetEventDispatcher, mockDetectChanges);
 
             expect(document.adoptedStyleSheets).toContain(ownCssSheet);
             expect(document.adoptedStyleSheets).toContain(adoptedCssSheet);
@@ -418,8 +547,8 @@ describe('Aspects handler', () => {
 
         function buildHandler(): Aspects {
             const el = createElementWithAspect('fancy', 'ctx.y');
-            return new Aspects(el, new Attributes(el, () => false), mockGetManipulations, mockGetSubscriptions,
-                               mockGetEventDispatcher, mockDetectChanges);
+            return constructAspects(el, new Attributes(el, () => false), mockGetManipulations, mockGetSubscriptions,
+                                    mockGetEventDispatcher, mockDetectChanges);
         }
 
         it('should adopt every declared stylesheet, not only one of them', () => {
@@ -500,6 +629,38 @@ describe('Aspects handler', () => {
 
             expect(document.adoptedStyleSheets).toContain(sheetA);
             expect((handler as any)._adoptedCssStyleSheet.filter((el: any) => el === sheetA).length).toBe(1);
+        });
+
+        // L-40: an unregistered (or never-fetchable) adopted-style name used to be skipped without a word
+        describe('L-40: unknown adopted-style names are reported', () => {
+            let consoleSpy: jest.SpyInstance;
+            beforeEach(() => { consoleSpy = jest.spyOn(Console, 'error').mockImplementation(() => {}); });
+            afterEach(() => { consoleSpy.mockRestore(); });
+
+            const adoptedStyleErrors = () => consoleSpy.mock.calls.filter(call => String(call[call.length - 1]).includes('adoptedStyle'));
+
+            it('should log one error naming the missing style and the aspect', () => {
+                const sheetA = new CSSStyleSheet();
+                mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [undefined, ['a', 'missing']] });
+                mockPerNameAdoptedStyles(new Map([['a', sheetA]]), [], ['missing']);
+
+                buildHandler();
+
+                expect(adoptedStyleErrors()).toEqual([
+                    [expect.any(HTMLElement), `unable to get missing adoptedStyle for aspect with 'fancy' name.`]
+                ]);
+                expect(document.adoptedStyleSheets).toContain(sheetA);
+            });
+
+            it('should NOT log for registered styles, ready or still loading', () => {
+                mockAspectsEnv({ has: true, instantiateReturn: [{ data: undefined }, true], getStylesReturn: [undefined, ['a', 'b']] });
+                const { flush } = mockPerNameAdoptedStyles(new Map([['a', new CSSStyleSheet()], ['b', new CSSStyleSheet()]]), ['b']);
+
+                buildHandler();
+                flush();
+
+                expect(adoptedStyleErrors()).toEqual([]);
+            });
         });
 
         it('should adopt nothing and not throw when every name is unregistered', () => {

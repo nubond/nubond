@@ -23,6 +23,13 @@ class RouteSlot {
         let trimmedRoutePart = routePart.trim();
 
         const firstChar = trimmedRoutePart.charAt(0);
+        const lastChar = trimmedRoutePart.charAt(trimmedRoutePart.length - 1);
+
+        if (((firstChar == '[') && (lastChar != ']')) || 
+            ((firstChar == '{') && (lastChar != '}') )) {
+            throw new Error(`${Constants.DISPLAY_NAME}: Router: wrong app initialization meta data detected: route template is wrong.\n Open bracket does not match with closed bracket. Example: [SLOT_NAME] or [SLOT_NAME=DEFAULT_VALUE] or {SLOT_NAME} or {SLOT_NAME=DEFAULT_VALUE}.`);
+        }
+
         this._slotType = firstChar == '['
                             ? 'component'
                             : (firstChar == '{'
@@ -51,7 +58,9 @@ class RouteSlot {
         this._value = this._defaultValue;
     }
 
-    public setValue(value: any): void {
+    public setValue(value: any): boolean {
+        let result = true;
+
         if (this._value !== value) {
             if (this._slotType != 'constant') {
                 if (Helpers.isUndefined(value) || (value === null) || (Helpers.isString(value) && (<string>value).trim().length == 0)) {
@@ -59,14 +68,17 @@ class RouteSlot {
                 } else {
                     const stringifiedValue = (Helpers.isString(value) ? (<string>value) : Helpers.stringify(value)).trim();
                     if ((this._slotType == 'component') && (stringifiedValue.length > 0) && !this._isContainerExists(stringifiedValue)) {
+                        result = false;
                         Console.error(`Router: container '${stringifiedValue}' not found, can't route.`);
-                        return;
+                        return result;
                     }
 
                     this._value = stringifiedValue;
                 }
             }
         }
+
+        return result;
     }
 
     public resetValue(): void {
@@ -91,6 +103,9 @@ export class Router {
     private readonly _onBeforeStateChangeCallBackEvent = new CallBackEvent<(preventChange: () => void, oldState: Readonly<{[key: string]: string | undefined}>, newState: Readonly<{[key: string]: string | undefined}>, oldPath: string, newPath: string) => void>();
     private readonly _onAfterStateChangeCallBackEvent = new CallBackEvent<(oldState: Readonly<{[key: string]: string | undefined}>, newState: Readonly<{[key: string]: string | undefined}>, oldPath: string, newPath: string) => void>();
 
+    private _stateChangeInProgress = false;
+    private _deferredStateChangeRequest: (() => void) | undefined;
+
     private _states: Array<{[key: string]: string | undefined}> = [];
     private _stateIndex = 0;
 
@@ -112,10 +127,20 @@ export class Router {
         return this._path;
     }
 
-    private _state: {[key: string]: string | undefined} | undefined;
+    private __state: {[key: string]: string | undefined} | undefined;
+    private __frozenState: {[key: string]: string | undefined} | undefined;
+    private get _state(): {[key: string]: string | undefined} | undefined {
+        return this.__state;
+    }
+    private set _state(value: {[key: string]: string | undefined} | undefined) {
+        this.__state = value;
+        this.__frozenState = !Helpers.isUndefined(value)
+                                ? Object.freeze(Object.assign({}, value))
+                                : value;
+    }
     //current state
-    public get state(): {[key: string]: string | undefined} | undefined {
-        return this._state;
+    public get state(): Readonly<{[key: string]: string | undefined}> | undefined {
+        return this.__frozenState;
     }
 
     constructor(routeConfig: string | undefined, isContainerExists: (containerName: string) => boolean, getShowDebugInfo: () => boolean) {
@@ -153,7 +178,7 @@ export class Router {
             const routeState = this.getStateFromRoute();
             if (Object.getOwnPropertyNames(routeState).length > 0) {
                 this.handleStateChange(routeState, true, () => {
-                    this._states = [this.state!];
+                    this._states = [this._state!];
                     this.saveState(true);
                 }, true);
             } else {
@@ -161,7 +186,7 @@ export class Router {
                     this.go(undefined, true, true);
                 } else {
                     this.handleStateChange(null, false, () => {
-                        this._states = [this.state!];
+                        this._states = [this._state!];
                         this.saveState(true);
                     }, true);
                 }
@@ -174,34 +199,38 @@ export class Router {
                     const newStateKeys = Object.getOwnPropertyNames(newState);
                     let stateFound = false;
 
-                    for (let index = 0; index < this._states.length; index++) {
-                        const state = this._states[index];
-                        const stateKeys = Object.getOwnPropertyNames(state);
-                        if (newStateKeys.length === stateKeys.length) {
-                            let sameState = true;
+                    for (let distance = 0; distance < this._states.length && !stateFound; distance++) {
+                        for (const index of [this._stateIndex - distance, this._stateIndex + distance]) {
+                            if ((index >= 0) && (index < this._states.length)) {
+                                const state = this._states[index];
+                                const stateKeys = Object.getOwnPropertyNames(state);
+                                if (newStateKeys.length === stateKeys.length) {
+                                    let sameState = true;
 
-                            for (const key of newStateKeys) {
-                                if (newState[key] !== state[key]) {
-                                    sameState = false;
-                                    break;
+                                    for (const key of newStateKeys) {
+                                        if (newState[key] !== state[key]) {
+                                            sameState = false;
+                                            break;
+                                        }
+                                    }
+
+                                    if (sameState) {
+                                        stateFound = true;
+                                        this.handleStateChange(newState, false, () => {
+                                            this._stateIndex = index;
+                                        });
+                                        break;
+                                    }
                                 }
-                            }
-
-                            if (sameState) {
-                                stateFound = true;
-                                this.handleStateChange(newState, false, () => {
-                                    this._stateIndex = index;
-                                });
-                                break;
                             }
                         }
                     }
 
                     if (!stateFound) {
                         this.handleStateChange(newState, false, () => {
-                            this._states.push(this.state!);
+                            this._states.push(this._state!);
                             this._stateIndex = this._states.length - 1;
-                            history.pushState(this.state, '', this.getStatePath());
+                            history.pushState(this._state, '', this.getStatePath());
                         });
                     }
                 } else {
@@ -210,7 +239,7 @@ export class Router {
                             this._states.pop();
                         }
 
-                        this._states.push(this.state!);
+                        this._states.push(this._state!);
                         this._stateIndex = this._states.length - 1;
 
                         this.saveState(true);
@@ -238,21 +267,25 @@ export class Router {
             throw new Error(`${Constants.DISPLAY_NAME}: Router is not configured and cannot be used.`);
         }
 
-        this.handleStateChange(state, partialState, () => {
-            if (removeHistory) {
-                this._states = [this.state!];
-                this._stateIndex = 0;
-            } else {
-                while (this._stateIndex < (this._states.length - 1)) {
-                    this._states.pop();
+        if (!this._stateChangeInProgress) {
+            this.handleStateChange(state, partialState, () => {
+                if (removeHistory) {
+                    this._states = [this._state!];
+                    this._stateIndex = 0;
+                } else {
+                    while (this._stateIndex < (this._states.length - 1)) {
+                        this._states.pop();
+                    }
+
+                    this._states.push(this._state!);
+                    this._stateIndex = this._states.length - 1;
                 }
 
-                this._states.push(this.state!);
-                this._stateIndex = this._states.length - 1;
-            }
-
-            this.saveState(removeHistory);
-        });
+                this.saveState(removeHistory);
+            }, false, true);
+        } else {
+            this._deferredStateChangeRequest = () => this.go(state, partialState, removeHistory);
+        }
     }
 
     /**
@@ -263,11 +296,15 @@ export class Router {
             throw new Error(`${Constants.DISPLAY_NAME}: Router is not configured and cannot be used.`);
         }
 
-        if (this._stateIndex > 0) {
-            this.handleStateChange(this._states[this._stateIndex - 1], false, () => {
-                this._stateIndex--;
-                history.back();
-            });
+        if (!this._stateChangeInProgress) {
+            if (this._stateIndex > 0) {
+                this.handleStateChange(this._states[this._stateIndex - 1], false, () => {
+                    this._stateIndex--;
+                    history.back();
+                });
+            }
+        } else {
+            this._deferredStateChangeRequest = () => this.goBack();
         }
     }
 
@@ -281,12 +318,16 @@ export class Router {
             throw new Error(`${Constants.DISPLAY_NAME}: Router is not configured and cannot be used.`);
         }
 
-        const index = this._stateIndex + offset!;
-        if ((index >= 0) && (index < this._states.length)) {
-            this.handleStateChange(this._states[index], false, () => {
-                this._stateIndex = index;
-                history.go(offset)
-            });
+        if (!this._stateChangeInProgress) { 
+            const index = this._stateIndex + offset!;
+            if ((index >= 0) && (index < this._states.length)) {
+                this.handleStateChange(this._states[index], false, () => {
+                    this._stateIndex = index;
+                    history.go(offset)
+                });
+            }
+        } else {
+            this._deferredStateChangeRequest = () => this.goTo(offset);
         }
     }
 
@@ -298,11 +339,15 @@ export class Router {
             throw new Error(`${Constants.DISPLAY_NAME}: Router is not configured and cannot be used.`);
         }
 
-        if (this._stateIndex < (this._states.length - 1)) {
-            this.handleStateChange(this._states[this._stateIndex + 1], false, () => {
-                this._stateIndex++;
-                history.forward();
-            });
+        if (!this._stateChangeInProgress) {
+            if (this._stateIndex < (this._states.length - 1)) {
+                this.handleStateChange(this._states[this._stateIndex + 1], false, () => {
+                    this._stateIndex++;
+                    history.forward();
+                });
+            }
+        } else {
+            this._deferredStateChangeRequest = () => this.goForward();
         }
     }
 
@@ -335,56 +380,81 @@ export class Router {
     }
 
     private handleStateChange(stateData: {[key: string]: any} | string | null | undefined, partialState: boolean, saveState?: () => void,
-                              preventStateChangeRollback?: boolean): void {
-        const previousPath = this.path;
-
-        this.setState(stateData, partialState);
-        
-        const newPath = this.getPath();
-        if (newPath !== previousPath) {
-            const previousState = this.state;
-            const newState = this.getState();
-        
-            let isStateChangeAllowed = true;
+                              preventStateChangeRollback: boolean = false, strictStateValidation: boolean = false): void {
+        if (!this._stateChangeInProgress) {
+            this._stateChangeInProgress = true;
+            this._deferredStateChangeRequest = undefined;
 
             try {
-                this._onBeforeStateChangeCallBackEvent.raise(() => {
-                    if (Helpers.isBoolean(preventStateChangeRollback) && preventStateChangeRollback) {
-                        if (this._getShowDebugInfo()) {
-                            Console.warn('Router: current stage change is not preventable');
+                const previousState = this._state;
+                const previousPath = this.path;
+
+                const setStateResult = this.setState(stateData, partialState);
+                if (setStateResult || !strictStateValidation) {
+                    const newPath = this.getPath();
+                    if (newPath !== previousPath) {
+                        const newState = this.getState();
+                    
+                        let isStateChangeAllowed = true;
+
+                        try {
+                            this._onBeforeStateChangeCallBackEvent.raise(() => {
+                                if (preventStateChangeRollback) {
+                                    if (this._getShowDebugInfo()) {
+                                        Console.warn('Router: current stage change is not preventable');
+                                    }
+                                } else {
+                                    isStateChangeAllowed = false;
+                                }
+                            },
+                            Object.assign(Object.create(null), previousState), Object.assign(Object.create(null), newState),
+                            previousPath, newPath);
+                        } catch(ex) {
+                            Console.error(`Router: onBeforeStateChange call back execution error: ${ex}.`);
                         }
-                    } else {
-                        isStateChangeAllowed = false;
+
+                        if (isStateChangeAllowed) {
+                            this._state = newState;
+                            this._path = newPath;
+
+                            if (Helpers.isFunction(saveState)) {
+                                saveState!();
+                            }
+                            
+                            try {
+                                this._onAfterStateChangeCallBackEvent.raise(Object.assign(Object.create(null), previousState), Object.assign(Object.create(null), newState),
+                                                                            previousPath, newPath);
+                            } catch(ex) {
+                                Console.error(`Router: onAfterStateChange call back execution error: ${ex}.`);
+                            }
+                        } else {
+                            //reset internal state to previous one of possible
+                            if (!this.setState(previousState)) {
+                                Console.error(`Router is not able roll-back to previous change, check route configuration`);
+                            }
+                        }
                     }
-                },
-                Object.assign(Object.create(null), previousState), Object.assign(Object.create(null), newState),
-                previousPath, newPath);
-            } catch(ex) {
-                Console.error(`Router: onBeforeStateChange call back execution error: ${ex}.`);
+                } else {
+                    //reset internal state to previous one of possible
+                    if (!this.setState(previousState)) {
+                        Console.error(`Router is not able roll-back to previous change, check route configuration`);
+                    }
+                }
+            } finally {
+                this._stateChangeInProgress = false;
             }
 
-            if (isStateChangeAllowed) {
-                this._state = newState;
-                this._path = newPath;
-
-                if (Helpers.isFunction(saveState)) {
-                    saveState!();
-                }
-                
-                try {
-                    this._onAfterStateChangeCallBackEvent.raise(Object.assign(Object.create(null), previousState), Object.assign(Object.create(null), newState),
-                                                                previousPath, newPath);
-                } catch(ex) {
-                    Console.error(`Router: onAfterStateChange call back execution error: ${ex}.`);
-                }
-            } else {
-                //reset internal state to previous one
-                this.setState(previousState, true);
+            if (Helpers.isFunction(this._deferredStateChangeRequest)) {
+                const deferredHandleStateChange = this._deferredStateChangeRequest!;
+                this._deferredStateChangeRequest = undefined;
+                deferredHandleStateChange();
             }
         }
     }
 
-    private setState(stateData: {[key: string]: any} | string | null | undefined, partialState: boolean): void {
+    private setState(stateData: {[key: string]: any} | string | null | undefined, partialState: boolean = true): boolean {
+        let result = true;
+
         if (Helpers.isObject(stateData) || (Helpers.isString(stateData) && (stateData!.trim().length > 0))) {
             let expectedStateData: {[key: string]: any};
 
@@ -392,8 +462,9 @@ export class Router {
                 expectedStateData = <{[key: string]: any}>stateData;
             } else {
                 if (!this._isSingleSlotted) {
-                    Console.error('Router single slot state change cannot be used when there are more then one slot.');
-                    return;
+                    result = false;
+                    Console.error('Router single slot state change cannot be used when there are more than one slot.');
+                    return result;
                 }
 
                 expectedStateData = Object.create(null);
@@ -404,17 +475,16 @@ export class Router {
                 for (const key of Object.getOwnPropertyNames(expectedStateData)) {
                     const slot = this._routeObj![key];
                     if (Helpers.isObject(slot)) {
-                        slot.setValue(expectedStateData[key]);
+                        result = slot.setValue(expectedStateData[key]) && result;
                     } else {
-                        if (this._getShowDebugInfo()) {
-                            Console.warn(`Router is not able to find matching slot for '${key}' key.`);
-                        }
+                        result = false;
+                        Console.warn(`Router is not able to find matching slot for '${key}' key.`);
                     }
                 }
             } else {
                 for (const slot of this._routeSlots!) {
                     if (Helpers.isString(slot.name)) {
-                        slot.setValue(expectedStateData[slot.name!]);
+                        result = slot.setValue(expectedStateData[slot.name!]) && result;
                     }
                 }
             }
@@ -423,6 +493,8 @@ export class Router {
                 slot.resetValue();
             }
         }
+
+        return result;
     }
 
     private getPath(): string {
@@ -473,9 +545,9 @@ export class Router {
 
     private saveState(removeHistory: boolean): void {
         if (removeHistory) {
-            history.replaceState(this.state, '', this.getStatePath());
+            history.replaceState(this._state, '', this.getStatePath());
         } else {
-            history.pushState(this.state, '', this.getStatePath());
+            history.pushState(this._state, '', this.getStatePath());
         }
     }
 
@@ -517,14 +589,21 @@ export class Router {
                 const splittedLocationPathName = locationPathName.split('/');
                 if (splittedLocationPathName.length > 0) {
                     for (let index = 0; index < Math.min(splittedLocationPathName.length, this._routeSlots!.length); index++) {
+                        const rawUrlSlotValue = splittedLocationPathName[index];
                         const slot = this._routeSlots![index];
-                        if (Helpers.isString(slot.name)) {
-                            const value = splittedLocationPathName[index];
-                            try {
-                                routeState[slot.name!] = decodeURIComponent(value);
-                            } catch (ex) {
-                                Console.error(`Router is not able to decodeURIComponent '${value}', exception: ${ex}`);
+
+                        try {
+                            const urlSlotValue = decodeURIComponent(rawUrlSlotValue);
+                            
+                            if (Helpers.isString(slot.name)) { //component or variable
+                                routeState[slot.name!] = urlSlotValue;
+                            } else { //constant
+                                if (this._getShowDebugInfo() && (urlSlotValue.toLowerCase() !== slot.value!.toLowerCase())) {
+                                    Console.warn(`Router: URL segment ${index + 1} is '${urlSlotValue}', expected constant '${slot.value}'`);
+                                }
                             }
+                        } catch (ex) {
+                            Console.error(`Router is not able to decodeURIComponent '${rawUrlSlotValue}', exception: ${ex}`);
                         }
                     }
                 }   

@@ -3,6 +3,7 @@ import { BasedEntity } from './BasedEntity';
 import { ITemplateProvider } from '../../interfaces/ITemplateProvider';
 
 import { Helpers } from '../../Helpers';
+import { Console } from '../../Console';
 
 export class TemplateEntityData {
     public readonly template: Node;
@@ -17,6 +18,14 @@ export abstract class BaseTemplateEntityMetaData {
 
     public fetchData(templatePath: string | undefined, templateProvider: ITemplateProvider | undefined,
                      successCallBack: (template: string) => void, errorCallBack: (error?: string | null) => void): void {
+        const safeErrorCallBack = (error?: string | null) => {
+            try {
+                errorCallBack(error);
+            } catch (ex) {
+                Console.error(`fetchData errorCallBack failed${Helpers.isNotEmptyString(templatePath) ? ` for template '${templatePath}' ` : ' '}with exception: ${ex}`);
+            }
+        };
+
         if (Helpers.isNotEmptyString(templatePath)) {
             fetch(templatePath!).then(response => {
                 if (response.ok) {
@@ -25,35 +34,55 @@ export abstract class BaseTemplateEntityMetaData {
                     throw new Error(`${response.status} (${response.statusText})`);
                 }
             }).then(template => {
-                try {
-                    if (Helpers.isNotEmptyString(template)) {
+                if (Helpers.isNotEmptyString(template)) {
+                    try {
                         successCallBack(template);
-                    } else {
-                        errorCallBack(null);
+                    } catch(ex) {
+                        safeErrorCallBack(`fetchData successCallBack for template '${templatePath}' failed with exception: ${ex}`);
                     }
-                } catch {
-                    //no need to rethrow
+                } else {
+                    safeErrorCallBack(null);
                 }
             }, reason => {
-                errorCallBack(reason);
-            }).catch(error => errorCallBack(error));  
+                safeErrorCallBack(this.normalizeError(reason));
+            }).catch(error => {
+                safeErrorCallBack(this.normalizeError(error));
+            }); 
         } else if (Helpers.isObject(templateProvider) && Helpers.isFunction(templateProvider!.get)) {
-            const providerResult = templateProvider!.get();
+            let providerResult;
+
+            try {
+                providerResult = templateProvider!.get();
+            } catch (ex) {
+                safeErrorCallBack(`fetchData templateProvider.get() failed with exception: ${ex}`);
+                return;
+            }
+
             if (Helpers.isNotEmptyString(providerResult)) {
-                successCallBack(<string>providerResult);
+                try {
+                    successCallBack(<string>providerResult);
+                } catch(ex) {
+                    safeErrorCallBack(`fetchData successCallBack failed with exception: ${ex}`);
+                }
             } else if (providerResult instanceof Promise) {
                 (<Promise<any>>providerResult).then(template => {
                     if (Helpers.isNotEmptyString(template)) {
-                        successCallBack(<string>template);
+                        try {
+                            successCallBack(<string>template);
+                        } catch(ex) {
+                            safeErrorCallBack(`fetchData successCallBack failed with exception: ${ex}`);
+                        }
                     } else {
-                        errorCallBack(null);
+                        safeErrorCallBack(null);
                     }
-                }).catch(error => errorCallBack(error));
+                }).catch(error => {
+                    safeErrorCallBack(this.normalizeError(error));
+                });
             } else {
-                errorCallBack(null);
+                safeErrorCallBack(null);
             }
         } else {
-            errorCallBack();
+            safeErrorCallBack();
         }
     }
 
@@ -75,6 +104,16 @@ export abstract class BaseTemplateEntityMetaData {
             return false;
         }
     }
+
+    private normalizeError(error: unknown): string {
+        return Helpers.isNotEmptyString(error)
+                    ? <string>error
+                    : (Helpers.isString(error) || Helpers.isUndefined(error) || (error === null)
+                        ? 'unknown error'
+                        : (error instanceof Error
+                            ? `${error}`
+                            : String(error)));
+    } 
 }
 
 export class TemplateEntityMetaData extends BaseTemplateEntityMetaData {

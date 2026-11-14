@@ -8,7 +8,7 @@ if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
 
 describe('TreeBuilder', () => {
     function createContextBinder(): ContextBinder {
-        return new ContextBinder(
+        return new ContextBinder(null, null, 
             undefined,
             false,
             () => 'nb-hidden',
@@ -105,7 +105,7 @@ describe('TreeBuilder', () => {
             el.innerHTML = html;
             const binder = createContextBinder();
             binder.bind(el, context, false, false);
-            const grandChildrenCounts = ((binder.rootNElement as any)._children as Array<any>)
+            const grandChildrenCounts = (((binder as any).rootNElement as any)._children as Array<any>)
                                             .map(child => child._children.length);
             return { binder, el, grandChildrenCounts };
         }
@@ -123,7 +123,7 @@ describe('TreeBuilder', () => {
             expect(context.hits).toBe(0);
 
             // and the zombie children do not resurface on later cycles
-            binder.rootNElement!.detectChanges(context);
+            (binder as any).rootNElement!.detectChanges(context);
             expect(context.hits).toBe(0);
         });
 

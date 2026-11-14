@@ -379,6 +379,23 @@ describe('Router', () => {
                 new Router('/{=home}', () => false, () => false);
             }).toThrow();
         });
+
+        it.each(['/{page', '/[panel}', '/{page]', '/{page=home}/{id', '/#{page'])(
+            'should throw when an opening bracket is not closed by its pair (L-5): %s', (template) => {
+                expect(() => new Router(template, () => true, () => false))
+                    .toThrow(/Open bracket does not match with closed bracket/);
+            });
+
+        it('should still accept well-formed slots, with surrounding spaces (L-5)', () => {
+            const router = new Router('/ {page=home} /[panel=sidebar]', name => name === 'sidebar', () => false);
+            expect(router.state!['page']).toBe('home');
+            expect(router.state!['panel']).toBe('sidebar');
+        });
+
+        it('should keep a segment with only a stray closing bracket as a literal constant (L-5)', () => {
+            const router = new Router('/page}', () => false, () => false);
+            expect(router.path).toBe('/page%7D');
+        });
     });
 
     describe('debug warning when not configured', () => {
@@ -544,6 +561,46 @@ describe('Router', () => {
             router.go({ page: 'about' });
             expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, expect.stringContaining('onAfterStateChange call back execution error'));
             expect(router.state!['page']).toBe('about');
+        });
+    });
+
+    describe('L-8: state is a read-only snapshot', () => {
+        it('returns a frozen object that cannot be mutated', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            router.go({ page: 'about' });
+
+            const state: any = router.state;
+            expect(Object.isFrozen(state)).toBe(true);
+            expect(() => { state.page = 'hacked'; }).toThrow(TypeError);
+            expect(router.state!['page']).toBe('about');
+            expect(router.path).toBe('/about');
+        });
+
+        it('returns the same snapshot until the state changes, then a new one', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            const first = router.state;
+            expect(router.state).toBe(first);
+
+            router.go({ page: 'about' });
+            expect(router.state).not.toBe(first);
+            expect(first!['page']).toBe('home');
+        });
+
+        it('keeps popstate matching intact after an attempted mutation', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            router.go({ page: 'about' });
+            try { (router.state as any).page = 'hacked'; } catch { /* frozen */ }
+            router.go({ page: 'contact' });
+
+            // the router's own history still holds the untouched entries
+            expect((router as any)._states.map((s: any) => s.page)).toEqual(['home', 'about', 'contact']);
+
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { page: 'about' } }));
+
+            expect(router.state!['page']).toBe('about');
+            // matched as the known entry: the history list is not extended
+            expect((router as any)._states.map((s: any) => s.page)).toEqual(['home', 'about', 'contact']);
+            expect((router as any)._stateIndex).toBe(1);
         });
     });
 
@@ -873,10 +930,10 @@ describe('Router', () => {
             expect(router.state!['page']).toBe('about');
         });
 
-        it('should ignore unknown keys silently', () => {
+        it('should reject the whole go() when it contains an unknown key (L-6)', () => {
             const router = new Router('/{page=home}', () => false, () => false);
             router.go({ unknownKey: 'wat', page: 'about' } as any);
-            expect(router.state!['page']).toBe('about');
+            expect(router.state!['page']).toBe('home');
             expect((router.state as any)['unknownKey']).toBeUndefined();
         });
 
@@ -1204,7 +1261,7 @@ describe('Router', () => {
             expect(after).toHaveBeenCalled();
         });
 
-        it('should match the first occurrence of a popstate state in history', () => {
+        it('should match the occurrence of a popstate state nearest to the current index', () => {
             const router = new Router('/{page=home}', () => false, () => false);
             router.go({ page: 'about' });
             router.go({ page: 'home' }); // same as initial — duplicates exist now
@@ -1213,6 +1270,7 @@ describe('Router', () => {
             const popstateEvent = new PopStateEvent('popstate', { state: { page: 'home' } });
             window.dispatchEvent(popstateEvent);
             expect(router.state!['page']).toBe('home');
+            expect((router as any)._stateIndex).toBe(2);
         });
 
         it('should not throw when popstate state is a non-object primitive', () => {
@@ -1588,30 +1646,38 @@ describe('Router', () => {
         });
     });
 
-    describe('debug warning on unknown slot key', () => {
-        it('should warn when partial state contains an unknown key and debug is enabled', () => {
+    describe('unknown slot key', () => {
+        it('should warn naming the key when debug is enabled', () => {
             const router = new Router('/{page=home}', () => false, () => true);
             (console.warn as jest.Mock).mockClear();
 
             router.go({ pag: 'oops' } as any); // typo
             expect(console.warn).toHaveBeenCalledWith(
                 expect.any(String),
-                expect.stringContaining("'pag'")
+                expect.stringContaining("not able to find matching slot for 'pag' key")
             );
         });
 
-        it('should not warn for unknown keys when debug is disabled', () => {
+        it('should warn when debug is disabled too — a dropped go() is never silent', () => {
             const router = new Router('/{page=home}', () => false, () => false);
             (console.warn as jest.Mock).mockClear();
 
             router.go({ pag: 'oops' } as any);
-            expect(console.warn).not.toHaveBeenCalled();
+            expect(console.warn).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.stringContaining("'pag'")
+            );
         });
 
-        it('should still apply known keys even when other keys are unknown', () => {
+        it('should not apply the known keys of a go() that has an unknown one (L-6)', () => {
             const router = new Router('/{page=home}', () => false, () => true);
+            const after = jest.fn();
+            router.onAfterStateChange(after);
+
             router.go({ pag: 'oops', page: 'about' } as any);
-            expect(router.state!['page']).toBe('about');
+            expect(router.state!['page']).toBe('home');
+            expect(router.path).toBe('/home');
+            expect(after).not.toHaveBeenCalled();
         });
     });
 
@@ -1852,6 +1918,467 @@ describe('Router', () => {
         });
     });
 
+    describe('L-3: a popstate state that occurs more than once in history', () => {
+        // browser Back/Forward; history methods are mocked, so the event is dispatched by hand
+        function popTo(page: string): void {
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { page } }));
+        }
+
+        function routerWith(...pages: string[]): Router {
+            const router = new Router('/{page=home}', () => false, () => false);
+            pages.forEach(page => router.go({ page }));
+            return router;
+        }
+
+        function indexOf(router: Router): number {
+            return (router as any)._stateIndex;
+        }
+
+        // routers from earlier tests keep their window listeners, so history call counts are
+        // shared between tests; the router's own _states is not
+        function pagesOf(router: Router): string[] {
+            return (router as any)._states.map((state: {[key: string]: string}) => state['page']);
+        }
+
+        it('should match the later duplicate when Back lands on it (home, a, home, b)', () => {
+            const router = routerWith('a', 'home', 'b');
+
+            popTo('home');
+            expect(indexOf(router)).toBe(2);   // pre-fix: the first 'home', index 0
+
+            router.goBack();
+            expect(router.state!['page']).toBe('a');
+        });
+
+        it('should match the earlier duplicate when Back lands on it (home, a, b, a, c)', () => {
+            const router = routerWith('a', 'b', 'a', 'c');
+            router.goBack();
+            router.goBack();   // at 'b', index 2
+
+            popTo('a');
+            expect(indexOf(router)).toBe(1);   // searching from the end gave 3
+
+            router.goBack();
+            expect(router.state!['page']).toBe('home');
+        });
+
+        it('should match the first entry on Back instead of appending a new one', () => {
+            const router = routerWith('a');
+
+            popTo('home');
+            expect(indexOf(router)).toBe(0);
+            expect(pagesOf(router)).toEqual(['home', 'a']);   // searching from the end skipped index 0 and appended
+
+            router.goForward();
+            expect(router.state!['page']).toBe('a');
+        });
+
+        it('should match the earlier duplicate on Back when both neighbours are equal (a, b, a)', () => {
+            const router = routerWith('a', 'b', 'a');
+            router.goBack();   // at 'b', index 2
+
+            popTo('a');
+            expect(indexOf(router)).toBe(1);
+        });
+
+        // BY DESIGN (author, 2026-11-12): with the same state one step back and one step forward,
+        // popstate does not tell the direction; the backward neighbour wins. Storing the position
+        // in history.state would resolve it and was declined.
+        it('by design: Forward onto a state equal to the backward neighbour resolves backward', () => {
+            const router = routerWith('a', 'home');
+            popTo('a');   // at 'a', index 1
+
+            popTo('home');   // real Forward would be index 2
+            expect(router.state!['page']).toBe('home');
+            expect(indexOf(router)).toBe(0);
+        });
+
+        it('still appends a state that is not in history at all (L-1, by design)', () => {
+            const router = routerWith('a', 'b');
+
+            popTo('zzz');
+            expect(router.state!['page']).toBe('zzz');
+            expect(indexOf(router)).toBe(3);
+            expect(pagesOf(router)).toEqual(['home', 'a', 'b', 'zzz']);
+        });
+    });
+
+    // BY DESIGN (author, 2026-11-12): one route template per app, so a URL is read by position;
+    // a constant segment carries no data, is only checked (case-insensitively, debug-only warning)
+    // and the URL is rewritten to its canonical form
+    describe('L-4: constant slots in the URL are read by position', () => {
+        function routerAt(url: string, route: string, showDebugInfo = true): Router {
+            realPushState(null, '', url);
+            return new Router(route, () => false, () => showDebugInfo);
+        }
+
+        function expectConstantWarning(position: number, segment: string, constant: string): void {
+            expect(console.warn).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining(`URL segment ${position} is '${segment}', expected constant '${constant}'`));
+        }
+
+        it('should map a named slot by position when the constant segment differs, and warn', () => {
+            const router = routerAt('/xyz/settings', '/app/{page=home}');
+
+            expect(router.state!['page']).toBe('settings');
+            expect(router.path).toBe('/app/settings');
+            expect(history.replaceState).toHaveBeenLastCalledWith(expect.objectContaining({ page: 'settings' }), '', '/app/settings');
+            expectConstantWarning(1, 'xyz', 'app');
+        });
+
+        it('should number the segment from 1 and keep reading the slots on both sides of it', () => {
+            const router = routerAt('/users/xyz/5', '/{page=home}/app/{id=1}');
+
+            expect(router.state!['page']).toBe('users');
+            expect(router.state!['id']).toBe('5');
+            expect(router.path).toBe('/users/app/5');
+            expectConstantWarning(2, 'xyz', 'app');
+        });
+
+        it('should not warn about a differing constant when showDebugInfo is off', () => {
+            const router = routerAt('/xyz/settings', '/app/{page=home}', false);
+
+            expect(router.state!['page']).toBe('settings');
+            expect(console.warn).not.toHaveBeenCalled();
+        });
+
+        it('should warn when the URL holds only a differing constant segment', () => {
+            const router = routerAt('/xyz', '/app/{page=home}');
+
+            expect(router.state!['page']).toBe('home');
+            expect(router.path).toBe('/app/home');
+            expectConstantWarning(1, 'xyz', 'app');
+        });
+
+        it('should not warn when the constant segment matches', () => {
+            const router = routerAt('/app/settings', '/app/{page=home}');
+
+            expect(router.state!['page']).toBe('settings');
+            expect(console.warn).not.toHaveBeenCalled();
+        });
+
+        it('should compare the constant segment case-insensitively and canonicalise its case', () => {
+            const router = routerAt('/APP/settings', '/app/{page=home}');
+
+            expect(router.state!['page']).toBe('settings');
+            expect(router.path).toBe('/app/settings');
+            expect(console.warn).not.toHaveBeenCalled();
+        });
+
+        it('should compare a percent-encoded constant segment after decoding it', () => {
+            const router = routerAt('/my%20app/settings', '/my app/{page=home}');
+
+            expect(router.state!['page']).toBe('settings');
+            expect(console.warn).not.toHaveBeenCalled();
+        });
+
+        it('should warn about a differing constant in hash mode too', () => {
+            const router = routerAt('/#/xyz/settings', '/#/app/{page=home}');
+
+            expect(router.state!['page']).toBe('settings');
+            expect(router.path).toBe('/app/settings');
+            expectConstantWarning(1, 'xyz', 'app');
+        });
+
+        it('should log a decode error for an undecodable constant segment and still read the named slot', () => {
+            const router = routerAt('/%E0%A4%A/settings', '/app/{page=home}');
+
+            expect(router.state!['page']).toBe('settings');
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining(`not able to decodeURIComponent '%E0%A4%A'`));
+            expect(console.warn).not.toHaveBeenCalled();
+        });
+
+        it('by design: segments beyond the template are dropped silently', () => {
+            const router = routerAt('/app/settings/extra', '/app/{page=home}');
+
+            expect(router.state!['page']).toBe('settings');
+            expect(router.path).toBe('/app/settings');
+            expect(console.warn).not.toHaveBeenCalled();
+        });
+    });
+
+    // go() is validated strictly: one rejected value rejects the whole call. URL input (startup, hash
+    // links, typed URLs) stays lenient: a rejected slot keeps its value and the rest is applied.
+    describe('L-6: a rejected container slot rejects the whole go(), URL input stays lenient', () => {
+        const registered = new Set(['main', 'side', 's1']);
+        const isRegistered = (name: string) => registered.has(name);
+
+        function routeOf(router: Router): string {
+            return Object.values(router.state!).join('/');
+        }
+
+        function slotsOf(router: Router): string {
+            return Object.values((router as any)._routeObj).map((slot: any) => slot.value).join('/');
+        }
+
+        function expectContainerError(name: string): void {
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining(`container '${name}' not found`));
+        }
+
+        it('should apply nothing from a go() with one unknown container', () => {
+            const router = new Router('/{page=home}/[panel=main]', isRegistered, () => false);
+            const before = jest.fn();
+            const after = jest.fn();
+            router.onBeforeStateChange(before);
+            router.onAfterStateChange(after);
+            (history.pushState as jest.Mock).mockClear();
+
+            router.go({ page: 'about', panel: 'bad' });
+
+            expect(routeOf(router)).toBe('home/main');
+            expect(slotsOf(router)).toBe('home/main');   // pre-fix: page was 'about'
+            expect(router.path).toBe('/home/main');
+            expect(before).not.toHaveBeenCalled();
+            expect(after).not.toHaveBeenCalled();
+            expect(history.pushState).not.toHaveBeenCalled();
+            expectContainerError('bad');
+        });
+
+        it('should apply a go() whose containers are all registered', () => {
+            const router = new Router('/{page=home}/[panel=main]', isRegistered, () => false);
+
+            router.go({ page: 'about', panel: 'side' });
+
+            expect(routeOf(router)).toBe('about/side');
+            expect(console.error).not.toHaveBeenCalled();
+        });
+
+        it('should restore every slot of a rejected go(), whatever the key order', () => {
+            const router = new Router('/[panel=main]/[side=s1]/{page=home}', isRegistered, () => false);
+            router.go({ page: 'about' });
+
+            router.go({ panel: 'side', side: 'bad', page: 'x' });
+            expect(routeOf(router)).toBe('main/s1/about');
+            expect(slotsOf(router)).toBe('main/s1/about');
+
+            // a later go() must not pick up values from the rejected one
+            router.go({ side: 's1' });
+            expect(routeOf(router)).toBe('main/s1/about');
+        });
+
+        it('should restore every slot after a prevented change', () => {
+            const router = new Router('/[panel=main]/{page=home}', isRegistered, () => false);
+            router.go({ page: 'about' });
+            const unsubscribe = router.onBeforeStateChange(preventChange => preventChange());
+
+            router.go({ panel: 'side', page: 'x' });
+            expect(routeOf(router)).toBe('main/about');
+            expect(slotsOf(router)).toBe('main/about');
+
+            unsubscribe();
+            router.go({ page: 'about' });   // no change: nothing left over from the prevented call
+            expect(routeOf(router)).toBe('main/about');
+        });
+
+        it('should read a startup URL leniently when the unknown container comes first', () => {
+            realPushState(null, '', '/bad/settings');
+            const router = new Router('/[panel=main]/{page=home}', isRegistered, () => false);
+
+            expect(routeOf(router)).toBe('main/settings');
+            expect(history.replaceState).toHaveBeenLastCalledWith(expect.anything(), '', '/main/settings');
+            expectContainerError('bad');
+        });
+
+        it('should read a startup URL leniently when the unknown container comes last', () => {
+            realPushState(null, '', '/settings/bad');
+            const router = new Router('/{page=home}/[panel=main]', isRegistered, () => false);
+
+            expect(routeOf(router)).toBe('settings/main');
+            expect(history.replaceState).toHaveBeenLastCalledWith(expect.anything(), '', '/settings/main');
+        });
+
+        it('should read a hash link leniently and rewrite it to the canonical URL', () => {
+            realPushState(null, '', '/#/main/a');
+            const router = new Router('/#/[panel=main]/{page=home}', isRegistered, () => false);
+
+            realPushState(null, '', '/#/bad/b');
+            window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+
+            expect(routeOf(router)).toBe('main/b');
+            expect(history.replaceState).toHaveBeenCalledWith(expect.objectContaining({ panel: 'main', page: 'b' }), '', '/#/main/b');
+            expectContainerError('bad');
+        });
+
+        // KNOWN RESIDUAL (author, 2026-11-12): a default container that is not registered cannot be
+        // re-validated by the rollback; the router logs it and the rejected value stays in its slot.
+        it('residual: an unregistered default container cannot be rolled back to, and the router says so', () => {
+            const router = new Router('/[panel=neverRegistered]/[side=s1]/{page=home}', isRegistered, () => false);
+            router.go({ page: 'about' });
+
+            router.go({ panel: 'main', side: 'bad' });
+            expect(routeOf(router)).toBe('neverRegistered/s1/about');
+            expect(slotsOf(router)).toBe('main/s1/about');
+            expect(console.error).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `,
+                expect.stringContaining('roll-back to previous change, check route configuration'));
+
+            router.go({ side: 's1' });
+            expect(routeOf(router)).toBe('main/s1/about');
+        });
+    });
+
+    // A navigation started from a state-change callback is queued and runs once the current change
+    // has finished (last one wins); it never runs over the half-applied slots of the current change.
+    describe('L-7: navigation from a state-change callback is queued', () => {
+        function routeOf(router: Router): string {
+            return Object.values(router.state!).join('/');
+        }
+
+        function slotsOf(router: Router): string {
+            return Object.values((router as any)._routeObj).map((slot: any) => slot.value).join('/');
+        }
+
+        function historyOf(router: Router): string[] {
+            return (router as any)._states.map((state: {[key: string]: string}) => Object.values(state).join('/'));
+        }
+
+        function indexOf(router: Router): number {
+            return (router as any)._stateIndex;
+        }
+
+        it('should apply a guard redirect from the previous state when the guard prevents the change', () => {
+            const router = new Router('/{page=home}/{id=1}', () => false, () => false);
+            const after = jest.fn();
+            router.onAfterStateChange(after);
+            router.onBeforeStateChange((preventChange, _oldState, newState) => {
+                if (newState['page'] === 'admin') {
+                    router.go({ page: 'login' });
+                    preventChange();
+                }
+            });
+
+            router.go({ page: 'admin', id: '7' });
+
+            expect(routeOf(router)).toBe('login/1');   // pre-fix: state 'login/7' (id leaked), slots 'home/1'
+            expect(slotsOf(router)).toBe('login/1');
+            expect(historyOf(router)).toEqual(['home/1', 'login/1']);
+            expect(after).toHaveBeenCalledTimes(1);
+            expect(after.mock.calls[0][3]).toBe('/login/1');
+
+            router.go({ id: '2' });
+            expect(routeOf(router)).toBe('login/2');   // pre-fix: 'home/2'
+        });
+
+        // documented: a redirecting guard must call preventChange(), or the blocked page stays in history
+        it('should keep the blocked page in history when the guard redirects without preventing', () => {
+            const router = new Router('/{page=home}/{id=1}', () => false, () => false);
+            router.onBeforeStateChange((_preventChange, _oldState, newState) => {
+                if (newState['page'] === 'admin') {
+                    router.go({ page: 'login' });
+                }
+            });
+
+            router.go({ page: 'admin', id: '7' });
+
+            expect(routeOf(router)).toBe('login/7');   // pre-fix: state 'admin/7', slots 'login/7'
+            expect(slotsOf(router)).toBe('login/7');
+            expect(historyOf(router)).toEqual(['home/1', 'admin/7', 'login/7']);
+        });
+
+        it('should finish raising onAfterStateChange before a navigation started from it runs', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            const seen: string[] = [];
+            router.onAfterStateChange((_oldState, newState) => {
+                if (newState['page'] === 'a') {
+                    router.go({ page: 'b' });
+                }
+            });
+            router.onAfterStateChange((oldState, newState) => seen.push(`${oldState['page']}->${newState['page']}`));
+
+            router.go({ page: 'a' });
+
+            expect(seen).toEqual(['home->a', 'a->b']);   // pre-fix: ['a->b', 'home->a']
+            expect(routeOf(router)).toBe('b');
+        });
+
+        it('should work out the goBack() target when the queued call runs, not when it is made', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            router.go({ page: 'a' });
+            router.onBeforeStateChange((_preventChange, _oldState, newState) => {
+                if (newState['page'] === 'b') {
+                    router.goBack();
+                }
+            });
+            (history.back as jest.Mock).mockClear();
+
+            router.go({ page: 'b' });
+
+            expect(routeOf(router)).toBe('a');   // back from the committed 'b'
+            expect(indexOf(router)).toBe(1);
+            expect(historyOf(router)).toEqual(['home', 'a', 'b']);
+            expect(history.back).toHaveBeenCalledTimes(1);
+        });
+
+        it('should queue goTo() from onAfterStateChange', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            router.go({ page: 'a' });
+            router.go({ page: 'b' });
+            let first = true;
+            router.onAfterStateChange((_oldState, newState) => {
+                if (first && (newState['page'] === 'c')) {
+                    first = false;
+                    router.goTo(-2);
+                }
+            });
+
+            router.go({ page: 'c' });
+
+            expect(routeOf(router)).toBe('a');
+            expect(indexOf(router)).toBe(1);
+            expect(history.go).toHaveBeenCalledWith(-2);
+        });
+
+        it('should run only the last of several navigations queued by one change', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            router.onBeforeStateChange((preventChange, _oldState, newState) => {
+                if (newState['page'] === 'admin') {
+                    router.go({ page: 'x' });
+                    router.go({ page: 'login' });
+                    preventChange();
+                }
+            });
+
+            router.go({ page: 'admin' });
+
+            expect(routeOf(router)).toBe('login');
+            expect(historyOf(router)).toEqual(['home', 'login']);
+        });
+
+        it('should keep navigating after a state change threw', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            (history.pushState as jest.Mock).mockImplementationOnce(() => {
+                throw new Error('SecurityError');
+            });
+
+            expect(() => router.go({ page: 'a' })).toThrow('SecurityError');
+
+            router.go({ page: 'b' });
+            expect(routeOf(router)).toBe('b');
+            expect(historyOf(router)).toEqual(['home', 'a', 'b']);
+        });
+
+        it('should drop a navigation queued by a change that threw', () => {
+            const router = new Router('/{page=home}', () => false, () => false);
+            let first = true;
+            router.onBeforeStateChange((_preventChange, _oldState, newState) => {
+                if (first && (newState['page'] === 'admin')) {
+                    first = false;
+                    router.go({ page: 'login' });
+                }
+            });
+            (history.pushState as jest.Mock).mockImplementationOnce(() => {
+                throw new Error('SecurityError');
+            });
+
+            expect(() => router.go({ page: 'admin' })).toThrow('SecurityError');
+
+            router.go({ page: 'x' });
+            expect(routeOf(router)).toBe('x');   // the stale 'login' redirect used to run after it
+            expect(historyOf(router)).toEqual(['home', 'admin', 'x']);
+        });
+    });
+
     describe('no closure indirection (cosmetic R18)', () => {
         it('should not call getShowDebugInfo when debug toggle is never read', () => {
             const spy = jest.fn(() => false);
@@ -1860,12 +2387,17 @@ describe('Router', () => {
             expect(spy).not.toHaveBeenCalled();
         });
 
-        it('should call getShowDebugInfo for unknown-key warnings during go()', () => {
+        it('should read getShowDebugInfo when a debug-only warning is due after construction', () => {
+            // unknown keys no longer consult it (always logged since L-6), so use the L-4 constant warning
             const spy = jest.fn(() => true);
-            const router = new Router('/{page=home}', () => false, spy);
+            const router = new Router('/#/app/{page=home}', () => false, spy);
             spy.mockClear();
-            router.go({ unknown: 'value' } as any);
+
+            realPushState(null, '', '/#/xyz/about');
+            window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+
             expect(spy).toHaveBeenCalled();
+            expect(router.state!['page']).toBe('about');
         });
     });
 

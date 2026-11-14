@@ -10,7 +10,9 @@ import { AdoptedStyles } from './AdoptedStyles';
 
 import { NElementProjection } from '../nElement/NElementProjection';
 
-import { ContextBinder } from '../ContextBinder';
+import { INElement } from '../interfaces/nElement/INElement';
+import { IContextBinder } from '../interfaces/contextBinders/IContextBinder';
+import { IBindableContextBinder } from '../interfaces/contextBinders/IBindableContextBinder';
 
 import { TemplateEntity, TemplateEntityMetaData } from './base/TemplateEntity';
 
@@ -33,7 +35,7 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
     protected isStyleTemplateReady = false;
 
     public readonly context: IComponentContextConstructor;
-    public readonly binderCreator: () => ContextBinder;
+    public readonly binderCreator: (parentContextBinder: IContextBinder, parentNElement: INElement) => IBindableContextBinder;
 
     public readonly name: string;
     
@@ -50,7 +52,7 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
     public readonly styleTemplateProvider: ITemplateProvider | undefined;
 
     constructor(name: string, context: IComponentContextConstructor,
-                binderCreator: () => ContextBinder,
+                binderCreator: (parentContextBinder: IContextBinder, parentNElement: INElement) => IBindableContextBinder,
                 styleTemplateOrPathOrProvider: string | ITemplateProvider | undefined, htmlTemplateOrPathOrProvider: string | ITemplateProvider,
                 htmlSanitizerCreator: () => ((html: string) => string) | undefined, 
                 styleSanitizerCreator: () => ((style: string) => string) | undefined,
@@ -105,16 +107,17 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
                 const triggerReadyCallBacks = () => {
                     //to unwrap error if any
                     setTimeout(() => {
-                        for (const el of this._readyCallBacks) {
+                        const readyCallBacks = this._readyCallBacks;
+                        this._readyCallBacks = [];
+                        this._fetchInProgress = false;
+
+                        for (const el of readyCallBacks) {
                             try {
                                 el(true);
                             } catch (ex) {
                                 Console.error(el, `Component readyCallBack failed with exception: ${ex}`);
                             }
                         }
-
-                        this._readyCallBacks = [];
-                        this._fetchInProgress = false;
                     });
                 };
 
@@ -148,12 +151,14 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
 
                             Console.error(errorMessage);
                             
-                            if (this._getShowDebugInfo()) {
-                                this.setHtmlTemplate(errorMessage);
-                            }
-                            
-                            if (stylesFetchIsCompleted) {
-                                triggerReadyCallBacks();
+                            try {
+                                if (this._getShowDebugInfo()) {
+                                    this.setHtmlTemplate(errorMessage);
+                                }
+                            } finally {
+                                if (stylesFetchIsCompleted) {
+                                    triggerReadyCallBacks();
+                                }
                             }
                         });
                     }
@@ -182,12 +187,14 @@ class FullEntityWithComponentContextMetaData extends TemplateEntityMetaData {
 
                             Console.error(errorMessage);
                             
-                            if (this._getShowDebugInfo()) {
-                                this.setStyleTemplate(errorMessage);
-                            }
-
-                            if (htmlFetchIsCompleted) {
-                                triggerReadyCallBacks();
+                            try {
+                                if (this._getShowDebugInfo()) {
+                                    this.setStyleTemplate(errorMessage);
+                                }
+                            } finally {
+                                if (htmlFetchIsCompleted) {
+                                    triggerReadyCallBacks();
+                                }
                             }
                         });
                     }
@@ -207,12 +214,12 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
         super();
     }
     
-    public instantiateBinder(name: string): ContextBinder | undefined {
+    public instantiateBinder(name: string, parentContextBinder: IContextBinder, parentNElement: INElement): IBindableContextBinder | undefined {
         const lowerCasedName = name.toLowerCase();
         const containerMetaData = this.data.get(lowerCasedName);
 
         if (!Helpers.isUndefined(containerMetaData)) {
-            return containerMetaData!.binderCreator();
+            return containerMetaData!.binderCreator(parentContextBinder, parentNElement);
         }
     }
 
@@ -230,7 +237,7 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
                htmlTemplateOrPathOrProvider: string | ITemplateProvider, 
                stylesTemplateOrPathOrProvider: string | ITemplateProvider| undefined,
                adoptedStyleNames: Array<string> | undefined,
-               binderCreator: () => ContextBinder, 
+               binderCreator: (parentContextBinder: IContextBinder, parentNElement: INElement) => IBindableContextBinder,
                htmlSanitizerCreator: () => ((html: string) => string) | undefined,
                styleSanitizerCreator: () => ((style: string) => string) | undefined,
                shadowRootConfigCreator: () => IShadowRootConfig | undefined): void {
@@ -258,12 +265,13 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
             customElements.define(lowerCasedName, class extends (Helpers.isUndefined(elementContext) ? HTMLElement : elementContext!) {
                 constructor() {
                     super();
-                    
+
                     Object.defineProperty(this, '$bind', {
-                        value: (contextBinder: ContextBinder, context: IComponentContext, hasInputs: boolean = true) => {
+                        value: (contextBinder: IBindableContextBinder, context: IComponentContext, hasInputs: boolean) => {
                             delete (<any>this).$bind;
                             
-                            this.setAttribute(Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR + Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, '');
+                            //TODO: element will stay visible till $bind call, think if this is something that should be fixed.
+                            this.setAttribute(Constants.DEFAULT_PREFIX_AND_SEPARATOR + Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, '');
                             
                             componentMetaData.tryPrepare(() => {
                                 const shadowRootConfig: ShadowRootInit = { mode: 'closed' };
@@ -313,6 +321,8 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
                                         if (!prepareRequestResult) {
                                             adoptedStyleSheets.set(el, undefined);
                                             tryPushAdoptedStyleSheets();
+
+                                            Console.error(this, `unable to get ${el} adoptedStyle for component.`);
                                         }
                                     }
                                 }
@@ -329,8 +339,8 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
                                     shadowRoot.append(...Array.from(componentMetaData.htmlTemplate!.content.cloneNode(true).childNodes));
                                 }
 
-                                //nElement creations
-                                nElementProjection.process();
+                                //project
+                                nElementProjection.project();
 
                                 //bind
                                 contextBinder.bind(shadowRoot, context, false, hasInputs);

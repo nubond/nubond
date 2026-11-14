@@ -46,16 +46,17 @@ class TemplateEntityWithNameMetaData extends TemplateEntityMetaData {
                 const triggerReadyCallBacks = () => {
                     //to unwrap error if any
                     setTimeout(() => {
-                        for (const el of this._readyCallBacks) {
+                        const readyCallBacks = this._readyCallBacks;
+                        this._readyCallBacks = [];
+                        this._fetchInProgress = false;
+
+                        for (const el of readyCallBacks) {
                             try {
                                 el(true);
-                            } catch(ex) {
+                            } catch (ex) {
                                 Console.error(el, `Template readyCallBack failed with exception: ${ex}`);
                             }
                         }
-
-                        this._readyCallBacks = [];
-                        this._fetchInProgress = false;
                     });
                 };
                 
@@ -77,11 +78,13 @@ class TemplateEntityWithNameMetaData extends TemplateEntityMetaData {
 
                         Console.error(errorMessage);
 
-                        if (this._getShowDebugInfo()) {
-                            this.setHtmlTemplate(errorMessage);
+                        try {
+                            if (this._getShowDebugInfo()) {
+                                this.setHtmlTemplate(errorMessage);
+                            }
+                        } finally {
+                            triggerReadyCallBacks();
                         }
-                        
-                        triggerReadyCallBacks();
                     });
                 } else {
                     triggerReadyCallBacks();

@@ -64,7 +64,7 @@ matches the `Basics` container.
 | `router.isConfigured` | Whether a route template was provided. |
 | `router.go(stateOrSlotValue, partialState = true, removeHistory = false)` | Navigate. A bare string is only allowed when the template has exactly **one** named slot; otherwise pass `{slot: value}`. `partialState` merges with the current state; `removeHistory` replaces the current history entry rather than pushing. |
 | `router.goBack()` / `router.goForward()` / `router.goTo(offset)` | History navigation over the router's own state list. |
-| `router.onBeforeStateChange(cb)` | `cb(preventChange, oldState, newState, oldPath, newPath)`; call `preventChange()` to cancel. Returns an unsubscribe function. |
+| `router.onBeforeStateChange(cb)` | `cb(preventChange, oldState, newState, oldPath, newPath)`; call `preventChange()` to cancel. A guard that redirects must call **both** `router.go(target)` and `preventChange()` — without `preventChange()` the blocked state is committed first and stays in history under the redirect. Returns an unsubscribe function. |
 | `router.onAfterStateChange(cb)` | `cb(oldState, newState, oldPath, newPath)`. Returns an unsubscribe function. |
 
 ### Behavior notes
@@ -86,7 +86,8 @@ matches the `Basics` container.
   a hash link, the state stays put but the address bar keeps the entry the browser already moved to.
 - **All Router methods throw** when the router is not configured — by design, unlike the rest of the
   framework, which soft-fails via `Console.error`. Guard with `router.isConfigured` when routing is
-  optional. A malformed route template (empty slot name, two `=`) also throws.
+  optional. A malformed route template (empty slot name, two `=`, or a `[` / `{` not closed by its
+  own pair, e.g. `{page`) also throws.
 - **The first `@AppRoot` decides routing for good.** It always initializes the `Router`; without a
   route template that router stays unconfigured, and a later `$Route('/…')` only logs "Router is
   already initialized". Declare the route template on the first `@AppRoot`, or call `$Route` before any
@@ -94,9 +95,18 @@ matches the `Basics` container.
 - Slot values in `router.state` are strings (`router.go({ id: 5 })` stores `'5'`). `nb-switch`
   matching is type-strict, so switch on them with string cases — `nb-case="'5'"`, not `nb-case="@5"`
   (`@name` constants that are not numeric or boolean are strings and work as-is).
-- `router.state` is the router's own live object. Read it; never mutate it.
-- Setting a **container slot** to a name with no registered container logs an error and keeps the
-  previous value.
+- `router.state` is a frozen snapshot. Assigning to it throws a `TypeError` in strict code (modules); change the route with `router.go()`. The same snapshot is returned until the state changes.
+- **`router.go()` is all-or-nothing.** If any value is rejected — a **container slot** set to a name
+  with no registered container, or a key that names no slot — the whole call is dropped: no slot
+  changes, no callbacks fire, history is untouched. Each rejection is logged regardless of
+  `showDebugInfo` (unknown container: `Console.error`; unknown key: `Console.warn`).
+- **URL input is lenient.** On startup and for hash links / typed URLs, a container slot naming an
+  unknown container keeps its current value (logged), the other slots are applied, and the URL is
+  rewritten to its canonical form.
+- **Navigation from a state-change callback is queued.** `go()` / `goBack()` / `goForward()` /
+  `goTo()` called inside `onBeforeStateChange` or `onAfterStateChange` runs only after the current
+  change has finished (every `onAfterStateChange` subscriber has seen it); history moves compute their
+  target at that point. If several are called, only the last one runs.
 - Setting a slot to `undefined`/`null`/blank resets it to its default.
 - The initial state-change during construction is **not preventable**.
 - `onBeforeStateChange`/`onAfterStateChange` callbacks receive copies of the state objects.
@@ -190,8 +200,7 @@ Capped at **10** consecutive re-runs; exceeding it logs
 > properties from `nb-exec` or any bound expression; see `known-limitations.md`.
 >
 > Pessimistic mode also needs every handler to settle: a setter-only aspect, or an `nb-in` value that
-> never equals its own clone (a `Set` of objects), reports a change on every pass and burns the full
-> cap on every trigger.
+> never equals its own clone, reports a change on every pass and burns the full cap on every trigger.
 
 ```typescript
 @AppRoot({ pessimisticChangeDetectionStrategy: true }, ...)       // global

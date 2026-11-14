@@ -20,12 +20,14 @@ expression compile/execution errors **throw** instead of silently yielding `unde
 | Message | Cause | Fix |
 |---|---|---|
 | `invalid operation: Container with name 'X' not found.` | The container class was never imported, so its decorator never ran. | Import it and add it to the parent's decorator args. Check spelling — lookup is case-insensitive but the name must match the class name. |
+| `invalid operation: Container with name 'X' is unable to get HTML template.` | The container is registered, but its URL/provider template failed to load 3 times (the per-attempt `Invalid container 'X': …` errors precede it). | Fix the path, provider or server response; check that the sanitizer doesn't throw. |
+| `unable to get X adoptedStyle for component.` / `… for aspect with 'Y' name.` | An adopted-style name in `@Component`/`@Aspect` is not registered (typo, or `$AdoptedStyle` never imported), or its fetch kept failing. Logged once per host element; the other styles are still adopted. | Fix the name or register the style with `$AdoptedStyle` before the entity is used. |
 | `aspect with 'X' name not found` | Aspect not imported/registered. | Add it to `@AppRoot` deps. Remember the name is the **kebab-cased** class name (`Tooltip` → `tooltip`). |
 | `Component name X is not valid custom element name.` | Single-word class name produced a tag without a hyphen. | Rename the class (`ItemCard`) or use the tuple form: `@Component(['my-button', html], css)`. |
 | `Component/Container/Aspect with 'X' name already exists…` | Two classes map to the same case-insensitive name. | Rename one, or give an explicit name via the tuple form. |
-| `Injection 'X' cannot be resolve.` | Class not registered with `@Injectable`/`$Injectable`, or the service is not available for this entity type. The class being constructed is the first console argument. | Add `@Injectable()`; check the availability matrix — `ElementManipulations`/`ElementSubscriptions` exist only in components and aspects. |
-| `Injection 'Object' cannot be resolve.` | A constructor parameter typed with an interface, `any`, `unknown`, a union or a generic — TypeScript emits `Object` for those, and the parameter arrives `undefined`. | Type the parameter with a concrete (registered) class. |
-| `Injection 'X' cannot be resolve as it is a circular reference: A->B->A` | Constructor cycle. | Break it: inject a shared third service, or resolve lazily inside a method. |
+| `Injection 'X' cannot be resolved.` | Class not registered with `@Injectable`/`$Injectable`, or the service is not available for this entity type. The class being constructed is the first console argument. | Add `@Injectable()`; check the availability matrix — `ElementManipulations`/`ElementSubscriptions` exist only in components and aspects. |
+| `Injection 'Object' cannot be resolved.` | A constructor parameter typed with an interface, `any`, `unknown`, a union or a generic — TypeScript emits `Object` for those, and the parameter arrives `undefined`. | Type the parameter with a concrete (registered) class. |
+| `Injection 'X' cannot be resolved as it is a circular reference: A->B->A` | Constructor cycle. | Break it: inject a shared third service, or resolve lazily inside a method. |
 | `Injection 'X' already exists, injection should be unique.` | The same class was registered twice (`@Injectable` plus `$Injectable`, or a duplicated import path). | Register once. |
 | `property 'X' has getter or setter or both, such properties cannot be decorated` | `@Detector()`/`@Eventer()` on an accessor. | Use a plain field, and do the extra work in a normal method. |
 | `property 'X' should be configurable and cannot be decorated` | Property was defined non-configurable. | Use a plain class field. |
@@ -44,13 +46,14 @@ expression compile/execution errors **throw** instead of silently yielding `unde
 | Message | Cause | Fix |
 |---|---|---|
 | `element can't have nb-value and nb-html bindings at the same time.` | Mutually exclusive content handlers. | Split across nested elements. Groups: content (`value`/`html`/`switch`/`container`/component/`template`), structure (`case`/`default`/`repeat`), function (`case`/`default`/`if`). |
-| `nb-case must have direct nb-switch parent` | A wrapper element sits between switch and case. | Make the case a direct child, or move `nb-switch` onto the wrapper. |
+| `nb-case must have direct nb-switch nuBond parent` (also `nb-default`) | A wrapper element with its own `nb-*` binding sits between switch and case (plain wrappers are transparent). | Make the case a direct child, or move `nb-switch` onto the wrapper. |
 | `there should be only one nb-default for one nb-switch` | Multiple defaults. | Keep one. |
-| `classes should be changed via nb-class` / `styles … via nb-style` / `text content … via nb-value` / `html content … via nb-html` / `outerHTML cannot be changed` | Used `nb-attr:class`, `nb-prop:className`, `nb-prop:textContent`, `nb-prop:outerHTML`, etc. | Use the dedicated handler. |
+| `classes should be changed via nb-class` / `styles … via nb-style` / `text content … via nb-value` / `html content … via nb-html` / `outerHTML cannot be changed` / `__proto__ cannot be changed` | Used `nb-attr:class`, `nb-prop:className`, `nb-prop:textContent`, `nb-prop:outerHTML`, `nb-prop:__proto__`, etc. | Use the dedicated handler. |
 | `system (X) attribute changes is not allowed` | Tried to bind an `nb-*` framework attribute through `nb-attr:`. | Framework attributes are managed by nuBond; drop the binding. |
 | `incorrect binding found, nb-X attributes should have value.` | An `nb-*` attribute left empty. | Give it an expression, or remove it. Only `nb-aspect:*` and `nb-default` may be valueless. |
+| `incorrect binding found, nb-X should have meta value, like: …` | A name-taking handler written without its name: `nb-var="…"`, `nb-event="…"`, `nb-in="…"`, `nb-prop`, `nb-attr`, `nb-aspect`, `nb-in-ref`. Nothing is bound. | Add the name: `nb-var:total="…"`, `nb-event:click="…"`. Only `nb-repeat` is valid without one. |
 | `multiple handlers for one attribute/property/event/in/variable (X) are not supported` | Duplicate `nb-attr:x` etc. on one element. | Keep one; combine logic in the expression. |
-| `incorrect conditional class expression, expected: {a: cond1; b: cond2}` | Malformed `nb-class`. | Use `;` between entries; escape a literal `;` as `\;`. |
+| `incorrect conditional class expression, expected: {a: cond1; b: cond2}` | Malformed `nb-class`. | Use `;` between entries; escape a literal `;` as `\;` (inside a quoted `'…'` / `"…"` / `` `…` `` literal no escape is needed). |
 | `expression "x, b: y" compilation error: SyntaxError: Unexpected token ':'` (a `bind error` with `showDebugInfo`) on an `nb-class` | Entries separated with `,` — everything after the first key became one malformed expression. No class from that binding is applied. | Separate entries with `;`. |
 | `conditional class expression can't mutate static (X) class.` | A conditional `nb-class` key names a class that is also in the element's `class="…"`. That key is not bound; the class stays on. | Remove the class from the markup and let the condition own it. |
 | `duplicated class name (X) found.` | The same key twice in a conditional `nb-class`. First one wins. | Merge the conditions into one entry. |
@@ -65,7 +68,7 @@ expression compile/execution errors **throw** instead of silently yielding `unde
 | `onX looks like an HTML Event Attribute, event subscription should be done via nb-event` (warning, debug only) | `nb-attr:on…` target. The binding is still created. | Use `nb-event:`. Non-event names starting with `on` (`once`) warn too — ignore those. |
 | `expression "…" compilation error` / `execution error` | Syntax error or runtime throw in the expression. | Check quoting inside the attribute; move complex logic into a method. |
 | `expression '…' is evaluated in multi-statement way` (warning) | A `;` in the expression. | Use the comma operator `,`. Otherwise the expression always returns `undefined`. |
-| `element original children will replaced by nb-value` (warning) | `nb-value`/`nb-html` on an element that has real children. | Move the binding to a child element. |
+| `element original children will be replaced by nb-value` / `…by nb-html` (warning) | `nb-value`/`nb-html` on an element that has real children. | Move the binding to a child element. |
 | `container is mapped to route, that is not configured.` | `nb-container="%slot"` without a route template. | Add the route template to `@AppRoot`, or use `@ContainerName`. |
 | `Router: container 'X' not found, can't route.` | Route slot value is not a registered container name. | Register the container, or fix the slot value. |
 | `tree can't stabilize in 10 change detection cycles` | Pessimistic strategy with a binding that keeps mutating state. | Remove side effects from bindings (`nb-exec` that writes state read by another binding is the usual culprit). |
@@ -199,6 +202,13 @@ so `nb-in:metaData` becomes `nb-in:metadata` → property `metadata`. Always keb
 `nb-in:`, `nb-in-ref:`, `nb-prop:` and `nb-var:` names. No error is logged — the child just never
 receives the input.
 
+**`this` inside projected content is the *parent*, not the receiving container/component.**
+`<div nb-container="@Card"><b nb-projection nb-value="this.title"></b></div>` reads the parent's
+`title` — a `title` on `Card` is ignored, and `nb-event` handlers run on the parent. Data the child owns
+belongs in the child's own template (next to the slot); data the parent owns can be projected directly,
+no `nb-in` needed. Only `nb-template` differs: it has no context, so its projections bind in the using
+context.
+
 **`nb-repeat` has no keyed diff.** DOM node *N* is always item *N*, so reordering re-binds every row in
 place. Focus, scroll position, uncommitted input values and child-component internal state stay with
 the *position*. Avoid reordering lists that contain focusable or stateful children; rebuild them with a
@@ -212,14 +222,6 @@ at all. Use prototype methods instead.
 **A function passed with `nb-in` arrives as `undefined`.** Every non-primitive `nb-in` value is
 cloned, and functions are not cloneable: `nb-in:on-pick="this.pick"` logs an input-set error on every
 pass and the child gets nothing. Pass callbacks with `nb-in-ref`, or notify the parent with an event.
-
-**A cyclic object is reported *equal*.** `Helpers.equals` logs `deep equality comparison detected a
-circular reference` and returns `true`, so updates are silently dropped. Never route a cyclic graph
-through `nb-in` or a `@Detector()` property.
-
-**`Set` comparison is by identity, not deep.** A `Set` of freshly built objects always compares as
-different from a structurally identical one — and through `nb-in` a `Set` of objects (or a `Map` with
-object keys) never equals its own clone, so it is re-delivered on every pass.
 
 **`nb-switch` on a possibly-`undefined` value matches nothing.** `undefined`/`null` match no case —
 not even an empty-string one — so without an `nb-default` the whole switch element is hidden. Coerce
@@ -314,13 +316,14 @@ leaves the page, so the listener goes with it. Two consequences: a *debounced* s
 fire once after disposal (guard the callback), and anything you subscribe to that outlives the element
 — `window`, `document`, a service's `CallBackEvent`, the router — must be released in `onDispose()`.
 
-**Aspects have no dispose lifecycle at all** — never acquire timers or global listeners in an aspect
-constructor; there is no way to release them. Aspects are also constructed for elements that never
-become visible.
+**Aspects release resources in `onDispose()`** — an aspect that acquires a timer or a global listener
+in its constructor must implement the optional `onDispose()` and release it there. Aspects are also
+constructed for elements that never become visible, so prefer acquiring such resources lazily (on
+the first `data` set).
 
-**An entity registered after its tree was built is permanently inert.** Components, aspects and
-templates resolve at tree-construction time with no re-scan. Import everything eagerly from the app
-root.
+**An entity registered after its tree was built is permanently inert (by design).** Components,
+aspects and templates resolve at tree-construction time with no re-scan. A late `nb-template` logs
+`invalid operation: template '<name>' not found`. Import everything eagerly from the app root.
 
 **Registering a transformer late can freeze whole subtrees** — a name colliding with an existing
 `nb-var` or repeat prefix produces a duplicate strict-mode parameter and every expression in that scope

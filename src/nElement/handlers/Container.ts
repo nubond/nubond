@@ -1,3 +1,5 @@
+import { INElement } from '../../interfaces/nElement/INElement';
+
 import { ContextedBase } from './base/ContextedBase';
 
 import { NElementProjection } from '../NElementProjection';
@@ -11,7 +13,7 @@ import { TemplateEntityBinderData } from '../../entities/Containers';
 import { Environment } from '../../Environment';
 
 import { IContext } from '../../interfaces/contexts/IContext';
-import { IContextBinder } from '../../ContextBinder';
+import { IContextBinder } from '../../interfaces/contextBinders/IContextBinder';
 
 import { ChangeDetector } from '../../models/injections/ChangeDetector';
 import { EventDispatcher } from '../../models/injections/EventDispatcher';
@@ -31,7 +33,11 @@ class TemplateEntityContextData {
 }
 
 export class Container extends ContextedBase<TemplateEntityContextData> {
+
     private readonly _getEventDispatcher: (() => EventDispatcher) | undefined;
+    private readonly _constructSubTree: (() => void) | undefined;
+    private readonly _removeChildren: (() => void) | undefined;
+    private readonly _requestParentsDetectChanges: (() => void) | undefined;
 
     private readonly _associatedRouteSlot: string | undefined;
 
@@ -45,8 +51,11 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
     private _currentContextName = '';
 
     constructor(nativeElement: Element, attributes: Attributes,
+                parentContextBinder: IContextBinder, parentNElement: INElement,
                 getEventDispatcher: () => EventDispatcher,
                 isElementVisible: () => boolean,
+                constructSubTree: () => void,
+                removeChildren: () => void,
                 requestParentsDetectChanges: () => void,
                 notifyContainerAttached: (context: object) => void,
                 notifyContainerDetached: (context: object) => void) {
@@ -59,13 +68,16 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
         }
 
         super(expression, 
-              nativeElement, attributes,
+              nativeElement, attributes, parentContextBinder, parentNElement,
               Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME,
               isElementVisible,
               notifyContainerAttached, notifyContainerDetached);
         
         if (this.hasNExpression) {
             this._getEventDispatcher = getEventDispatcher;
+            this._constructSubTree = constructSubTree;
+            this._removeChildren = removeChildren;
+            this._requestParentsDetectChanges = requestParentsDetectChanges;
 
             if (Helpers.isString(associatedRouteSlot)) {
                 this._associatedRouteSlot = associatedRouteSlot;
@@ -75,7 +87,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
 
                     this._unSubscribeFromRouteOnStateChanged = Environment.router!.onAfterStateChange(() => {
                         this.setContextDataFromRoute();
-                        requestParentsDetectChanges!();
+                        this._requestParentsDetectChanges!();
                     });
                 } else {
                     Console.error(nativeElement, 'container is mapped to route, that is not configured.');
@@ -112,7 +124,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
 
                 if (Environment.containers.has(this._currentContextName)) {
                     if (Environment.containers.isReady(this._currentContextName)) {
-                        const contextBinderData = Environment.containers.instantiateBinder(this._currentContextName);
+                        const contextBinderData = Environment.containers.instantiateBinder(this._currentContextName, this.parentContextBinder!, this.parentNElement!);
                         if (!Helpers.isUndefined(contextBinderData)) {
                             try {
                                 const context = Environment.containers.instantiateContext(this._currentContextName,
@@ -129,6 +141,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
                                 throw ex;
                             }
                         } else {
+                            this._previousContextName = this._currentContextName;
                             Console.error(this.nativeElement, `invalid operation: Container '${this._currentContextName}' meta data is not found or container is not ready.`);
                         }
                     } else {
@@ -138,21 +151,17 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
                         })) {
                             result = null;
                         } else {
-                            const currentContextName = this._currentContextName;
-
-                            this._nElementProjection!.cleanUp();
-                            this.disposeInternal(true);
-                            
-                            Console.error(this.nativeElement, `invalid operation: Container with name '${currentContextName}' not found.`);
+                            this._previousContextName = this._currentContextName;
+                            this.disposeInternal(false);
+                            this.fallbackView();
+                            Console.error(this.nativeElement, `invalid operation: Container with name '${this._currentContextName}' is unable to get HTML template.`);
                         }
                     }
                 } else {
-                    const currentContextName = this._currentContextName;
-
-                    this._nElementProjection!.cleanUp();
-                    this.disposeInternal(true);
-
-                    Console.error(this.nativeElement, `invalid operation: Container with name '${currentContextName}' not found.`);
+                    this._previousContextName = this._currentContextName;
+                    this.disposeInternal(false);
+                    this.fallbackView();
+                    Console.error(this.nativeElement, `invalid operation: Container with name '${this._currentContextName}' not found.`);
                 }
             } else {
                 result = entityData;
@@ -161,11 +170,12 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
             if (this._isFirstContainerCommit) {
                 this._isFirstContainerCommit = false;
                 this.markAsReady();
+                this.fallbackView();
             }
 
             if (this._previousContextName !== this._currentContextName) {
-                this._nElementProjection!.cleanUp();
                 this.disposeInternal(true);
+                this.fallbackView();
             }
         }
 
@@ -174,11 +184,11 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
 
     protected onEntityDataChange(entityData: TemplateEntityContextData): IContextBinder {
         this.nativeElement!.replaceChildren(...Array.from(entityData.contextBinderData.template.childNodes));
-        this._nElementProjection!.process();
+        this._nElementProjection!.project();
 
         entityData.contextBinderData.contextBinder.bind(this.nativeElement!, entityData.context, false,
                                                         this.nExpression!.hasNInExpression);
-        
+
         return entityData.contextBinderData.contextBinder;
     }
 
@@ -203,10 +213,27 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
     }
 
     //clean up
+    protected fallbackView(): void {
+        const fallbackExists = this._nElementProjection!.fallback();
+
+        if (fallbackExists) {
+            this._constructSubTree!();
+            this._requestParentsDetectChanges!();
+        } else {
+            let child = this.nativeElement!.firstChild;
+            while (child !== null) {
+                child.remove();
+                child = this.nativeElement!.firstChild;
+            }
+        }
+    }
+
     private disposeInternal(full: boolean): void {
         if (full) {
             this._previousContextName = '';
             this._currentContextName = '';
         }
+
+        this._removeChildren!();
     }
 }

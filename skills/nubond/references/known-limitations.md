@@ -66,24 +66,25 @@ while the value stays uncloneable. A bare callback (`nb-in:on-pick="this.pick"`)
 A class instance does *not* fail: it clones into a plain object without its prototype, so its methods
 are missing and nothing is logged. Use `nb-in-ref` for all of these.
 
-**`Set`s of objects and `Map`s with object keys re-deliver on every pass.** Deep equality compares
-`Set` members and `Map` keys by identity, so such a value never equals its own clone: the input is
-re-assigned and `onInputsRefreshDone` fires each pass, and in pessimistic mode every trigger burns the
-full cycle cap. Pass arrays/plain objects, or use `nb-in-ref`.
-
-**A cyclic object is reported equal.** `Helpers.equals` logs `deep equality comparison detected a
-circular reference` and returns `true`, so changes are dropped. Pass a flat projection, or use
-`nb-in-ref` plus a manual `detect()`.
+**Large `Set`s of objects and `Map`s with object keys are slow through `nb-in`.** Their members never
+match the clone snapshot by identity, so every pass deep-matches them pairwise — quadratic in the
+size. The comparison is correct (no re-delivery); pass arrays/plain objects, or use `nb-in-ref`, when
+the collection is large.
 
 **`nb-in:x` and `nb-in-ref:x` on the same element collide** — they share one key space; the `nb-in`
 one wins and the other is rejected with `multiple handlers for one in (x) are not supported`.
 
-**`nb-in:*` on an element with no `nb-container` and no component tag is silently ignored** — the
-attributes make the element tracked, but nothing consumes them. Likewise `nb-prop:x` on a component
+**`nb-in:*` on an element with no `nb-container` and no component tag is silently ignored** — only
+the container/component handler reads inputs, and the runtime logs nothing (the VS Code extension
+warns). On their own the attributes don't make the element bound at all. Likewise `nb-prop:x` on a component
 tag sets a property on the *host element*, not on the component context.
 
-**`nb-in:<name>` that matches an existing method silently shadows it**, and `nb-in:__proto__` replaces
-the context's prototype. Never let input names collide with methods.
+**`nb-in:<name>` that matches an existing method shadows it for good (by design).** The input becomes an own
+property that hides the prototype method, so `this.<name>()` fails in the child. `nb-in` only logs a
+misleading `<name> input initial value cannot be cloned` warning; `nb-in-ref` logs nothing, and wipes
+the method even when the parent value is `undefined`. Never let input names collide with methods
+(an intentional override with a function through `nb-in-ref` does work). `nb-in:__proto__`,
+`nb-in-ref:__proto__` and `nb-prop:__proto__` are rejected with an error.
 
 ## Change detection
 
@@ -140,23 +141,22 @@ message itself under `showDebugInfo`). A cycle through another template (`a → 
 the stack at tree-build time with no diagnostic — on the app-root path that kills bootstrap. A
 container that includes itself instead grows the DOM one level per macrotask, unbounded.
 
-**Projected content binds against the *child's* context, not where it was authored.** Projection
-clones the nodes into the container/component subtree before that entity's binder builds the tree, so
-`nb-*` expressions inside `nb-projection` evaluate against the child. This differs from web-component
-slots and from most frameworks' content projection — expect `this` to mean the child.
+**Only direct children of the host are projected.** An `nb-projection` element nested inside a
+wrapper is not a projection: the wrapper counts as fallback content, so it is replaced by the child's
+template and only shows (bound by its own context) when the container shows nothing. Put the marker on
+the outermost element: `<div nb-projection="@body"><p>…</p></div>`.
 
-**Unmatched projection slots keep their own content** (useful as fallback), and duplicate *named*
-projections silently let the last one win (only the duplicate-unnamed case errors).
+**Unmatched projection slots keep their own content** (useful as fallback).
 
-**Container fallback content is static.** Host children without `nb-projection` are shown whenever
-the container's name is empty — from the first pass when it starts empty, and restored as raw clones
-when it empties later. Their `nb-*` bindings are inert, and elements among them that carry
-`nb-if`/`nb-repeat`/`nb-container`/… stay hidden by the anti-flicker stylesheet. Plain markup and
-`href="#/…"` links are fine (e.g. a crawlable landing page inside a route slot with no default); for
-dynamic "nothing selected" UI use a sibling under `nb-if`.
+**A failed name is not looked up again until it changes.** `nb-container="this.view"` resolving to an
+unregistered name logs `Container with name '…' not found` once, shows the fallback, and then stays
+quiet; registering that container later does not make it appear by itself — change the name (or
+declare the dependency up front, which is the intended model).
 
-**A dynamic container name that is not registered logs every pass.** `nb-container="this.view"`
-resolving to an unknown name re-logs `Container with name '…' not found` on each pass of the parent.
+**A synchronously built container fallback costs one extra parent pass.** Whenever a container shows
+its fallback (unknown / empty / `undefined` name, switch to empty, failed load) it requests one
+debounced detection of the parent — needed for the async failed-load case, redundant (but harmless,
+not per cycle) when the fallback was built inside a pass.
 
 **A component host's light DOM can flash before its first bind.** A component with `nb-in` inputs
 binds in a later task, and its host carries no marker until then — so projection source children can
@@ -170,10 +170,10 @@ as raw source, and the author's text is never rewritten:
 | Written | Result |
 |---|---|
 | `@true` / `@false` | boolean |
+| `@null` / `@undefined` | `null` / `undefined` (lowercase only — `@NULL` is the string `"NULL"`) |
 | `@5`, `@0x10` | number (`16` for the hex) |
 | `@Infinity` | number `Infinity` |
 | `@NaN` | **string** `"NaN"` |
-| `@null`, `@undefined` | **strings** `"null"` / `"undefined"` |
 | `@{a: 1}` | **string** `"{a: 1}"` |
 | `@007`, `@08` | **`SyntaxError`** — strict-mode octal / leading-zero decimal; the binding dies |
 
@@ -187,7 +187,7 @@ strict-mode formal parameter → `SyntaxError`, and every binding in that subtre
 transformers up front.
 
 **`nb-case` expressions can't see the case element's own `nb-var`s** — cases are evaluated by the
-parent switch with the switch's scope.
+parent switch with the switch's scope. Put the variable on the switch element or an ancestor.
 
 ## Registration timing
 
@@ -202,7 +202,7 @@ every entity eagerly from the app root; lazy-loading entity modules does not wor
 
 **Interface-, `any`-, `unknown`-, union- or generic-typed constructor parameters are not injected.**
 TypeScript emits `Object` for those, and `Object` is never matched against the per-entity services:
-the parameter arrives `undefined` and `Injection 'Object' cannot be resolve.` is logged (the consuming
+the parameter arrives `undefined` and `Injection 'Object' cannot be resolved.` is logged (the consuming
 class is the first console argument). **Always type injected parameters with a concrete class.**
 
 **Inherited constructors resolve nothing.** The built-in `Reflect` polyfill doesn't walk the prototype
@@ -226,12 +226,10 @@ DOM writes: `nb-class` assigns `className` wholesale, and `nb-style` doesn't kno
 **The imperative attribute API is unguarded** — `element.attributes.set('onclick', …)` is not checked
 at all.
 
-**Aspects have no dispose lifecycle** — an aspect that takes a timer or a global listener in its
-constructor can never release it. Aspects are also constructed for elements that never become visible
-(unlike components and containers, they are *not* lazy). Keep aspects free of external resources.
-
-**`attributes.getAll()` includes the framework's `nb-*-ready` markers**, and unknown `nb-*` attributes
-are not in the model at all.
+**Aspects are constructed eagerly** — including for elements that never become visible (unlike
+components and containers, they are *not* lazy). An aspect that takes a timer or a global listener in
+its constructor therefore holds it from tree build onwards; release it in the optional `onDispose()`,
+which runs when the element's bindings are disposed.
 
 ## Styles and classes
 
@@ -248,9 +246,6 @@ the element's `class` attribute: the simple and array forms skip it silently, an
 naming one is rejected (`conditional class expression can't mutate static (<name>) class.`) and left
 unbound — so `class="active" nb-class="{active: this.on}"` leaves `active` permanently on. Toggle
 only classes that are *not* authored. (`element.classes.remove()` can still remove one.)
-
-**Unknown adopted-style names are silently ignored** — a typo in `['shared-componets']` just means
-missing styles, no error.
 
 **Simple-form `nb-class` treats a multi-class result as one token** — `"foo bar"` is stored as a single
 entry, so `has('foo')` is false and bookkeeping operates on the compound token. Use the array form.
@@ -273,14 +268,17 @@ router's methods throw (by design) — check `isConfigured` if routing is option
 **A prevented navigation cannot take the URL back.** When `onBeforeStateChange` blocks a Back/Forward
 or a hash link, the state stays but the address bar keeps the entry the browser already moved to.
 
-**History bookkeeping is by content.** Two identical states in the history (`a → b → a`) are
-indistinguishable, so Back/Forward onto the second can desync `goBack`/`goForward`;
+**History bookkeeping is by content.** A browser Back/Forward is matched to the router's history entry
+with the same state that is *nearest* the current one; when two are equally near (`a → b → a`, standing
+on `b`) the earlier one wins, so Forward onto the second `a` can desync `goBack`/`goForward`.
 `go(…, removeHistory = true)` collapses the router's own history list while the browser keeps its
 entries. Prefer plain `go()` and browser navigation over long `goBack()` chains.
 
-**A failed container-slot validation aborts mid-transaction** — other slots of the same `go()` were
-already mutated, with no rollback. An `onBeforeStateChange` callback that itself calls `router.go()`
-re-enters unguarded. `router.state` is the router's live object — never mutate it.
+**A default container is not checked up front.** `[NAME=DEFAULT]` is not validated when the router is
+created (containers may register later). If it is still unregistered when a rejected or prevented
+change has to roll back to it, the rollback logs `Router is not able roll-back to previous change,
+check route configuration`, and the rejected name stays in the slot until the next navigation applies
+it.
 
 ## Events
 
@@ -294,9 +292,14 @@ otherwise the whole thing is the event name. `nb-event:click:abc` and `nb-event:
 events literally named `click:abc` and `click:` — no diagnostic at any `showDebugInfo` setting, and
 the handler never fires.
 
-**Manual `dispatch('myEvent')` can never be caught by `nb-event:myEvent`** — HTML lowercases the
-attribute to `myevent`. Use lowercase or kebab-case event names in `EventDispatcher.dispatch`.
-(`@Eventer` is safe: it kebab-cases names on registration.)
+**Event names are lowercase.** HTML lowercases `nb-event:myEvent` to `myevent`, and
+`EventDispatcher.dispatch('myEvent')` / `@Eventer` lowercase the name they dispatch to match — so
+camelCase works between templates, but a plain `addEventListener('myEvent', …)` never receives it
+(listen for `myevent`). A pre-built `Event` passed to `dispatch(event)` keeps its name. Kebab-case
+names avoid the question entirely.
+
+**An event dispatched without data, or with `undefined`, arrives with `data === null`** — the DOM
+`CustomEvent` turns an `undefined` detail into `null`. Don't use `undefined` vs `null` as a signal.
 
 **A new-but-deep-equal `item` keeps the old event closure** — `nb-event:click="this.remove(item)"` can
 pass an object that is `!==` every element of the current array, so `indexOf` returns −1. Compare by
@@ -327,9 +330,14 @@ no diagnostic — external sources are unsupported by design; use an `ITemplateP
 The rule cuts the other way too: any single-line string starting with `/` is fetched, including
 `'/ some text'` and a protocol-relative `'//host/tpl.html'` (which leaves your origin).
 
-**Fetch success-callback exceptions are swallowed** — a throwing sanitizer leaves the entity
-not-ready forever with no log, and after three failed attempts the error says the container was "not
-found" rather than that the fetch failed.
+**A sanitizer should return, not throw.** On a URL-fetched template a throw is logged
+(`… successCallBack failed with exception: …`) and counts as a failed attempt. But with a synchronous
+`ITemplateProvider`, or with `showDebugInfo` on, it still leaves the entity waiting forever.
+
+**Load-failure messages hide the cause.** An HTTP error status, a network failure or a rejected
+provider promise is logged as `Invalid <entity> '…': nor html template, nor html template url, nor
+html template provider has been found.` — the status text is lost. Check the Network tab. After three
+failed attempts an `nb-container` logs `Container with name '…' is unable to get HTML template.`
 
 ## Things that are *not* problems (verified clean)
 

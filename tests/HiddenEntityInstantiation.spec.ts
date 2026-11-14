@@ -16,7 +16,7 @@ describe('hidden entities are instantiated lazily', () => {
     let unique = 0;
 
     function createBinder(pessimistic: boolean = false): ContextBinder {
-        return new ContextBinder(undefined, pessimistic, () => 'nb-hidden', undefined,
+        return new ContextBinder(null, null, undefined, pessimistic, () => 'nb-hidden', undefined,
                                  () => false, () => undefined, () => undefined);
     }
 
@@ -124,7 +124,7 @@ describe('hidden entities are instantiated lazily', () => {
                                          <div nb-case="@two" nb-container="@${two.name}"></div>
                                      </div>`, host);
 
-            const oneBinder = (binder.rootNElement as any)._children[0]._children[0]._disposeSequence.find((handler: any) => handler instanceof Container).contextBinder;
+            const oneBinder = ((binder as any).rootNElement as any)._children[0]._children[0]._disposeSequence.find((handler: any) => handler instanceof Container).contextBinder;
 
             expect(oneBinder.changeDetectionEnabled).toBe(true);
 
