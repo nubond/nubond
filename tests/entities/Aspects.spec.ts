@@ -2,6 +2,9 @@ import { Aspects } from '../../src/entities/Aspects';
 import { Injectables } from '../../src/entities/Injectables';
 import { IAspectContext } from '../../src/interfaces/contexts/IAspectContext';
 import { Constants } from '../../src/Constants';
+import { ElementManipulations } from '../../src/models/injections/ElementManipulations';
+import { ElementSubscriptions } from '../../src/models/injections/ElementSubscriptions';
+import { ChangeDetector } from '../../src/models/injections/ChangeDetector';
 
 // Polyfill CSSStyleSheet for jsdom
 if (typeof CSSStyleSheet !== 'undefined' && !CSSStyleSheet.prototype.replaceSync) {
@@ -479,6 +482,37 @@ describe('Aspects', () => {
             jest.runAllTimers();
             expect(cb2).toHaveBeenCalledWith(true);
             expect((globalThis as any).fetch).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    describe('getDependencies', () => {
+        it('should return undefined for an unknown aspect', () => {
+            expect(aspects.getDependencies('missing')).toBeUndefined();
+        });
+
+        it('should return the dependencies registered with the aspect', () => {
+            class Injecting implements IAspectContext {}
+            aspects.add('injecting', Injecting as any, [ElementManipulations as any, ChangeDetector as any], undefined, undefined, () => undefined);
+
+            const dependencies = aspects.getDependencies('injecting')!;
+            expect(dependencies.has(ElementManipulations as any)).toBe(true);
+            expect(dependencies.has(ChangeDetector as any)).toBe(true);
+            expect(dependencies.has(ElementSubscriptions as any)).toBe(false);
+        });
+
+        it('should be case-insensitive like every other aspect lookup', () => {
+            class Injecting implements IAspectContext {}
+            aspects.add('MyInjecting', Injecting as any, [ElementSubscriptions as any], undefined, undefined, () => undefined);
+
+            expect(aspects.getDependencies('myinjecting')!.has(ElementSubscriptions as any)).toBe(true);
+            expect(aspects.getDependencies('MYINJECTING')).toBe(aspects.getDependencies('MyInjecting'));
+        });
+
+        it('should return an empty set for an aspect without dependencies', () => {
+            class Plain implements IAspectContext {}
+            aspects.add('plain', Plain as any, [], undefined, undefined, () => undefined);
+
+            expect(aspects.getDependencies('plain')!.size).toBe(0);
         });
     });
 });

@@ -39,13 +39,13 @@ export class Html extends Base implements IHandler<IExpressionDetails> {
     constructor(nativeElement: Element, attributes: Attributes, htmlSanitizer: ((html: string) => string) | undefined) {
         super();
 
-        const expression = <string | undefined>attributes.get(Constants.HTML_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.HTML_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this._nativeElement = nativeElement;
             this._htmlSanitizer = htmlSanitizer;
 
             this.hasNExpression = true;
-            this.nExpression = new ExpressionDetails(expression!);
+            this.nExpression = ExpressionDetails.create(expression!);
         } else {
             this.hasNExpression = false;
         }
@@ -55,7 +55,7 @@ export class Html extends Base implements IHandler<IExpressionDetails> {
                 executeExpression: (expression: string | null | undefined, 
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
-            this.processExpressionExecution(this.nExpression!, Constants.HTML_HANDLER_ATTRIBUTE_NAME, 
+            this.processExpressionExecution(this.nExpression!, Constants.HANDLERS.HTML_HANDLER_ATTRIBUTE_NAME, 
                                             expression => executeExpression(expression, executionParams), 
                                             data => this.html = Helpers.stringify(data));
         }

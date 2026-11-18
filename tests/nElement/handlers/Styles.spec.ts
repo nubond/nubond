@@ -6,14 +6,14 @@ describe('Styles handler', () => {
     function createElementWithAttr(expression?: string): HTMLElement {
         const el = document.createElement('div');
         if (expression !== undefined) {
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.STYLE_HANDLER_ATTRIBUTE_NAME}`, expression);
+            el.setAttribute(`${Constants.HANDLERS.STYLE_HANDLER_ATTRIBUTE_NAME}`, expression);
         }
         return el;
     }
 
     it('should detect style expression', () => {
         const el = createElementWithAttr('color: ctx.myColor; font-size: ctx.fontSize');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Styles(el, attrs);
 
         expect(handler.hasNExpression).toBe(true);
@@ -25,7 +25,7 @@ describe('Styles handler', () => {
 
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Styles(el, attrs);
 
         expect(handler.hasNExpression).toBe(false);
@@ -34,7 +34,7 @@ describe('Styles handler', () => {
     describe('get/set/has/remove', () => {
         it('should set and get a style', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red');
@@ -45,7 +45,7 @@ describe('Styles handler', () => {
 
         it('should remove a style', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'blue');
@@ -55,7 +55,7 @@ describe('Styles handler', () => {
 
         it('should treat null/undefined as removal', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'blue');
@@ -65,7 +65,7 @@ describe('Styles handler', () => {
 
         it('should not mark as dirty when setting same value', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'green');
@@ -78,7 +78,7 @@ describe('Styles handler', () => {
 
         it('should getAll styles', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red');
@@ -90,7 +90,7 @@ describe('Styles handler', () => {
 
         it('should return a frozen Map from getAll()', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red');
@@ -100,7 +100,7 @@ describe('Styles handler', () => {
 
         it('should return a snapshot from getAll() (subsequent set not reflected)', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red');
@@ -115,7 +115,7 @@ describe('Styles handler', () => {
     describe('bind', () => {
         it('should bind expression to style properties', () => {
             const el = createElementWithAttr('color: ctx.myColor');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.bind(undefined, () => 'red');
@@ -127,7 +127,7 @@ describe('Styles handler', () => {
 
         it('should return executionParams', () => {
             const el = createElementWithAttr('color: ctx.c');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             const params = { x: 1 } as any;
@@ -138,7 +138,7 @@ describe('Styles handler', () => {
     describe('commit', () => {
         it('should return false when not dirty', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             expect(handler.commit()).toBe(false);
@@ -146,7 +146,7 @@ describe('Styles handler', () => {
 
         it('should remove a previously-set style on commit after removal', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red');
@@ -161,7 +161,7 @@ describe('Styles handler', () => {
 
         it('should re-apply a style when its value changes between commits', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red');
@@ -191,14 +191,14 @@ describe('Styles handler', () => {
             // Second style prop has only whitespace before the colon; after the per-entry trim
             // this collapses to ":value", which is reported as an incorrect style expression.
             const el = createElementWithAttr('color: ctx.val;  : ctx.val2');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             new Styles(el, attrs);
             expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, expect.stringContaining('has incorrect style expression'));
         });
 
         it('should log error for expression without colon separator', () => {
             const el = createElementWithAttr('badExpression');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             new Styles(el, attrs);
             expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, expect.stringContaining('has incorrect style expression'));
         });
@@ -207,7 +207,7 @@ describe('Styles handler', () => {
     describe('set edge cases', () => {
         it('should treat empty string value as removal', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'blue');
@@ -233,7 +233,7 @@ describe('Styles handler', () => {
             // `content: '\;'` must not split on the inner semicolon. The backslash is the
             // escape marker; it is stripped, leaving the literal ";" in the value.
             const el = createElementWithAttr("content: '\\;'");
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             expect(handler.hasNExpression).toBe(true);
@@ -244,7 +244,7 @@ describe('Styles handler', () => {
 
         it('should split on a real ";" while preserving an escaped ";" in an earlier value', () => {
             const el = createElementWithAttr("content: '\\;'; color: ctx.c");
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             expect(handler.nExpression!.size).toBe(2);
@@ -255,7 +255,7 @@ describe('Styles handler', () => {
 
         it('should not split on an unescaped ";" inside a string literal (L-15)', () => {
             const el = createElementWithAttr(`content: 'a;b'; font-family: "it's; ok"; color: ctx.c`);
-            const handler = new Styles(el, new Attributes(el, () => false));
+            const handler = new Styles(el, new Attributes(el, false));
 
             expect(handler.nExpression!.size).toBe(3);   // pre-fix: broken entries + "incorrect style expression" errors
             expect(handler.nExpression!.get('content')!.expression).toBe(`'a;b'`);
@@ -265,7 +265,7 @@ describe('Styles handler', () => {
 
         it('should keep a backslash before ";" inside a string literal (L-15)', () => {
             const el = createElementWithAttr(String.raw`content: 'a\\;b'; color: ctx.c`);
-            const handler = new Styles(el, new Attributes(el, () => false));
+            const handler = new Styles(el, new Attributes(el, false));
 
             expect(handler.nExpression!.size).toBe(2);
             expect(handler.nExpression!.get('content')!.expression).toBe(String.raw`'a\\;b'`);   // pre-fix: 'a\;b' ("a;b")
@@ -276,7 +276,7 @@ describe('Styles handler', () => {
             // ("incorrect binding found ..."), so the value never reaches the Styles
             // tokenizer and no style expression is produced.
             const el = createElementWithAttr('');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             expect(handler.hasNExpression).toBe(false);
@@ -284,7 +284,7 @@ describe('Styles handler', () => {
 
         it('should not register an expression for a whitespace-only nb-style value', () => {
             const el = createElementWithAttr('   ');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             expect(handler.hasNExpression).toBe(false);
@@ -294,7 +294,7 @@ describe('Styles handler', () => {
     describe('R2-8: "!important" in nb-style values', () => {
         it('should apply the "!important" flag as a CSS priority instead of writing it into the value', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red !important');
@@ -306,7 +306,7 @@ describe('Styles handler', () => {
 
         it('should recognize the flag case-insensitively', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red !IMPORTANT');
@@ -318,7 +318,7 @@ describe('Styles handler', () => {
 
         it('should recognize the flag without a space before it', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red!important');
@@ -330,7 +330,7 @@ describe('Styles handler', () => {
 
         it('should keep a multi-token value intact when the flag is present', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('margin', '0px 4px 0px 4px !important');
@@ -342,7 +342,7 @@ describe('Styles handler', () => {
 
         it('should apply the flag through the nb-style expression path', () => {
             const el = createElementWithAttr('color: ctx.myColor');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.bind(undefined, () => 'red !important');
@@ -354,7 +354,7 @@ describe('Styles handler', () => {
 
         it('should drop the priority when the value later loses the flag', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red !important');
@@ -370,7 +370,7 @@ describe('Styles handler', () => {
 
         it('should clear value and priority when an important style is removed', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red !important');
@@ -385,7 +385,7 @@ describe('Styles handler', () => {
 
         it('should not re-write the DOM when the same important value is set again', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red !important');
@@ -400,7 +400,7 @@ describe('Styles handler', () => {
         it('should keep the raw flagged value in the handler model', () => {
             // The model holds the pre-split text; only the DOM write separates value from priority.
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red !important');
@@ -413,7 +413,7 @@ describe('Styles handler', () => {
         it('should not treat a value that is only the flag as a priority', () => {
             // A match at index 0 is ignored, so a lone flag stays an (invalid) plain value.
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', '!important');
@@ -428,7 +428,7 @@ describe('Styles handler', () => {
             // contiguous token only, so this form is passed through as a plain value and
             // rejected by the CSS parser - the same silent no-op R2-8 described.
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red ! important');
@@ -442,7 +442,7 @@ describe('Styles handler', () => {
             // A CSS parser rejects the whole declaration here; the handler cuts everything
             // from the flag on and applies the leading part as an important value.
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             handler.set('color', 'red !important foo');
@@ -458,7 +458,7 @@ describe('Styles handler', () => {
             // unchanged: nothing is committed and the inline priority survives.
             const el = createElementWithAttr('color: ctx.myColor');
             el.setAttribute('style', 'color: red !important');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Styles(el, attrs);
 
             // The seeded previous value is the flag-less "red", so a bound "red" looks unchanged.

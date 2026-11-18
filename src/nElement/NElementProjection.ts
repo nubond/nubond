@@ -23,7 +23,7 @@ export class NElementProjection {
             while (child !== null) {
                 switch (child.nodeType) {
                     case Node.ELEMENT_NODE:
-                        const projection = (<Element>child).attributes.getNamedItem(Constants.FULL_PROJECTION_ATTRIBUTE_NAME);
+                        const projection = (<Element>child).attributes.getNamedItem(Constants.HANDLERS.PROJECTION_ATTRIBUTE_NAME);
                         if (projection !== null) {
                             if ((projection.value === null) || (projection.value === '')) {
                                 if (!hasDefaultProjection) {
@@ -31,7 +31,7 @@ export class NElementProjection {
                                     const clone = <Element>child.cloneNode(true);
 
                                     if (encapsulated) {
-                                        clone.setAttribute(Constants.FULL_ENCAPSULATED_ATTRIBUTE_NAME, '');
+                                        clone.setAttribute(Constants.HANDLERS.ENCAPSULATED_MARKER_ATTRIBUTE_NAME, '');
                                     }
 
                                     projections.set('', clone);
@@ -43,7 +43,7 @@ export class NElementProjection {
                                     const clone = <Element>child.cloneNode(true);
 
                                     if (encapsulated) {
-                                        clone.setAttribute(Constants.FULL_ENCAPSULATED_ATTRIBUTE_NAME, '');
+                                        clone.setAttribute(Constants.HANDLERS.ENCAPSULATED_MARKER_ATTRIBUTE_NAME, '');
                                     }
 
                                     projections.set(projection.value, clone);
@@ -98,10 +98,10 @@ export class NElementProjection {
         const projectedElements: Array<Element>  = [];
 
         if (!Helpers.isUndefined(this._projections)) {
-            const projectTos = this._nativeElement.querySelectorAll(`[${Constants.FULL_PROJECT_TO_ATTRIBUTE_NAME}]`);
+            const projectTos = this._nativeElement.querySelectorAll(`[${Constants.HANDLERS.PROJECT_TO_ATTRIBUTE_NAME}]`);
             if (projectTos.length > 0) {
                 for (const el of Array.from(projectTos)) {
-                    const projectToAttr = el.attributes.getNamedItem(Constants.FULL_PROJECT_TO_ATTRIBUTE_NAME);
+                    const projectToAttr = el.attributes.getNamedItem(Constants.HANDLERS.PROJECT_TO_ATTRIBUTE_NAME);
                     const slotName = projectToAttr === null ? '' : projectToAttr.value;
                     const projection = this._projections!.get(slotName);
                     if (!Helpers.isUndefined(projection)) {
@@ -113,10 +113,10 @@ export class NElementProjection {
                 }
             }
 
-            const projectInsteads = this._nativeElement.querySelectorAll(`[${Constants.FULL_PROJECT_INSTEAD_ATTRIBUTE_NAME}]`);
+            const projectInsteads = this._nativeElement.querySelectorAll(`[${Constants.HANDLERS.PROJECT_INSTEAD_ATTRIBUTE_NAME}]`);
             if (projectInsteads.length > 0) {
                 for (const el of Array.from(projectInsteads)) {
-                    const projectToAttr = el.attributes.getNamedItem(Constants.FULL_PROJECT_INSTEAD_ATTRIBUTE_NAME);
+                    const projectToAttr = el.attributes.getNamedItem(Constants.HANDLERS.PROJECT_INSTEAD_ATTRIBUTE_NAME);
                     const slotName = projectToAttr === null ? '' : projectToAttr.value;
                     const projection = this._projections!.get(slotName);
                     if (!Helpers.isUndefined(projection)) {
@@ -133,10 +133,10 @@ export class NElementProjection {
     }
 
     public static isProjection(nativeElement: Element): boolean {
-        return nativeElement.hasAttribute(Constants.FULL_PROJECTION_ATTRIBUTE_NAME);
+        return nativeElement.hasAttribute(Constants.HANDLERS.PROJECTION_ATTRIBUTE_NAME);
     }
 
     public static isEncapsulatedProjection(nativeElement: Element): boolean {
-        return nativeElement.hasAttribute(Constants.FULL_ENCAPSULATED_ATTRIBUTE_NAME);
+        return nativeElement.hasAttribute(Constants.HANDLERS.ENCAPSULATED_MARKER_ATTRIBUTE_NAME);
     }
 }

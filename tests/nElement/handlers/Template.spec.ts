@@ -2,6 +2,10 @@ import { Template } from '../../../src/nElement/handlers/Template';
 import { Attributes } from '../../../src/nElement/handlers/Attributes';
 import { Environment } from '../../../src/Environment';
 import { Constants } from '../../../src/Constants';
+import { IContextBinder } from '../../../src/interfaces/contextBinders/IContextBinder';
+
+// the handler now calls contextBinder.detectChanges() itself (it used to get a requestDetectChanges closure)
+const binderWith = (detectChanges: () => void): IContextBinder => <IContextBinder><unknown>{ detectChanges };
 
 // polyfill CSSStyleSheet.replaceSync for jsdom
 if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
@@ -12,39 +16,39 @@ describe('Template handler', () => {
     function createElementWithAttr(expression?: string): Element {
         const el = document.createElement('div');
         if (expression !== undefined) {
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}`, expression);
+            el.setAttribute(`${Constants.HANDLERS.TEMPLATE_HANDLER_ATTRIBUTE_NAME}`, expression);
         }
         return el;
     }
 
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
-        const handler = new Template(el, attrs, jest.fn(), jest.fn());
+        const attrs = new Attributes(el, false);
+        const handler = new Template(el, attrs, binderWith(jest.fn()), jest.fn());
 
         expect(handler.hasNExpression).toBe(false);
     });
 
     it('isDirty should always be false', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
-        const handler = new Template(el, attrs, jest.fn(), jest.fn());
+        const attrs = new Attributes(el, false);
+        const handler = new Template(el, attrs, binderWith(jest.fn()), jest.fn());
 
         expect(handler.isDirty).toBe(false);
     });
 
     it('commit should always return false', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
-        const handler = new Template(el, attrs, jest.fn(), jest.fn());
+        const attrs = new Attributes(el, false);
+        const handler = new Template(el, attrs, binderWith(jest.fn()), jest.fn());
 
         expect(handler.commit()).toBe(false);
     });
 
     it('should return executionParams from bind', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
-        const handler = new Template(el, attrs, jest.fn(), jest.fn());
+        const attrs = new Attributes(el, false);
+        const handler = new Template(el, attrs, binderWith(jest.fn()), jest.fn());
 
         const params = { x: 1 } as any;
         expect(handler.bind(params, () => 'x')).toBe(params);
@@ -55,10 +59,10 @@ describe('Template handler', () => {
         Environment.addTemplate('test-tpl', '<p>content</p>', undefined);
 
         const el = createElementWithAttr('@test-tpl');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const constructSubTree = jest.fn();
         const requestDetectChanges = jest.fn();
-        const handler = new Template(el, attrs, constructSubTree, requestDetectChanges);
+        const handler = new Template(el, attrs, binderWith(requestDetectChanges), constructSubTree);
 
         expect(handler.hasNExpression).toBe(true);
     });
@@ -67,11 +71,11 @@ describe('Template handler', () => {
         Environment.addTemplate('test-tpl-ready', '<p>content</p>', undefined);
 
         const el = createElementWithAttr('@test-tpl-ready');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const constructSubTree = jest.fn();
-        const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+        const readyAttr = `${Constants.HANDLERS.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
 
-        const handler = new Template(el, attrs, constructSubTree, jest.fn());
+        const handler = new Template(el, attrs, binderWith(jest.fn()), constructSubTree);
 
         // nothing happens until construct() — NElement calls it after validate() (L-33)
         expect(constructSubTree).not.toHaveBeenCalled();
@@ -92,8 +96,8 @@ describe('Template handler', () => {
         it('should error when expression does not start with @', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const el = createElementWithAttr('noAtSign');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Template(el, attrs, jest.fn(), jest.fn());
+            const attrs = new Attributes(el, false);
+            const handler = new Template(el, attrs, binderWith(jest.fn()), jest.fn());
 
             expect(handler.hasNExpression).toBe(false);
             consoleSpy.mockRestore();
@@ -102,8 +106,8 @@ describe('Template handler', () => {
         it('should error when template name is not registered', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const el = createElementWithAttr('@non-existent-template');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Template(el, attrs, jest.fn(), jest.fn());
+            const attrs = new Attributes(el, false);
+            const handler = new Template(el, attrs, binderWith(jest.fn()), jest.fn());
 
             expect(handler.hasNExpression).toBe(false);
             expect(consoleSpy).toHaveBeenCalled();
@@ -116,8 +120,8 @@ describe('Template handler', () => {
             Environment.addTemplate('my-template', '<span>hello</span>', undefined);
 
             const el = createElementWithAttr('@my-template');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Template(el, attrs, jest.fn(), jest.fn());
+            const attrs = new Attributes(el, false);
+            const handler = new Template(el, attrs, binderWith(jest.fn()), jest.fn());
 
             expect(handler.hasNExpression).toBe(true);
             expect(handler.nExpression).toBeDefined();
@@ -143,14 +147,14 @@ describe('Template handler', () => {
             Object.defineProperty(Environment, 'templates', { get: () => templates, configurable: true });
 
             const el = createElementWithAttr('@async-tpl');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const constructSubTree = jest.fn();
             const requestDetectChanges = jest.fn();
             const commitSpy = jest.spyOn(attrs, 'commit');
 
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const readyAttr = `${Constants.HANDLERS.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
 
-            const handler = new Template(el, attrs, constructSubTree, requestDetectChanges);
+            const handler = new Template(el, attrs, binderWith(requestDetectChanges), constructSubTree);
             handler.construct();
 
             expect(handler.hasNExpression).toBe(true);
@@ -159,6 +163,65 @@ describe('Template handler', () => {
             expect(commitSpy).not.toHaveBeenCalled();
             expect(requestDetectChanges).toHaveBeenCalled();
             expect(constructSubTree).toHaveBeenCalled();
+        });
+
+        // A real load completes after construct() has returned, i.e. after the handler released nExpression.
+        // The callback must not depend on it (it resolves the template by name).
+        it('should inject the template when tryPrepare calls back after construct() has returned', () => {
+            const templateContent = document.createElement('template');
+            templateContent.innerHTML = '<p>late content</p>';
+            let pendingCallBack: ((asyncCallBack: boolean) => void) | undefined;
+            const templates = {
+                has: jest.fn().mockReturnValue(true),
+                tryPrepare: jest.fn().mockImplementation((_name: string, cb: (asyncCallBack: boolean) => void) => {
+                    pendingCallBack = cb;   // the fetch is still in flight
+                    return true;
+                }),
+                get: jest.fn().mockReturnValue(templateContent.content),
+            };
+            (Environment as any)._templates = templates;
+            Object.defineProperty(Environment, 'templates', { get: () => templates, configurable: true });
+
+            const el = createElementWithAttr('@late-tpl');
+            const constructSubTree = jest.fn();
+            const requestDetectChanges = jest.fn();
+            const handler = new Template(el, new Attributes(el, false), binderWith(requestDetectChanges), constructSubTree);
+
+            handler.construct();
+            expect(constructSubTree).not.toHaveBeenCalled();
+
+            pendingCallBack!(true);
+
+            expect(templates.get).toHaveBeenCalledWith('late-tpl');
+            expect(el.innerHTML).toBe('<p>late content</p>');
+            expect(constructSubTree).toHaveBeenCalledTimes(1);
+            expect(requestDetectChanges).toHaveBeenCalledTimes(1);
+        });
+
+        it('should release nExpression (assigned, not deleted) once construct() has run', () => {
+            const templateContent = document.createElement('template');
+            templateContent.innerHTML = '<p>content</p>';
+            const templates = {
+                has: jest.fn().mockReturnValue(true),
+                tryPrepare: jest.fn().mockImplementation((_name: string, cb: (asyncCallBack: boolean) => void) => {
+                    cb(false);
+                    return true;
+                }),
+                get: jest.fn().mockReturnValue(templateContent.content),
+            };
+            (Environment as any)._templates = templates;
+            Object.defineProperty(Environment, 'templates', { get: () => templates, configurable: true });
+
+            const el = createElementWithAttr('@test-tpl-release');
+            const handler = new Template(el, new Attributes(el, false), binderWith(jest.fn()), jest.fn());
+
+            expect(handler.nExpression!.name).toBe('test-tpl-release');
+
+            handler.construct();
+
+            expect(handler.nExpression).toBeUndefined();
+            expect(Object.prototype.hasOwnProperty.call(handler, 'nExpression')).toBe(true);
+            expect(handler.hasNExpression).toBe(true);
         });
 
         it('should NOT call commit or requestDetectChanges when asyncCallBack is false', () => {
@@ -176,12 +239,12 @@ describe('Template handler', () => {
             Object.defineProperty(Environment, 'templates', { get: () => templates, configurable: true });
 
             const el = createElementWithAttr('@sync-tpl');
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const constructSubTree = jest.fn();
             const requestDetectChanges = jest.fn();
             const commitSpy = jest.spyOn(attrs, 'commit');
 
-            const handler = new Template(el, attrs, constructSubTree, requestDetectChanges);
+            const handler = new Template(el, attrs, binderWith(requestDetectChanges), constructSubTree);
             handler.construct();
 
             expect(handler.hasNExpression).toBe(true);
@@ -205,10 +268,10 @@ describe('Template handler', () => {
 
             const el = createElementWithAttr('@failed-tpl');
             el.innerHTML = '<i>original</i>';
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const constructSubTree = jest.fn();
             const requestDetectChanges = jest.fn();
-            const handler = new Template(el, attrs, constructSubTree, requestDetectChanges);
+            const handler = new Template(el, attrs, binderWith(requestDetectChanges), constructSubTree);
 
             expect(consoleSpy).not.toHaveBeenCalled();
 
@@ -236,7 +299,7 @@ describe('Template handler', () => {
             const el = createElementWithAttr('@failed-tpl');
             el.innerHTML = '<!-- c -->';
             const constructSubTree = jest.fn();
-            const handler = new Template(el, new Attributes(el, () => false), constructSubTree, jest.fn());
+            const handler = new Template(el, new Attributes(el, false), binderWith(jest.fn()), constructSubTree);
 
             handler.construct();
 

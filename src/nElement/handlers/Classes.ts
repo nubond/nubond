@@ -17,11 +17,16 @@ import { Helpers } from '../../Helpers';
 import { Constants } from '../../Constants';
 import { Console } from '../../Console';
 
-class ArrayExpressionDetails extends ExpressionDetails implements IExpressionDetails, IExpressionPreviousValue<string> {
+class ArrayExpressionDetails implements IExpressionDetails, IExpressionPreviousValue<string> {
+    
+    public readonly expression: string;
+    public readonly isSingleBinded: boolean;
+
     public previousValue: string | undefined;
 
-    constructor(expression: string) {
-        super(expression);
+    constructor(expressionDetails: ExpressionDetails) {
+        this.expression = expressionDetails.expression;
+        this.isSingleBinded = expressionDetails.isSingleBinded;
     }
 }
 
@@ -43,7 +48,7 @@ class ConditionExpressionData implements IClassesBindings<Map<string, IExpressio
                     if (className.length > 0) {
                         if (!this.rawExpression.has(className)) {
                             if (!staticClassNames.has(className)) {
-                                this.rawExpression.set(className, new ExpressionDetails(el.substring(firstSeparatorIndex + 1)));
+                                this.rawExpression.set(className, ExpressionDetails.create(el.substring(firstSeparatorIndex + 1)));
                             } else {
                                 Console.error(nativeElement, `conditional class expression can't mutate static (${className}) class.`);
                             }
@@ -75,7 +80,7 @@ class ArrayExpressionData implements IClassesBindings<Array<ArrayExpressionDetai
     constructor(nativeElement: Element, rawExpression: string) {
         const splittedExpressions = Helpers.split(rawExpression.substring(1, rawExpression.length - 1), ';', '\\');
         if (splittedExpressions.length > 0) {
-            this.rawExpression = splittedExpressions.map(el => new ArrayExpressionDetails(el));
+            this.rawExpression = splittedExpressions.map(el => new ArrayExpressionDetails(ExpressionDetails.create(el)));
         } else {
             this.rawExpression = [];
             Console.error(nativeElement, `class array expression (${rawExpression}) has empty value.`);
@@ -87,14 +92,14 @@ class ArrayExpressionData implements IClassesBindings<Array<ArrayExpressionDetai
     }
 }
 
-class SimpleExpressionData implements IClassesBindings<IExpressionDetails>, IExpressionPreviousValue<string>  {
+class SimpleExpressionData implements IClassesBindings<IExpressionDetails>, IExpressionPreviousValue<string> {
     public readonly type = 'simple';
     
     public previousValue: string | undefined
     public readonly rawExpression: IExpressionDetails;
 
     constructor(nativeElement: Element, rawExpression: string) {
-        this.rawExpression = new ExpressionDetails(rawExpression);
+        this.rawExpression = ExpressionDetails.create(rawExpression);
     }
 
     static isThisType(rawExpression: string): boolean {
@@ -107,8 +112,8 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
                                                       IClassesBindings<Array<IExpressionDetails>> | 
                                                       IClassesBindings<Map<string, IExpressionDetails>>>,
                                              IVisibilityHandler {
-    private readonly _getHideClassName: () => string;
-    private readonly _setClassName: (className: string) => void;
+    private readonly _nativeElement: Element;
+    private readonly _attributeBasedClassManagement: boolean;
 
     private __hiddenBy: Set<string> | undefined;
     private get _hiddenBy(): Set<string> {
@@ -134,35 +139,28 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
         return this._isDirty;
     }
 
-    constructor(nativeElement: Element, attributes: Attributes, getHideClassName: () => string) {
+    constructor(nativeElement: Element, attributes: Attributes) {
         super();
-        
-        this._getHideClassName = getHideClassName;
+
+        this._nativeElement = nativeElement;
+        this._attributeBasedClassManagement = nativeElement instanceof SVGElement;
 
         let className = '';
 
-        if (nativeElement instanceof SVGElement) {
+        if (this._attributeBasedClassManagement) {
             //className in SVGElements is not a css class names property as in the rest of html elements
             const rawClassName = nativeElement.getAttribute('class');
             if (rawClassName != null) {
                 className = rawClassName;
             }
-
-            this._setClassName = function (className: string) {
-                nativeElement.setAttribute('class', className);
-            };
         } else {
             className = nativeElement.className;
-
-            this._setClassName = function (className: string) {
-                nativeElement.className = className;
-            };
         }
 
         this._previousClassNames = className.length > 0 ? className.split(/\s+/).filter(el => el.length > 0) : [];
         this._classNames = this._previousClassNames.slice();
 
-        const expression = <string | undefined>attributes.get(Constants.CLASS_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.CLASS_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this.hasNExpression = true;
 
@@ -217,12 +215,12 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
     public show(requestingHandlerName: string): void {
         this._hiddenBy.delete(requestingHandlerName);
         if (this._hiddenBy.size === 0) {
-            this.remove(this._getHideClassName());
+            this.remove(Constants.STYLES.DEFAULT_HIDE_CLASS_NAME);
         }
     }
 
     public hide(requestingHandlerName: string): void  {
-        this.add(this._getHideClassName());
+        this.add(Constants.STYLES.DEFAULT_HIDE_CLASS_NAME);
         this._hiddenBy.add(requestingHandlerName);
     }
 
@@ -232,10 +230,10 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
         if (this.hasNExpression) {
             switch(this.nExpression!.type) {
                 case 'simple':
-                    const currentExpressionDetails = <IExpressionDetails & IExpressionPreviousValue<string>>this.nExpression!.rawExpression;
-                    this.processExpressionExecution(currentExpressionDetails, Constants.CLASS_HANDLER_ATTRIBUTE_NAME, 
+                    const simpleExpressionData = <IClassesBindings<IExpressionDetails> & IExpressionPreviousValue<string>>this.nExpression!;
+                    this.processExpressionExecution(simpleExpressionData.rawExpression, Constants.HANDLERS.CLASS_HANDLER_ATTRIBUTE_NAME, 
                                                     expression => executeExpression(expression, executionParams), 
-                                                    data => this.toggleInternal(Helpers.stringify(data), currentExpressionDetails, 
+                                                    data => this.toggleInternal(Helpers.stringify(data), simpleExpressionData, 
                                                                                 className => !Helpers.isUndefined(this._staticClassNames) &&
                                                                                              !this._staticClassNames!.has(className)));
                 break;
@@ -246,7 +244,7 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
 
                     for (let index = 0; index < arrayExpressions.length; index++) {
                         const currentExpressionDetails = <IExpressionDetails & IExpressionPreviousValue<string>>arrayExpressions[index];
-                        this.processExpressionExecution(currentExpressionDetails, `[${Constants.CLASS_HANDLER_ATTRIBUTE_NAME}]:${index}`, 
+                        this.processExpressionExecution(currentExpressionDetails, `[${Constants.HANDLERS.CLASS_HANDLER_ATTRIBUTE_NAME}]:${index}`, 
                                                         expression => executeExpression(expression, executionParams), 
                                                         data => {
                                                             const value = Helpers.stringify(data);
@@ -269,7 +267,7 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
                 break;
                 case 'condition':
                     for (const [key, value] of <Map<string, IExpressionDetails>>this.nExpression!.rawExpression) {
-                        this.processExpressionExecution(value, `{${Constants.CLASS_HANDLER_ATTRIBUTE_NAME}}:${key}`, 
+                        this.processExpressionExecution(value, `{${Constants.HANDLERS.CLASS_HANDLER_ATTRIBUTE_NAME}}:${key}`, 
                                                         expression => executeExpression(expression, executionParams), 
                                                         data => {
                                                             if (!!data) {
@@ -292,14 +290,14 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
         if (this._isDirty) {
             if (this._previousClassNames.length !== this._classNames.length) {
                                     // \/ className used due to better performance in comparison with classList | TODO: Optimize
-                this._setClassName(this._classNames.join(' '));
+                this.setClassName(this._classNames.join(' '));
                 this._previousClassNames = this._classNames.slice();
                 wasDirty = true;
             } else {   
                 for (let index = 0; index < this._classNames.length; index++) {
                     if (this._classNames[index] != this._previousClassNames[index]) {
                                           // \/ className used due to better performance in comparison with classList | TODO: Optimize
-                        this._setClassName(this._classNames.join(' '));
+                        this.setClassName(this._classNames.join(' '));
                         this._previousClassNames = this._classNames.slice();
                         wasDirty = true;
                         
@@ -322,5 +320,13 @@ export class Classes extends Base implements IHandler<IClassesBindings<IExpressi
 
         targetExpression.previousValue = className;
         this.add(className);
+    }
+
+    private setClassName(className: string): void {
+        if (this._attributeBasedClassManagement) {
+            this._nativeElement.setAttribute('class', className);
+        } else {
+            this._nativeElement.className = className;
+        }
     }
 }

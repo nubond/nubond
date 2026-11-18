@@ -205,6 +205,65 @@ describe('Injectables', () => {
         });
     });
 
+    describe('getDependencies', () => {
+        it('should return undefined for an unregistered constructor', () => {
+            class Unknown {}
+            expect(injectables.getDependencies(Unknown as any)).toBeUndefined();
+        });
+
+        it('should return an empty set for a constructor without dependencies', () => {
+            class NoDeps {}
+            injectables.register(NoDeps as any, []);
+
+            const dependencies = injectables.getDependencies(NoDeps as any);
+            expect(dependencies).toBeInstanceOf(Set);
+            expect(dependencies!.size).toBe(0);
+        });
+
+        it('should return the registered dependencies, including context-dependent ones', () => {
+            class Service {}
+            class Consumer {}
+            injectables.register(Consumer as any, [Service as any, ChangeDetector as any, EventDispatcher as any]);
+
+            const dependencies = injectables.getDependencies(Consumer as any)!;
+            expect([...dependencies]).toEqual([Service, ChangeDetector, EventDispatcher]);
+            expect(dependencies.has(ChangeDetector as any)).toBe(true);
+            expect(dependencies.has(Object as any)).toBe(false);
+        });
+
+        it('should collapse a dependency declared twice into one entry', () => {
+            class Service {}
+            class Consumer {}
+            injectables.register(Consumer as any, [Service as any, Service as any]);
+
+            expect(injectables.getDependencies(Consumer as any)!.size).toBe(1);
+        });
+
+        it('should return the same set on every call', () => {
+            class Consumer {}
+            injectables.register(Consumer as any, [ChangeDetector as any]);
+
+            expect(injectables.getDependencies(Consumer as any)).toBe(injectables.getDependencies(Consumer as any));
+        });
+
+        it('should return undefined after the constructor is unregistered', () => {
+            class Consumer {}
+            const unregister = injectables.register(Consumer as any, [ChangeDetector as any]);
+
+            unregister();
+            expect(injectables.getDependencies(Consumer as any)).toBeUndefined();
+        });
+
+        it('should return an empty set for a pre-built instance added with add() — nothing is resolved for it', () => {
+            class Prebuilt {}
+            injectables.add(new Prebuilt() as any);
+
+            const dependencies = injectables.getDependencies(Prebuilt as any);
+            expect(dependencies).toBeInstanceOf(Set);
+            expect(dependencies!.size).toBe(0);
+        });
+    });
+
     describe('register returns unregister function', () => {
         it('should unregister on calling returned function', () => {
             class MyService {}

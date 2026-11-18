@@ -69,9 +69,9 @@ export class ExpressionExecParamsHelper {
                                              executionParams: ExecutionParams | undefined): ExecutionParams {
         let result: ExecutionParams;
 
-        const itemParamName = getContextParameterName(Constants.ITEM_EXECUTION_PARAM_NAME);
-        const indexParamName = getContextParameterName(Constants.INDEX_EXECUTION_PARAM_NAME);
-        const totalCountParamName = getContextParameterName(Constants.TOTAL_COUNT_EXECUTION_PARAM_NAME);
+        const itemParamName = getContextParameterName(Constants.EXPRESSIONS.ITEM_EXECUTION_PARAM_NAME);
+        const indexParamName = getContextParameterName(Constants.EXPRESSIONS.INDEX_EXECUTION_PARAM_NAME);
+        const totalCountParamName = getContextParameterName(Constants.EXPRESSIONS.TOTAL_COUNT_EXECUTION_PARAM_NAME);
 
         if (Helpers.isUndefined(executionParams)) {
             result = new ExecutionParams();
@@ -90,7 +90,7 @@ export class ExpressionExecParamsHelper {
         return result;
     }
 
-    public static createOrExtendEventExecParams(nativeElement: Element, elementManipulations: ElementManipulations,
+    public static createOrExtendEventExecParams(nativeElement: Element, elementManipulations: ElementManipulations | undefined,
                                                 evt: Event, unSubscribe: () => void, 
                                                 executionParams: ExecutionParams | undefined): ExecutionParams {
         let result: ExecutionParams;
@@ -101,20 +101,20 @@ export class ExpressionExecParamsHelper {
             result = executionParams!.clone();
         }
 
-        result.add(Constants.NATIVE_ELEMENT_EXECUTION_PARAM_NAME, nativeElement);
-        result.add(Constants.ELEMENT_EXECUTION_PARAM_NAME, elementManipulations);
-        result.add(Constants.EVENT_EXECUTION_PARAM_NAME, evt);
-        result.add(Constants.DATA_EXECUTION_PARAM_NAME, evt instanceof CustomEvent ? (<CustomEvent>evt).detail : undefined); //TODO: check events
-        result.add(Constants.UNSUBSCRIBE_EXECUTION_PARAM_NAME, function () { unSubscribe(); });
+        result.add(Constants.EXPRESSIONS.NATIVE_ELEMENT_EXECUTION_PARAM_NAME, nativeElement);
+        result.add(Constants.EXPRESSIONS.ELEMENT_EXECUTION_PARAM_NAME, elementManipulations);
+        result.add(Constants.EXPRESSIONS.EVENT_EXECUTION_PARAM_NAME, evt);
+        result.add(Constants.EXPRESSIONS.DATA_EXECUTION_PARAM_NAME, evt instanceof CustomEvent ? (<CustomEvent>evt).detail : undefined); //TODO: check events
+        result.add(Constants.EXPRESSIONS.UNSUBSCRIBE_EXECUTION_PARAM_NAME, function () { unSubscribe(); });
 
         if (!Helpers.isUndefined(Environment.router) && Environment.router!.isConfigured) {
-            result.add(Constants.ROUTER_EXECUTION_PARAM_NAME, Environment.router);
+            result.add(Constants.EXPRESSIONS.ROUTER_EXECUTION_PARAM_NAME, Environment.router);
         }
 
         return result;
     }
 
-    public static createOrExtendBoundExecParams(nativeElement: Element, elementManipulations: ElementManipulations, 
+    public static createOrExtendBoundExecParams(nativeElement: Element, elementManipulations: ElementManipulations | undefined, 
                                                 executionParams: ExecutionParams | undefined): ExecutionParams {
         let result: ExecutionParams;
 
@@ -124,8 +124,8 @@ export class ExpressionExecParamsHelper {
             result = executionParams!.clone();
         }
 
-        result.add(Constants.NATIVE_ELEMENT_EXECUTION_PARAM_NAME, nativeElement);
-        result.add(Constants.ELEMENT_EXECUTION_PARAM_NAME, elementManipulations);
+        result.add(Constants.EXPRESSIONS.NATIVE_ELEMENT_EXECUTION_PARAM_NAME, nativeElement);
+        result.add(Constants.EXPRESSIONS.ELEMENT_EXECUTION_PARAM_NAME, elementManipulations);
 
         return result;
     }

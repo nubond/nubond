@@ -223,12 +223,21 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
         }
     }
 
-    public instantiateContext(name: string, ...contextDependantInjections: Array<object>): IComponentContext | undefined {
+    public instantiateContext(name: string, ...contextDependantInjections: Array<object | undefined>): IComponentContext | undefined {
         const lowerCasedName = name.toLowerCase();
         const containerMetaData = this.data.get(lowerCasedName);
 
         if (!Helpers.isUndefined(containerMetaData)) {
-            return <IComponentContext>this._injectables.resolve(containerMetaData!.context, ...contextDependantInjections);
+            return <IComponentContext>this._injectables.resolve(containerMetaData!.context, ...(<Array<object>>contextDependantInjections.filter(el => Helpers.isObject(el))));
+        }
+    }
+
+    public getDependencies(name: string): ReadonlySet<ObjectConstructor | IInjectableConstructor> | undefined {
+        const lowerCasedName = name.toLowerCase();
+        const containerMetaData = this.data.get(lowerCasedName);
+
+        if (!Helpers.isUndefined(containerMetaData)) {
+            return this._injectables.getDependencies(containerMetaData!.context);
         }
     }
 
@@ -271,7 +280,7 @@ export class Components extends TemplateEntity<FullEntityWithComponentContextMet
                             delete (<any>this).$bind;
                             
                             //TODO: element will stay visible till $bind call, think if this is something that should be fixed.
-                            this.setAttribute(Constants.DEFAULT_PREFIX_AND_SEPARATOR + Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, '');
+                            this.setAttribute(Constants.HANDLERS.COMPONENT_MARKER_ATTRIBUTE_NAME, '');
                             
                             componentMetaData.tryPrepare(() => {
                                 const shadowRootConfig: ShadowRootInit = { mode: 'closed' };

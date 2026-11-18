@@ -4,6 +4,12 @@ import { Classes } from '../../../src/nElement/handlers/Classes';
 import { Constants } from '../../../src/Constants';
 import { Environment } from '../../../src/Environment';
 import { ExecutionParams } from '../../../src/expression/ExpressionExecParamsHelper';
+import { INElement } from '../../../src/interfaces/nElement/INElement';
+
+// Repeat asks its host NElement to clone / remove it; only those two members are used.
+function createHost(clone: () => void, remove: () => void): INElement {
+    return <INElement><unknown>{ clone, remove };
+}
 
 // ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
 function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
@@ -13,24 +19,25 @@ function createParams(names: Array<string>, values: Array<any>): ExecutionParams
 }
 
 describe('Repeat handler', () => {
-    const hideClassName = 'nb-hidden';
+    const hideClassName = Constants.STYLES.DEFAULT_HIDE_CLASS_NAME;   // Classes reads it from Constants (no getter is injected any more)
 
     function createElements(expression?: string, prefix?: string): { el: Element; attrs: Attributes; classes: Classes } {
         const el = document.createElement('div');
         if (expression !== undefined) {
             const attrName = prefix
-                ? `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}${prefix}`
-                : `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}`;
+                ? `${Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}${prefix}`
+                : `${Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME}`;
             el.setAttribute(attrName, expression);
         }
-        const attrs = new Attributes(el, () => false);
-        const classes = new Classes(el, attrs, () => hideClassName);
+        const attrs = new Attributes(el, false);
+        const classes = new Classes(el, attrs);
         return { el, attrs, classes };
     }
 
     const mockClone = jest.fn();
     const mockRemove = jest.fn();
-    const getShowDebugInfo = () => false;
+    const mockHost = createHost(mockClone, mockRemove);
+    const showDebugInfo = false;
 
     beforeEach(() => {
         jest.clearAllMocks();
@@ -38,7 +45,7 @@ describe('Repeat handler', () => {
 
     it('should detect expression from attribute', () => {
         const { el, attrs, classes } = createElements('ctx.items');
-        const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+        const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
         expect(handler.hasNExpression).toBe(true);
         expect(handler.nExpression).toBeDefined();
@@ -46,35 +53,35 @@ describe('Repeat handler', () => {
 
     it('should have no expression when attribute missing', () => {
         const { el, attrs, classes } = createElements();
-        const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+        const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
         expect(handler.hasNExpression).toBe(false);
     });
 
     it('should be visible by default', () => {
         const { el, attrs, classes } = createElements('ctx.items');
-        const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+        const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
         expect(handler.isVisible).toBe(true);
     });
 
     it('should detect repeat with prefix', () => {
         const { el, attrs, classes } = createElements('ctx.items', 'item');
-        const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+        const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
         expect(handler.hasNExpression).toBe(true);
     });
 
     it('isDirty should be false initially', () => {
         const { el, attrs, classes } = createElements('ctx.items');
-        const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+        const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
         expect(handler.isDirty).toBe(false);
     });
 
     it('should return executionParams when no expression', () => {
         const { el, attrs, classes } = createElements();
-        const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+        const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
         const params = { x: 1 } as any;
         expect(handler.bind(params, () => [])).toBe(params);
@@ -83,7 +90,7 @@ describe('Repeat handler', () => {
     describe('bind() with array data', () => {
         it('should request clone when array has more than one item', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => ['a', 'b', 'c']);
 
@@ -92,7 +99,7 @@ describe('Repeat handler', () => {
 
         it('should be visible when array has items', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => ['a', 'b']);
 
@@ -101,7 +108,7 @@ describe('Repeat handler', () => {
 
         it('should return execution params with item, index and count', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => ['x', 'y']);
 
@@ -120,7 +127,7 @@ describe('Repeat handler', () => {
 
         it('should not request clone for single-item array', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => ['only']);
 
@@ -129,7 +136,7 @@ describe('Repeat handler', () => {
 
         it('should use prefixed param names when prefix is set', () => {
             const { el, attrs, classes } = createElements('ctx.items', 'row');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => ['a', 'b']);
 
@@ -143,7 +150,7 @@ describe('Repeat handler', () => {
     describe('bind() with number data', () => {
         it('should request clone when number > 1', () => {
             const { el, attrs, classes } = createElements('ctx.count');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => 3);
 
@@ -152,7 +159,7 @@ describe('Repeat handler', () => {
 
         it('should return execution params with numeric item (1-based)', () => {
             const { el, attrs, classes } = createElements('ctx.count');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => 5);
 
@@ -164,7 +171,7 @@ describe('Repeat handler', () => {
 
         it('should not request clone when number is 1', () => {
             const { el, attrs, classes } = createElements('ctx.count');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => 1);
 
@@ -173,7 +180,7 @@ describe('Repeat handler', () => {
 
         it('should hide element when number is 0', () => {
             const { el, attrs, classes } = createElements('ctx.count');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => 0);
 
@@ -182,7 +189,7 @@ describe('Repeat handler', () => {
 
         it('should hide element when number is negative', () => {
             const { el, attrs, classes } = createElements('ctx.count');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => -5);
 
@@ -193,7 +200,7 @@ describe('Repeat handler', () => {
     describe('R4-2: non-finite and fractional repeat counts', () => {
         function bindNumber(value: number) {
             const { el, attrs, classes } = createElements('ctx.count');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
             const result = handler.bind(undefined, () => value);
             return { handler, result };
         }
@@ -258,7 +265,7 @@ describe('Repeat handler', () => {
     describe('bind() with null/undefined data', () => {
         it('should hide element when data is null', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => null);
 
@@ -267,7 +274,7 @@ describe('Repeat handler', () => {
 
         it('should hide element when data is undefined', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => undefined);
 
@@ -278,7 +285,7 @@ describe('Repeat handler', () => {
     describe('bind() with Map data', () => {
         it('should request clone when Map has more than one entry', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Map([['a', 1], ['b', 2]]));
 
@@ -287,7 +294,7 @@ describe('Repeat handler', () => {
 
         it('should be visible when Map has entries', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Map([['a', 1]]));
 
@@ -296,7 +303,7 @@ describe('Repeat handler', () => {
 
         it('should return execution params with first entry as item', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new Map([['key1', 'val1'], ['key2', 'val2']]));
 
@@ -310,7 +317,7 @@ describe('Repeat handler', () => {
 
         it('should not request clone for single-entry Map', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Map([['only', 1]]));
 
@@ -319,7 +326,7 @@ describe('Repeat handler', () => {
 
         it('should hide element when Map is empty', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Map());
 
@@ -328,7 +335,7 @@ describe('Repeat handler', () => {
 
         it('should use Map.size for count', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new Map([['a', 1], ['b', 2], ['c', 3]]));
 
@@ -339,7 +346,7 @@ describe('Repeat handler', () => {
 
         it('should use prefixed param names with Map data', () => {
             const { el, attrs, classes } = createElements('ctx.items', 'entry');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new Map([['a', 1], ['b', 2]]));
 
@@ -353,7 +360,7 @@ describe('Repeat handler', () => {
     describe('bind() with Set data', () => {
         it('should request clone when Set has more than one item', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Set(['a', 'b', 'c']));
 
@@ -362,7 +369,7 @@ describe('Repeat handler', () => {
 
         it('should be visible when Set has entries', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Set([1]));
 
@@ -371,7 +378,7 @@ describe('Repeat handler', () => {
 
         it('should return execution params with first value as item', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new Set(['first', 'second']));
 
@@ -384,7 +391,7 @@ describe('Repeat handler', () => {
 
         it('should not request clone for single-item Set', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Set(['only']));
 
@@ -393,7 +400,7 @@ describe('Repeat handler', () => {
 
         it('should hide element when Set is empty', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Set());
 
@@ -402,7 +409,7 @@ describe('Repeat handler', () => {
 
         it('should use Set.size for count', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new Set([10, 20, 30, 40]));
 
@@ -413,7 +420,7 @@ describe('Repeat handler', () => {
 
         it('should use prefixed param names with Set data', () => {
             const { el, attrs, classes } = createElements('ctx.items', 'val');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new Set(['a', 'b']));
 
@@ -429,7 +436,7 @@ describe('Repeat handler', () => {
             const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
             try {
                 const { el, attrs, classes } = createElements('ctx.obj');
-                const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, () => true);
+                const handler = new Repeat(el, attrs, classes, mockHost, undefined, true);
 
                 handler.bind(undefined, () => ({ a: 1, b: 2 }));
 
@@ -448,7 +455,7 @@ describe('Repeat handler', () => {
     describe('bind() with object data', () => {
         it('should request clone when object has more than one property', () => {
             const { el, attrs, classes } = createElements('ctx.obj');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => ({ a: 1, b: 2 }));
 
@@ -457,7 +464,7 @@ describe('Repeat handler', () => {
 
         it('should return execution params with first property value as item', () => {
             const { el, attrs, classes } = createElements('ctx.obj');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => ({ name: 'Alice', age: 30 }));
 
@@ -468,7 +475,7 @@ describe('Repeat handler', () => {
 
         it('should not request clone for single-property object', () => {
             const { el, attrs, classes } = createElements('ctx.obj');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => ({ only: 'one' }));
 
@@ -477,7 +484,7 @@ describe('Repeat handler', () => {
 
         it('should hide element when object is empty', () => {
             const { el, attrs, classes } = createElements('ctx.obj');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => ({}));
 
@@ -488,11 +495,11 @@ describe('Repeat handler', () => {
     describe('commit()', () => {
         it('should set the ready attribute directly on the element on first commit', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             // bind to make dirty
             handler.bind(undefined, () => ['a']);
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const readyAttr = `${Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
             expect(el.hasAttribute(readyAttr)).toBe(false);
 
             handler.commit();
@@ -504,7 +511,7 @@ describe('Repeat handler', () => {
 
         it('should return true when visibility changes on commit', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             // empty data hides the index-0 element (visible -> hidden), so commit
             // flushes a class change and reports it.
@@ -514,14 +521,14 @@ describe('Repeat handler', () => {
 
         it('should return false when not dirty', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             expect(handler.commit()).toBe(false);
         });
 
         it('should not be dirty after commit', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => ['a']);
             handler.commit();
@@ -531,7 +538,7 @@ describe('Repeat handler', () => {
 
         it('should add hide class when visibility changes to hidden', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => null);
             handler.commit();
@@ -542,7 +549,7 @@ describe('Repeat handler', () => {
 
         it('should remove hide class when visibility changes to visible', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             // First: hide
             handler.bind(undefined, () => null);
@@ -560,8 +567,8 @@ describe('Repeat handler', () => {
 
         it('should not set the ready attribute again on second commit', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
+            const readyAttr = `${Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
 
             handler.bind(undefined, () => ['a']);
             handler.commit();
@@ -581,7 +588,7 @@ describe('Repeat handler', () => {
     describe('clone request handling', () => {
         it('should request clone only once for multi-item array', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => ['a', 'b', 'c']);
             expect(mockClone).toHaveBeenCalledTimes(1);
@@ -595,7 +602,7 @@ describe('Repeat handler', () => {
     describe('removal request (clone context)', () => {
         it('should request removal when clone repeatIndex exceeds data length', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const original = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const original = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             // First bind with 2 items forces clone request
             original.bind(undefined, () => ['a', 'b']);
@@ -604,7 +611,7 @@ describe('Repeat handler', () => {
             // Create a clone (repeatIndex=1)
             const { el: cloneEl, attrs: cloneAttrs, classes: cloneClasses } = createElements('ctx.items');
             const mockCloneRemove = jest.fn();
-            const clone = new Repeat(cloneEl, cloneAttrs, cloneClasses, jest.fn(), mockCloneRemove, getShowDebugInfo, original);
+            const clone = new Repeat(cloneEl, cloneAttrs, cloneClasses, createHost(jest.fn(), mockCloneRemove), original, showDebugInfo);
 
             // Now bind original with only 1 item - clone's index (1) exceeds totalCount (1)
             original.bind(undefined, () => ['a']);
@@ -616,12 +623,12 @@ describe('Repeat handler', () => {
 
         it('clone should get correct item from array at its repeatIndex', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const original = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const original = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             original.bind(undefined, () => ['first', 'second', 'third']);
 
             const { el: cloneEl, attrs: cloneAttrs, classes: cloneClasses } = createElements('ctx.items');
-            const clone = new Repeat(cloneEl, cloneAttrs, cloneClasses, jest.fn(), jest.fn(), getShowDebugInfo, original);
+            const clone = new Repeat(cloneEl, cloneAttrs, cloneClasses, createHost(jest.fn(), jest.fn()), original, showDebugInfo);
 
             const result = clone.bind(undefined, () => ['first', 'second', 'third']);
 
@@ -649,7 +656,7 @@ describe('Repeat handler', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
             const { el, attrs, classes } = createElements('ctx.items', prefix);
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             expect(handler.hasNExpression).toBe(false);
             expect(consoleSpy).toHaveBeenCalledWith(
@@ -664,7 +671,7 @@ describe('Repeat handler', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
             const { el, attrs, classes } = createElements('ctx.items', 'my-2nd');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
             const params = { names: ['outer'], values: ['kept'] } as any;
 
             // The subtree keeps compiling: no `my-2nd` parameter is ever contributed.
@@ -675,7 +682,7 @@ describe('Repeat handler', () => {
 
         it('should bind normally with a valid prefix', () => {
             const { el, attrs, classes } = createElements('ctx.items', 'row');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => ['a', 'b']);
 
@@ -703,7 +710,7 @@ describe('Repeat handler', () => {
 
             try {
                 const { el, attrs, classes } = createElements('ctx.items', 'row');
-                const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+                const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
                 expect(handler.hasNExpression).toBe(false);
                 expect(consoleSpy).toHaveBeenCalledWith(
@@ -726,7 +733,7 @@ describe('Repeat handler', () => {
 
             try {
                 const { el, attrs, classes } = createElements('ctx.items', 'row');
-                const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+                const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
                 expect(handler.hasNExpression).toBe(false);
             } finally {
@@ -743,7 +750,7 @@ describe('Repeat handler', () => {
 
             try {
                 const { el, attrs, classes } = createElements('ctx.items', 'row');
-                const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+                const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
                 expect(handler.hasNExpression).toBe(true);
             } finally {
@@ -762,7 +769,7 @@ describe('Repeat handler', () => {
 
             try {
                 const { el, attrs, classes } = createElements('ctx.items');
-                const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+                const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
                 expect(handler.hasNExpression).toBe(true);
             } finally {
@@ -775,7 +782,7 @@ describe('Repeat handler', () => {
     describe('single-bind expression', () => {
         it('should only execute expression once for single-bind', () => {
             const { el, attrs, classes } = createElements('#ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const mockExec = jest.fn().mockReturnValue(['a', 'b']);
             handler.bind(undefined, mockExec);
@@ -787,7 +794,7 @@ describe('Repeat handler', () => {
 
         it('should use cached execution params on subsequent binds', () => {
             const { el, attrs, classes } = createElements('#ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const mockExec = jest.fn().mockReturnValue(['a', 'b']);
             const result1 = handler.bind(undefined, mockExec);
@@ -816,7 +823,7 @@ describe('Repeat handler', () => {
 
         it('should propagate the fresh outer scope on the single-bind skip path', () => {
             const { el, attrs, classes } = createElements('#ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const mockExec = jest.fn().mockReturnValue(['a', 'b']);
 
@@ -833,7 +840,7 @@ describe('Repeat handler', () => {
 
         it('should keep item, index and count frozen while the outer scope moves', () => {
             const { el, attrs, classes } = createElements('#ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             // a changed data source must be ignored by '#'
             const mockExec = jest.fn()
@@ -843,15 +850,15 @@ describe('Repeat handler', () => {
             handler.bind(outerParams('outer-1'), mockExec);
             const second = handler.bind(outerParams('outer-2'), mockExec);
 
-            expect(valueOf(second, Constants.ITEM_EXECUTION_PARAM_NAME)).toBe('a');
-            expect(valueOf(second, Constants.INDEX_EXECUTION_PARAM_NAME)).toBe(0);
-            expect(valueOf(second, Constants.TOTAL_COUNT_EXECUTION_PARAM_NAME)).toBe(2);
+            expect(valueOf(second, Constants.EXPRESSIONS.ITEM_EXECUTION_PARAM_NAME)).toBe('a');
+            expect(valueOf(second, Constants.EXPRESSIONS.INDEX_EXECUTION_PARAM_NAME)).toBe(0);
+            expect(valueOf(second, Constants.EXPRESSIONS.TOTAL_COUNT_EXECUTION_PARAM_NAME)).toBe(2);
             expect(valueOf(second, 'label')).toBe('outer-2');
         });
 
         it('should propagate the fresh outer scope for a prefixed single-bind repeat', () => {
             const { el, attrs, classes } = createElements('#ctx.items', 'row');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const mockExec = jest.fn().mockReturnValue(['a', 'b']);
 
@@ -866,7 +873,7 @@ describe('Repeat handler', () => {
 
         it('should not resurrect a stale outer value when the outer param disappears', () => {
             const { el, attrs, classes } = createElements('#ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const mockExec = jest.fn().mockReturnValue(['a', 'b']);
 
@@ -874,12 +881,12 @@ describe('Repeat handler', () => {
             const second = handler.bind(undefined, mockExec);
 
             expect(second!.names).not.toContain('label');
-            expect(valueOf(second, Constants.ITEM_EXECUTION_PARAM_NAME)).toBe('a');
+            expect(valueOf(second, Constants.EXPRESSIONS.ITEM_EXECUTION_PARAM_NAME)).toBe('a');
         });
 
         it('should keep a frozen item that is no longer reachable from the data source', () => {
             const { el, attrs, classes } = createElements('#ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const original = { v: 1 };
             const mockExec = jest.fn()
@@ -890,14 +897,14 @@ describe('Repeat handler', () => {
             const second = handler.bind(outerParams('outer-2'), mockExec);
 
             // identity, not just shape - the item is remembered, not re-read
-            expect(valueOf(second, Constants.ITEM_EXECUTION_PARAM_NAME)).toBe(original);
+            expect(valueOf(second, Constants.EXPRESSIONS.ITEM_EXECUTION_PARAM_NAME)).toBe(original);
         });
     });
 
     describe('typed-array data (commit 7f359c3)', () => {
         it('should treat Int8Array as array-like (clone requested, visible)', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             handler.bind(undefined, () => new Int8Array([1, 2, 3]));
 
@@ -908,7 +915,7 @@ describe('Repeat handler', () => {
 
         it('should expose typed-array length as count', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new Float32Array([10, 20]));
             const countIdx = result!.names.indexOf('count');
@@ -917,7 +924,7 @@ describe('Repeat handler', () => {
 
         it('should support BigInt64Array as array-like', () => {
             const { el, attrs, classes } = createElements('ctx.items');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new BigInt64Array([1n, 2n, 3n]));
             expect(result).toBeDefined();
@@ -936,7 +943,7 @@ describe('Repeat handler', () => {
             }
 
             const { el, attrs, classes } = createElements('ctx.obj');
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             const result = handler.bind(undefined, () => new WithMethods());
 
@@ -954,7 +961,7 @@ describe('Repeat handler', () => {
                 cyclic.self = cyclic;
 
                 const { el, attrs, classes } = createElements('ctx.obj');
-                const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, () => true);
+                const handler = new Repeat(el, attrs, classes, mockHost, undefined, true);
 
                 expect(() => handler.bind(undefined, () => cyclic)).not.toThrow();
                 expect(consoleWarnSpy).toHaveBeenCalled();
@@ -965,15 +972,15 @@ describe('Repeat handler', () => {
     });
 
     describe('L-20: nb-repeat and nb-repeat:prefix on one element (by design)', () => {
-        const REPEAT_ATTR = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.REPEAT_HANDLER_ATTRIBUTE_NAME}`;
+        const REPEAT_ATTR = `${Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME}`;
 
         function createWithBoth(prefixedFirst: boolean) {
             const el = document.createElement('div');
             const plain = (): void => el.setAttribute(REPEAT_ATTR, 'ctx.plain');
             const prefixed = (): void => el.setAttribute(`${REPEAT_ATTR}${Constants.META_VALUE_SEPARATOR}row`, 'ctx.prefixed');
             if (prefixedFirst) { prefixed(); plain(); } else { plain(); prefixed(); }
-            const attrs = new Attributes(el, () => false);
-            const classes = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const classes = new Classes(el, attrs);
             return { el, attrs, classes };
         }
 
@@ -983,7 +990,7 @@ describe('Repeat handler', () => {
         ])('uses the attribute that comes first in markup (%s) and ignores the other without an error', (_label, prefixedFirst, used, ignored, expression) => {
             const errorSpy = jest.spyOn(console, 'error').mockImplementation();
             const { el, attrs, classes } = createWithBoth(prefixedFirst as boolean);
-            const handler = new Repeat(el, attrs, classes, mockClone, mockRemove, getShowDebugInfo);
+            const handler = new Repeat(el, attrs, classes, mockHost, undefined, showDebugInfo);
 
             expect(handler.nExpression!.expression).toBe(expression);
             const result = handler.bind(undefined, () => ['a']);

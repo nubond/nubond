@@ -40,7 +40,7 @@ export class Transformers {
             return;
         }
 
-        if (Constants.RESERVED_CONTEXT_NAMES.has(lowerCasedName)) {
+        if (Constants.EXPRESSIONS.RESERVED_CONTEXT_NAMES.has(lowerCasedName)) {
             Console.error(`Transformers with '${name}' name cannot be created, this name is reserved.`);
             return;
         }

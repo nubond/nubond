@@ -1,6 +1,7 @@
 import { Environment } from '../src/Environment';
 import { Helpers } from '../src/Helpers';
 import { Console } from '../src/Console';
+import { IRouter } from '../src/Router';
 
 // We need to mock Environment before importing Decorators
 jest.mock('../src/Environment', () => ({
@@ -569,6 +570,153 @@ describe('$Route pseudo-decorator', () => {
     it('should call Environment.setupRouter', () => {
         $Route('/home/dashboard');
         expect(MockEnvironment.setupRouter).toHaveBeenCalledWith('/home/dashboard');
+    });
+
+    it('should pass a custom router to Environment.setupRouter as is', () => {
+        const router = createLiteralRouter();
+        $Route(router);
+        expect(MockEnvironment.setupRouter).toHaveBeenCalledWith(router);
+    });
+});
+
+// ---------- custom router (IRouter) ----------
+// Every IRouter member, as an object literal. The values of path / state vary per test.
+function createLiteralRouter(overrides: Partial<{[key in keyof IRouter]: any}> = {}): IRouter {
+    return {
+        isConfigured: true,
+        hashBased: false,
+        path: undefined,
+        state: undefined,
+        go: () => {},
+        goBack: () => {},
+        goTo: () => {},
+        goForward: () => {},
+        onBeforeStateChange: () => () => {},
+        onAfterStateChange: () => () => {},
+        ...overrides
+    };
+}
+
+// A class-based router: getters and methods live on the prototype, the instance only owns private state.
+class ClassBasedRouter implements IRouter {
+    private _state: {[key: string]: string | undefined} = { page: 'home' };
+
+    public get isConfigured(): boolean { return true; }
+    public get hashBased(): boolean { return true; }
+    public get path(): string | undefined { return '/home'; }
+    public get state(): Readonly<{[key: string]: string | undefined}> | undefined { return this._state; }
+
+    public go(): void {}
+    public goBack(): void {}
+    public goTo(): void {}
+    public goForward(): void {}
+    public onBeforeStateChange(): () => void { return () => {}; }
+    public onAfterStateChange(): () => void { return () => {}; }
+}
+
+describe('AppRoot decorator with a custom router', () => {
+    function routerPassedToSetup(): any {
+        expect(MockEnvironment.setupRouter).toHaveBeenCalledTimes(1);
+        return (MockEnvironment.setupRouter as jest.Mock).mock.calls[0][0];
+    }
+
+    it('should pass an object literal router to Environment.setupRouter', () => {
+        const router = createLiteralRouter();
+
+        @AppRoot('#root', router)
+        class LiteralRouterApp {}
+
+        expect(routerPassedToSetup()).toBe(router);
+        expect(MockEnvironment.addApp).toHaveBeenCalledTimes(1);
+    });
+
+    it('should recognise an object literal router whose path and state are already set', () => {
+        const router = createLiteralRouter({ path: '/home', state: { page: 'home' }, hashBased: true });
+
+        @AppRoot('#root', router)
+        class StatefulLiteralRouterApp {}
+
+        expect(routerPassedToSetup()).toBe(router);
+    });
+
+    it('should recognise a class-based router (members on the prototype)', () => {
+        const router = new ClassBasedRouter();
+
+        @AppRoot('#root', router)
+        class ClassRouterApp {}
+
+        expect(routerPassedToSetup()).toBe(router);
+    });
+
+    it('should recognise a router that has members beyond IRouter', () => {
+        const router = { ...createLiteralRouter(), navigateHome: () => {} };
+
+        @AppRoot('#root', router)
+        class ExtendedRouterApp {}
+
+        expect(routerPassedToSetup()).toBe(router);
+    });
+
+    it('should not take an object that has only some IRouter members for a router', () => {
+        const partial = { go: () => {}, goBack: () => {} };
+
+        @AppRoot('#root', partial as any)
+        class PartialRouterApp {}
+
+        expect(routerPassedToSetup()).toBeUndefined();
+    });
+
+    it('should not take an object whose IRouter method is not a function for a router', () => {
+        const wrong = createLiteralRouter({ go: 'not a function' });
+
+        @AppRoot('#root', wrong)
+        class WrongMethodRouterApp {}
+
+        expect(routerPassedToSetup()).toBeUndefined();
+    });
+
+    it('should still recognise a global config next to a custom router', () => {
+        const router = createLiteralRouter();
+        const globalCfg = { showDebugInfo: true };
+
+        @AppRoot('#root', globalCfg as any, router)
+        class ConfigAndRouterApp {}
+
+        expect(MockEnvironment.config).toHaveBeenCalledWith(globalCfg);
+        expect(routerPassedToSetup()).toBe(router);
+    });
+
+    it('should throw when a custom router follows a route template', () => {
+        expect(() => {
+            @AppRoot('#root', '/[page=home]', createLiteralRouter())
+            class TemplateThenRouterApp {}
+        }).toThrow(/multiple custom routers or route templates and custom router found/);
+    });
+
+    it('should throw when a route template follows a custom router', () => {
+        expect(() => {
+            @AppRoot('#root', createLiteralRouter(), '/[page=home]')
+            class RouterThenTemplateApp {}
+        }).toThrow(/multiple app route templates found/);
+    });
+
+    it('should throw on two custom routers', () => {
+        expect(() => {
+            @AppRoot('#root', createLiteralRouter(), new ClassBasedRouter())
+            class TwoRoutersApp {}
+        }).toThrow(/multiple custom routers/);
+    });
+
+    it('should not register anything when the metadata throws', () => {
+        try {
+            @AppRoot('#root', createLiteralRouter(), createLiteralRouter())
+            class ThrowingRoutersApp {}
+        } catch {
+            //expected
+        }
+
+        expect(MockEnvironment.setupRouter).not.toHaveBeenCalled();
+        expect(MockEnvironment.addApp).not.toHaveBeenCalled();
     });
 });
 

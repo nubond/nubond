@@ -56,13 +56,13 @@ describe('AdoptedStyles', () => {
             new AdoptedStyles(() => false);             // built in default (non-W3C) mode
             Constants.changeCompliancyWithW3C(true);    // ... only now does the app opt into W3C
 
-            expect(Constants.DEFAULT_HIDE_CLASS_NAME).toBe('data-nb-hidden');
+            expect(Constants.STYLES.DEFAULT_HIDE_CLASS_NAME).toBe('data-nb-hidden');
 
             const hideCss = cssTexts.find(text => text.trim().startsWith('.'));
             expect(hideCss).toBeDefined();
 
             const hiddenElement = document.createElement('div');
-            hiddenElement.classList.add(Constants.DEFAULT_HIDE_CLASS_NAME);
+            hiddenElement.classList.add(Constants.STYLES.DEFAULT_HIDE_CLASS_NAME);
 
             expect(selectorsOf(hideCss!).some(selector => hiddenElement.matches(selector))).toBe(true);
         });
@@ -79,7 +79,7 @@ describe('AdoptedStyles', () => {
             expect(hideCss).toBeDefined();
 
             const hiddenElement = document.createElement('div');
-            hiddenElement.classList.add(Constants.DEFAULT_HIDE_CLASS_NAME);
+            hiddenElement.classList.add(Constants.STYLES.DEFAULT_HIDE_CLASS_NAME);
 
             expect(selectorsOf(hideCss!).some(selector => hiddenElement.matches(selector))).toBe(true);
         });

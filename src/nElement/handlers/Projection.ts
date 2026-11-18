@@ -1,11 +1,12 @@
 import { IExpressionDetails } from '../../interfaces/expression/IExpressionDetails';
 
 import { IHandler } from '../../interfaces/nElement/IHandler';
-import { IConstructable } from '../../interfaces/nElement/IConstructable';
 import { IVisible } from '../../interfaces/nElement/IVisible';
 import { IDisposable } from '../../interfaces/IDisposable';
 
 import { INElement } from '../../interfaces/nElement/INElement';
+
+import { IContextBinder } from '../../interfaces/contextBinders/IContextBinder';
 
 import { Base } from './base/Base';
 
@@ -16,11 +17,8 @@ import { ExecutionParams } from '../../expression/ExpressionExecParamsHelper';
 import { Constants } from '../../Constants';
 import { Helpers } from '../../Helpers';
 
-export class Projection extends Base implements IHandler<IExpressionDetails>, IConstructable, IVisible, IDisposable {
+export class Projection extends Base implements IHandler<IExpressionDetails | undefined>, IVisible, IDisposable {
     private readonly _immediateParent: INElement | undefined;
-    private readonly _disposeNElement: (() => void) | undefined;
-
-    private _requestDetectChanges: (() => void) | undefined;
 
     private _unsubscribeFromOnDispose: (() => void) | undefined;
 
@@ -43,27 +41,17 @@ export class Projection extends Base implements IHandler<IExpressionDetails>, IC
     public readonly isDirty = false;
 
     constructor(immediateParent: INElement | undefined, attributes: Attributes,
-                requestDetectChanges: () => void,
+                contextBinder: IContextBinder,
                 disposeNElement: () => void) {
         super();
         
-        if (attributes.has(Constants.PROJECTION_ATTRIBUTE_NAME, true) && !Helpers.isUndefined(immediateParent)) {
+        if (attributes.has(Constants.HANDLERS.PROJECTION_ATTRIBUTE_NAME, true) && !Helpers.isUndefined(immediateParent)) {
             this.hasNExpression = true;
             this._immediateParent = immediateParent;
-            this._requestDetectChanges = requestDetectChanges;
-            this._disposeNElement = disposeNElement;
+            this._unsubscribeFromOnDispose = immediateParent!.onDispose(() => disposeNElement!());
+            contextBinder.detectChanges();
         } else {
             this.hasNExpression = false;
-        }
-    }
-
-    public construct(): void {
-        if (this.hasNExpression) {
-            this._unsubscribeFromOnDispose = this._immediateParent!.onDispose(() => this._disposeNElement!());
-
-            this._requestDetectChanges!();
-
-            delete this._requestDetectChanges;
         }
     }
 
@@ -80,7 +68,7 @@ export class Projection extends Base implements IHandler<IExpressionDetails>, IC
     public dispose(): void {
         if (Helpers.isFunction(this._unsubscribeFromOnDispose)) {
             this._unsubscribeFromOnDispose!();
-            delete this._unsubscribeFromOnDispose;
+            this._unsubscribeFromOnDispose = undefined;
         }
     }
 }

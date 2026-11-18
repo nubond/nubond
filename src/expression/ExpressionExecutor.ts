@@ -8,13 +8,13 @@ import { Helpers } from '../Helpers';
 import { Console } from '../Console';
 
 export class ExpressionExecutor implements IDisposable {
-    private readonly _showDebugInfo: () => boolean;
+    private readonly _showDebugInfo: boolean;
     private _unSubscribeFromTransformersOnAdded: (() => void) | undefined;
 
     private readonly _compiledFnCache = new Map<string | null | undefined, Map<string | undefined, (...args: any) => any>>();
 
-    constructor(getShowDebugInfo: () => boolean) {
-        this._showDebugInfo = getShowDebugInfo;
+    constructor(showDebugInfo: boolean) {
+        this._showDebugInfo = showDebugInfo;
         this._unSubscribeFromTransformersOnAdded = Environment.transformers.onAdded(name => {
             this._compiledFnCache.clear(); //when new transformer is added all fn`s should be recompile
         });
@@ -50,7 +50,7 @@ export class ExpressionExecutor implements IDisposable {
                 compiledFn = this.compileFunction(expression, names, Environment.transformers.names, element);
                 paramsToExpression!.set(identity, compiledFn);
             } catch(ex) {
-                if (this._showDebugInfo()) {
+                if (this._showDebugInfo) {
                     throw ex;
                 } else {
                     compiledFn = (() => (() => undefined));
@@ -65,7 +65,7 @@ export class ExpressionExecutor implements IDisposable {
             return compiledFn!.apply(context, <any[]>Environment.transformers.functions)
                               .apply(context, values);
         } catch(ex) {
-            if (this._showDebugInfo()) {
+            if (this._showDebugInfo) {
                 throw ex;
             } else {
                 Console.error(element, `expression "${expression}" execution error: ${ex}`);
@@ -76,7 +76,7 @@ export class ExpressionExecutor implements IDisposable {
     public dispose(): void {
         if (Helpers.isFunction(this._unSubscribeFromTransformersOnAdded)) {
             this._unSubscribeFromTransformersOnAdded!();
-            delete this._unSubscribeFromTransformersOnAdded;
+            this._unSubscribeFromTransformersOnAdded = undefined;
         }
     }
 
@@ -99,7 +99,7 @@ export class ExpressionExecutor implements IDisposable {
             return <(...args: any) => any>(new Function(...transformerNames, fnBody));
         } catch(ex) {
             if (!multiStatementExpression) {
-                if (this._showDebugInfo()) {
+                if (this._showDebugInfo) {
                     Console.warn(element, 
                                  `expression '`, expression, `' is evaluated in multi-statement way,`,
                                  'this means that it will never have a return value.\n',

@@ -9,7 +9,7 @@ import { IContextBinder } from './interfaces/contextBinders/IContextBinder';
 
 import { IShadowRootConfig } from './interfaces/IShadowRootConfig';
 
-import { Router } from './Router';
+import { IRouter, Router } from './Router';
 
 import { IGlobalConfig } from './interfaces/IGlobalConfig';
 import { IContextConfig } from './interfaces/contexts/configs/IContextConfig';
@@ -49,8 +49,8 @@ export class Environment {
     private static _elementsToContextsMapping = new Map<Element, RootContextBinder>;
 
     //router
-    private static _router: Router | undefined;
-    public static get router(): Router | undefined {
+    private static _router: IRouter | undefined;
+    public static get router(): IRouter | undefined {
         return this._router;
     }
 
@@ -146,8 +146,8 @@ export class Environment {
 
         //root bootstrap
         const rootContextBinder = new RootContextBinder(undefined, this._pessimisticChangeDetectionStrategy,
-                                                        () => Constants.DEFAULT_HIDE_CLASS_NAME, this._htmlSanitizer,
-                                                        () => this._showDebugInfo!,
+                                                        this._showDebugInfo,
+                                                        this._htmlSanitizer,
                                                         (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
                                                         (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor));
         let unRegisterRootContext: (() => void) | undefined;
@@ -185,8 +185,8 @@ export class Environment {
                              (parentContextBinder: IContextBinder,
                               parentNElement: INElement) => new ContextBinder(parentContextBinder, parentNElement,
                                                                               contextConfig, this._pessimisticChangeDetectionStrategy,
-                                                                              () => Constants.DEFAULT_HIDE_CLASS_NAME, this._htmlSanitizer,
-                                                                              () => this._showDebugInfo!,
+                                                                              this._showDebugInfo,
+                                                                              this._htmlSanitizer,
                                                                               (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
                                                                               (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor)),
                              () => Helpers.isFunction(contextConfig?.htmlSanitizer) 
@@ -217,8 +217,8 @@ export class Environment {
                              (parentContextBinder: IContextBinder,
                               parentNElement: INElement) => new ContextBinder(parentContextBinder, parentNElement,
                                                                               contextConfig, this._pessimisticChangeDetectionStrategy,
-                                                                              () => Constants.DEFAULT_HIDE_CLASS_NAME, this._htmlSanitizer,
-                                                                              () => this._showDebugInfo!,
+                                                                              this._showDebugInfo,
+                                                                              this._htmlSanitizer,
                                                                               (obj: object) => this._detectors.get(<ObjectConstructor>obj.constructor),
                                                                               (obj: object) => this._eventers.get(<ObjectConstructor>obj.constructor)),
                              () => Helpers.isFunction(contextConfig?.htmlSanitizer) 
@@ -310,12 +310,14 @@ export class Environment {
                            propName);
     }
 
-    public static setupRouter(routeConfig: string | undefined): void {
+    public static setupRouter(routerConfigOrRouter: string | undefined | IRouter): void {
         if (Helpers.isUndefined(this._router)) {
-            this._router = new Router(routeConfig, containerName => this._containers.has(containerName), () => this._showDebugInfo!);
+            this._router = Helpers.isObject(routerConfigOrRouter)
+                            ? <IRouter>routerConfigOrRouter
+                            : new Router(<string | undefined>routerConfigOrRouter, containerName => this._containers.has(containerName), () => this._showDebugInfo!);
             this._injectables.add(this._router);
         } else {
-            if (Helpers.isNotEmptyString(routeConfig)) {
+            if (Helpers.isNotEmptyString(routerConfigOrRouter) || Helpers.isObject(routerConfigOrRouter)) {
                 Console.error('Router is already initialized, configuration cannot be changed in runtime.');
             }
         }

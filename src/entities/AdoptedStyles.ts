@@ -152,8 +152,8 @@ export class AdoptedStyles extends TemplateEntity<TemplateEntityWithNameMetaData
     constructor(private _getShowDebugInfo: () => boolean) {
         super();
 
-        this.addInternal(this.PROCESSING_HIDE_NAME_KEY, Constants.DEFAULT_PROCESSING_HIDE_STYLE, () => undefined, true);
-        this.addInternal(this.HIDE_NAME_KEY, Constants.DEFAULT_HIDE_STYLE, () => undefined, true);
+        this.addInternal(this.PROCESSING_HIDE_NAME_KEY, Constants.STYLES.DEFAULT_PROCESSING_HIDE_STYLE, () => undefined, true);
+        this.addInternal(this.HIDE_NAME_KEY, Constants.STYLES.DEFAULT_HIDE_STYLE, () => undefined, true);
     }
 
     public get(name: string): CSSStyleSheet | undefined {

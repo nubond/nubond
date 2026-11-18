@@ -15,6 +15,10 @@ import { Attributes } from '../../src/nElement/handlers/Attributes';
 import { Classes } from '../../src/nElement/handlers/Classes';
 import { Styles } from '../../src/nElement/handlers/Styles';
 import { Properties } from '../../src/nElement/handlers/Properties';
+import { Events } from '../../src/nElement/handlers/Events';
+import { ElementManipulations } from '../../src/models/injections/ElementManipulations';
+import { ElementSubscriptions } from '../../src/models/injections/ElementSubscriptions';
+import { ChangeDetector } from '../../src/models/injections/ChangeDetector';
 
 // polyfill CSSStyleSheet.replaceSync for jsdom
 if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
@@ -68,6 +72,70 @@ describe('NTreeElement', () => {
 
         // Should not throw
         expect(() => parent.detectChanges({})).not.toThrow();
+    });
+
+    // A leaf shares one frozen empty array; its own array is allocated on the first addChild.
+    describe('lazy children array', () => {
+        it('should share one empty children array between leaves', () => {
+            const a = new NTreeElement(document.createElement('div'));
+            const b = new NTreeElement(document.createElement('div'));
+
+            expect((a as any).children).toBe((b as any).children);
+            expect((a as any).children).toHaveLength(0);
+            expect(Object.isFrozen((a as any).children)).toBe(true);
+        });
+
+        it('should give an element its own array on the first addChild without touching the shared one', () => {
+            const parent = new NTreeElement(document.createElement('div'));
+            const leaf = new NTreeElement(document.createElement('div'));
+            const shared = (leaf as any).children;
+            const child = new NTreeElement(document.createElement('span'));
+
+            parent.addChild(child);
+
+            expect((parent as any).children).toEqual([child]);
+            expect((parent as any).children).not.toBe(shared);
+            expect(shared).toHaveLength(0);
+        });
+
+        it('should append further children to the element own array', () => {
+            const parent = new NTreeElement(document.createElement('div'));
+            const c1 = new NTreeElement(document.createElement('span'));
+            const c2 = new NTreeElement(document.createElement('span'));
+
+            parent.addChild(c1);
+            const own = (parent as any).children;
+            parent.addChild(c2);
+
+            expect((parent as any).children).toBe(own);
+            expect(own).toEqual([c1, c2]);
+        });
+
+        it('should treat removeChild on a leaf as a no-op', () => {
+            const leaf = new NTreeElement(document.createElement('div'));
+            const stranger = new NTreeElement(document.createElement('span'));
+
+            expect(() => leaf.removeChild(stranger, false)).not.toThrow();
+            expect(() => (leaf as any).stabilizeChildren()).not.toThrow();
+            expect((leaf as any).children).toHaveLength(0);
+        });
+
+        it('should clear a leaf (shared array) and a parent (own array) without throwing', () => {
+            const leaf = new NTreeElement(document.createElement('div'));
+            const parent = new NTreeElement(document.createElement('div'));
+            parent.addChild(new NTreeElement(document.createElement('span')));
+
+            expect(() => (leaf as any).removeAndStabilizeChildren()).not.toThrow();
+            (parent as any).removeAndStabilizeChildren();
+            expect((parent as any).children).toHaveLength(0);
+        });
+
+        it('should detect changes and dispose a leaf without children', () => {
+            const leaf = new NTreeElement(document.createElement('div'));
+
+            expect(() => leaf.detectChanges({})).not.toThrow();
+            expect(() => leaf.dispose()).not.toThrow();
+        });
     });
 
     it('should dispose all children', () => {
@@ -224,11 +292,11 @@ describe('NTreeElement', () => {
             parent.addChild(child);
             parent.removeChild(child);
 
-            // Before stabilize, child is still in _children
+            // Before stabilize, child is still in children
             const spy = jest.spyOn(child, 'detectChanges');
             parent.detectChanges({}); // detectChanges calls stabilizeChildren at the end
 
-            // detectChanges iterates _children first, then stabilizes
+            // detectChanges iterates children first, then stabilizes
             expect(spy).toHaveBeenCalledTimes(1);
         });
 
@@ -291,7 +359,7 @@ describe('NElement', () => {
             const span = document.createElement('span');
             span.setAttribute('nb-value', 'this.v');
             root.append(span, document.createTextNode('t2'));
-            const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined, () => false, () => undefined, () => undefined);
+            const binder = new ContextBinder(null, null, undefined, false, false, undefined, () => undefined, () => undefined);
 
             expect(() => binder.bind(root, { v: 'ok' } as any, true, false)).not.toThrow();
             expect(span.textContent).toBe('ok');
@@ -326,7 +394,7 @@ describe('NElement lifecycle via ContextBinder', () => {
     function createBoundElement(html: string, context: object = {}): { binder: ContextBinder, el: Element } {
         const el = document.createElement('div');
         el.innerHTML = html;
-        const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined, () => false, () => undefined, () => undefined);
+        const binder = new ContextBinder(null, null, undefined, false, false, undefined, () => undefined, () => undefined);
         binder.bind(el, context as any, false, false);
         return { binder, el };
     }
@@ -432,7 +500,7 @@ describe('NElement lifecycle via ContextBinder', () => {
         });
 
         describe('L-33: a rejected nb-template is never injected', () => {
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const readyAttr = `${Constants.HANDLERS.TEMPLATE_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
 
             beforeAll(() => {
                 Environment.addTemplate('l33-tpl', '<b nb-value="this.inner"></b>', undefined);
@@ -497,6 +565,25 @@ describe('NElement lifecycle via ContextBinder', () => {
             (ctx as any).visible = false;
             (binder as any).rootNElement!.detectChanges(ctx);
             expect(span.classList.contains('nb-hidden')).toBe(true);
+        });
+
+        it('should hide/show via nb-if, nb-repeat and nb-switch on elements without nb-class (hide class comes from Constants)', () => {
+            // regression: the hide class name used to be stored only when nb-class was present, so hide() did
+            // add(undefined) and threw "reading 'length'" in commit for every other visibility handler
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            const ctx: any = { show: false, items: [], v: 1 };
+            const { binder, el } = createBoundElement(`<p nb-if="this.show">x</p>
+                                                       <ul><li nb-repeat="this.items">i</li></ul>
+                                                       <div nb-switch="this.v"><b nb-case="@1">one</b><b nb-default>def</b></div>`, ctx);
+            const hidden = (selector: string) => el.querySelector(selector)!.classList.contains(Constants.STYLES.DEFAULT_HIDE_CLASS_NAME);
+
+            expect([hidden('p'), hidden('li'), hidden('b:nth-child(1)'), hidden('b:nth-child(2)')]).toEqual([true, true, false, true]);
+
+            ctx.show = true; ctx.items = [1]; ctx.v = 2;
+            (binder as any).rootNElement!.detectChanges(ctx);
+            expect([hidden('p'), hidden('li'), hidden('b:nth-child(1)'), hidden('b:nth-child(2)')]).toEqual([false, false, true, false]);
+
+            expect(errorSpy).not.toHaveBeenCalled();
         });
     });
 
@@ -632,7 +719,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             jest.spyOn(console, 'error').mockImplementation();
             const { binder } = createBoundElement('<div nb-container="testContainer"></div>', {});
             const rootNElement = (binder as any).rootNElement as INTreeElement;
-            const child = (rootNElement as any)._children[0] as INElement;
+            const child = (rootNElement as any).children[0] as INElement;
             expect(child).toBeDefined();
             expect(child.isSubTreeHandled).toBe(true);
         });
@@ -641,7 +728,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             jest.spyOn(console, 'error').mockImplementation();
             const { binder } = createBoundElement('<div nb-template="testTemplate"></div>', {});
             const rootNElement = (binder as any).rootNElement as INTreeElement;
-            const child = (rootNElement as any)._children[0] as INElement;
+            const child = (rootNElement as any).children[0] as INElement;
             // Template not registered (name doesn't start with @), so hasNExpression is false
             expect(child).toBeDefined();
             expect(child.isSubTreeHandled).toBe(false);
@@ -650,7 +737,7 @@ describe('NElement lifecycle via ContextBinder', () => {
         it('should be true for element with nb-value (its textContent owns the subtree)', () => {
             const { binder } = createBoundElement('<span nb-value="this.x"></span>', { x: '' });
             const rootNElement = (binder as any).rootNElement as INTreeElement;
-            const child = (rootNElement as any)._children[0] as INElement;
+            const child = (rootNElement as any).children[0] as INElement;
             expect(child.isSubTreeHandled).toBe(true);
         });
     });
@@ -870,8 +957,8 @@ describe('NElement lifecycle via ContextBinder', () => {
                 shadow.innerHTML = '<span nb-repeat="this.items" nb-value="item"></span>';
 
                 // The premise of the finding: an Element parent is absent, a Node parent is not.
-                const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined,
-                                                 () => false, () => undefined, () => undefined);
+                const binder = new ContextBinder(null, null, undefined, false, false, undefined,
+                                                 () => undefined, () => undefined);
                 binder.bind(shadow, { items: ['a', 'b', 'c'] } as any, false, false);
 
                 const spans = shadow.querySelectorAll('span');
@@ -913,7 +1000,7 @@ describe('NElement lifecycle via ContextBinder', () => {
                 { items: [1] }
             );
             const root = (binder as any).rootNElement as INTreeElement;
-            const child = (root as any)._children[0] as INElement;
+            const child = (root as any).children[0] as INElement;
             expect(child.nativeElementForClone).toBeDefined();
         });
     });
@@ -1435,7 +1522,7 @@ describe('NElement lifecycle via ContextBinder', () => {
                 ctx
             );
             const rootNElement = (binder as any).rootNElement!;
-            const child = (rootNElement as any)._children[0];
+            const child = (rootNElement as any).children[0];
             if (child && child._disposeSequence) {
                 // Inject a handler that throws on dispose
                 child._disposeSequence.push({
@@ -1506,7 +1593,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             const { binder } = createBoundElement(
                 `<div nb-switch="'a'"><span nb-case="'b'" ${caseAttributes}></span></div>`
             );
-            const caseNElement: any = ((binder as any).rootNElement as any)._children[0]._children[0];
+            const caseNElement: any = ((binder as any).rootNElement as any).children[0].children[0];
             // handlers are no longer public fields of NElement — the case handler is found among
             // the parent-handled visibility handlers, the container by type in each sequence
             const caseHandler: Case = caseNElement._visibleParentHandlers.find((handler: any) => handler instanceof Case);
@@ -1570,7 +1657,7 @@ describe('NElement lifecycle via ContextBinder', () => {
     });
 
     describe('handlers are kept and sequenced only when they can be used', () => {
-        const firstChild = (binder: ContextBinder): any => ((binder as any).rootNElement as any)._children[0];
+        const firstChild = (binder: ContextBinder): any => ((binder as any).rootNElement as any).children[0];
         const hasHandler = (sequence: Array<unknown> | undefined, type: Function) => (sequence ?? []).some(handler => handler instanceof type);
 
         it('should leave every optional slot undefined for an element with only nb-exec', () => {
@@ -1630,7 +1717,7 @@ describe('NElement lifecycle via ContextBinder', () => {
         it('should treat nb-case as orphaned when the parent element has handlers but no nb-switch', () => {
             const errorSpy = jest.spyOn(console, 'error').mockImplementation();
             const { binder, el } = createBoundElement(`<div nb-if="true"><span nb-case="'a'">A</span></div>`, {});
-            const caseNElement = firstChild(binder)._children[0];
+            const caseNElement = firstChild(binder).children[0];
 
             expect(firstChild(binder).switch).toBeUndefined();
             expect(errorSpy).toHaveBeenCalledWith(
@@ -1647,7 +1734,7 @@ describe('NElement lifecycle via ContextBinder', () => {
             function bindWithDebugInfo(html: string): Element {
                 const el = document.createElement('div');
                 el.innerHTML = html;
-                const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined, () => true, () => undefined, () => undefined);
+                const binder = new ContextBinder(null, null, undefined, false, true, undefined, () => undefined, () => undefined);
                 binder.bind(el, {} as any, false, false);
                 return el;
             }
@@ -1657,7 +1744,7 @@ describe('NElement lifecycle via ContextBinder', () => {
                 const el = bindWithDebugInfo(`<p nb-html="'<b>x</b>'">authored</p>`);
 
                 expect(warnSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el.querySelector('p'),
-                                                     'element original children will be replaced by nb-html');
+                                                     "element original children will be replaced by 'nb-html'");
             });
 
             it('should name nb-value when nb-value replaces authored children', () => {
@@ -1665,7 +1752,7 @@ describe('NElement lifecycle via ContextBinder', () => {
                 const el = bindWithDebugInfo(`<p nb-value="'x'"><i>authored</i></p>`);
 
                 expect(warnSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el.querySelector('p'),
-                                                     'element original children will be replaced by nb-value');
+                                                     "element original children will be replaced by 'nb-value'");
             });
         });
 
@@ -1681,20 +1768,20 @@ describe('NElement lifecycle via ContextBinder', () => {
         });
 
         describe('ready markers are written without an Attributes commit', () => {
-            const ready = (name: string) => `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${name}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const ready = (name: string) => `${name}-ready`;
 
             it('should mark nb-if ready on the first cycle', () => {
                 const { binder, el } = createBoundElement('<div nb-if="this.show"></div>', { show: false });
 
                 expect(hasHandler(firstChild(binder)._commitSequence, Attributes)).toBe(false);
-                expect(el.querySelector('div')!.hasAttribute(ready(Constants.IF_HANDLER_ATTRIBUTE_NAME))).toBe(true);
+                expect(el.querySelector('div')!.hasAttribute(ready(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME))).toBe(true);
             });
 
             it('should mark nb-switch ready on the first cycle', () => {
                 const { binder, el } = createBoundElement(`<div nb-switch="'a'"></div>`, {});
 
                 expect(hasHandler(firstChild(binder)._commitSequence, Attributes)).toBe(false);
-                expect(el.querySelector('div')!.hasAttribute(ready(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME))).toBe(true);
+                expect(el.querySelector('div')!.hasAttribute(ready(Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME))).toBe(true);
             });
 
             it('should mark nb-repeat ready on the first cycle, also on the rendered clones', () => {
@@ -1704,7 +1791,7 @@ describe('NElement lifecycle via ContextBinder', () => {
 
                 const rows = el.querySelectorAll('li');
                 expect(rows).toHaveLength(3);
-                rows.forEach(row => expect(row.hasAttribute(ready(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME))).toBe(true));
+                rows.forEach(row => expect(row.hasAttribute(ready(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME))).toBe(true));
             });
         });
 
@@ -1770,11 +1857,137 @@ describe('NElement lifecycle via ContextBinder', () => {
             });
         });
 
+        // The four manipulation handlers are kept (and committed) only when the ElementManipulations proxy is
+        // reachable: an nb-event / nb-bound expression that references `element`, or a component / aspect
+        // that injects ElementManipulations. Otherwise they are released together with the proxy creator.
+        describe('commit sequence follows whether ElementManipulations is reachable', () => {
+            const manipulationHandlers = [Classes, Styles, Attributes, Properties];
+            const handlerOf = (nElement: any, type: Function) => (nElement._bindSequence ?? []).find((handler: unknown) => handler instanceof type);
+
+            let uid = 0;
+            function registerAspect(dependencies: Array<any>, ctor: new (...args: Array<any>) => object): string {
+                const name = `manipulation-deps-aspect-${++uid}`;
+                Environment.addAspect(name, ctor as any, dependencies, undefined, undefined, undefined);
+                return name;
+            }
+
+            it('should keep no manipulation handler for an nb-event that does not reference element', () => {
+                const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+                const ctx: any = { clicked: false };
+                const { binder, el } = createBoundElement(`<button nb-event:click="this.clicked = true"></button>`, ctx);
+                const nElement = firstChild(binder);
+
+                expect(nElement._commitSequence).toBeUndefined();
+                expect(nElement._commitSequenceInvisibleParentHandled).toBeUndefined();
+                expect(handlerOf(nElement, Events).hasElementManipulations).toBe(false);
+                expect(handlerOf(nElement, Events)._getElementManipulations).toBeUndefined();
+
+                (el.querySelector('button') as HTMLButtonElement).click();
+
+                expect(ctx.clicked).toBe(true);
+                expect(nElement._elementManipulations).toBeUndefined();
+                expect(errorSpy).not.toHaveBeenCalled();
+            });
+
+            it('should commit the manipulations made from an nb-event that references element', () => {
+                const ctx: any = {};
+                const { binder, el } = createBoundElement(
+                    `<button nb-event:click="element.classes.add('on'); element.styles.set('color', 'red'); element.attributes.set('data-x', '1')"></button>`, ctx);
+                const nElement = firstChild(binder);
+                const button = el.querySelector('button') as HTMLButtonElement;
+
+                for (const type of manipulationHandlers) {
+                    expect(hasHandler(nElement._commitSequence, type)).toBe(true);
+                }
+
+                button.click();
+                nElement.detectChanges(ctx);
+
+                expect(button.classList.contains('on')).toBe(true);
+                expect(button.style.color).toBe('red');
+                expect(button.getAttribute('data-x')).toBe('1');
+            });
+
+            it('should keep the manipulation handlers when only one of several events references element', () => {
+                const { binder } = createBoundElement(
+                    `<button nb-event:click="this.a = 1" nb-event:focus="element.classes.add('focused')"></button>`, {});
+
+                for (const type of manipulationHandlers) {
+                    expect(hasHandler(firstChild(binder)._commitSequence, type)).toBe(true);
+                }
+            });
+
+            it('should still commit an own nb-class next to an nb-event that does not reference element', () => {
+                const { binder, el } = createBoundElement(`<button nb-class="'own'" nb-event:click="this.a = 1"></button>`, {});
+                const sequence = firstChild(binder)._commitSequence;
+
+                expect(hasHandler(sequence, Classes)).toBe(true);
+                expect(hasHandler(sequence, Styles)).toBe(false);
+                expect(hasHandler(sequence, Attributes)).toBe(false);
+                expect(hasHandler(sequence, Properties)).toBe(false);
+                expect(el.querySelector('button')!.classList.contains('own')).toBe(true);
+            });
+
+            it('should keep no manipulation handler for an nb-bound that does not reference element', () => {
+                const ctx: any = {};
+                const { binder, el } = createBoundElement(`<span nb-bound="this.bound = nativeElement"></span>`, ctx);
+                const nElement = firstChild(binder);
+
+                expect(nElement._commitSequence).toBeUndefined();
+                expect(ctx.bound).toBe(el.querySelector('span'));
+                expect(nElement._elementManipulations).toBeUndefined();
+            });
+
+            it('should commit the manipulations of an aspect that injects ElementManipulations', () => {
+                const name = registerAspect([ElementManipulations], class {
+                    constructor(element: ElementManipulations) {
+                        element.classes.add('from-aspect');
+                        element.styles.set('color', 'blue');
+                    }
+                });
+                const { binder, el } = createBoundElement(`<div nb-aspect:${name}></div>`, {});
+                const div = el.querySelector('div') as HTMLElement;
+
+                for (const type of manipulationHandlers) {
+                    expect(hasHandler(firstChild(binder)._commitSequence, type)).toBe(true);
+                }
+                expect(div.classList.contains('from-aspect')).toBe(true);
+                expect(div.style.color).toBe('blue');
+            });
+
+            it('should keep no manipulation handler for an aspect that injects other services only', () => {
+                const name = registerAspect([ChangeDetector], class { constructor(_detector: ChangeDetector) {} });
+                const { binder } = createBoundElement(`<div nb-aspect:${name}></div>`, {});
+                const sequence = firstChild(binder)._commitSequence;
+
+                for (const type of manipulationHandlers) {
+                    expect(hasHandler(sequence, type)).toBe(false);
+                }
+            });
+
+            it('should deliver ElementSubscriptions to an aspect without keeping the manipulation handlers', () => {
+                const received: Array<string> = [];
+                const name = registerAspect([ElementSubscriptions], class {
+                    constructor(subscriptions: ElementSubscriptions) {
+                        subscriptions.subscribe('click', evt => received.push(evt.type));
+                    }
+                });
+                const { binder, el } = createBoundElement(`<div nb-aspect:${name}></div>`, {});
+
+                (el.querySelector('div') as HTMLElement).click();
+
+                expect(received).toEqual(['click']);
+                for (const type of manipulationHandlers) {
+                    expect(hasHandler(firstChild(binder)._commitSequence, type)).toBe(false);
+                }
+            });
+        });
+
         describe('invisible-parent-handled commit sequence', () => {
             // the matching 'a' case keeps the switch itself visible, so its children are detected
             function buildHiddenCase(caseAttributes: string) {
                 const { binder, el } = createBoundElement(`<div nb-switch="'a'"><i nb-case="'a'"></i><span nb-case="'b'" ${caseAttributes}></span></div>`);
-                return { caseNElement: firstChild(binder)._children[1], el };
+                return { caseNElement: firstChild(binder).children[1], el };
             }
 
             it('should hold only classes for a bare nb-case', () => {

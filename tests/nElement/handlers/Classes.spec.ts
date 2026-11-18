@@ -3,7 +3,7 @@ import { Attributes } from '../../../src/nElement/handlers/Attributes';
 import { Constants } from '../../../src/Constants';
 
 describe('Classes handler', () => {
-    const hideClassName = 'nb-hidden';
+    const hideClassName = Constants.STYLES.DEFAULT_HIDE_CLASS_NAME;   // Classes reads it from Constants (no getter is injected any more)
 
     function createElementWithAttr(expression?: string, existingClasses?: string): Element {
         const el = document.createElement('div');
@@ -11,7 +11,7 @@ describe('Classes handler', () => {
             el.className = existingClasses;
         }
         if (expression !== undefined) {
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CLASS_HANDLER_ATTRIBUTE_NAME}`, expression);
+            el.setAttribute(`${Constants.HANDLERS.CLASS_HANDLER_ATTRIBUTE_NAME}`, expression);
         }
         return el;
     }
@@ -19,8 +19,8 @@ describe('Classes handler', () => {
     describe('constructor', () => {
         it('should detect simple expression', () => {
             const el = createElementWithAttr('ctx.myClass');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             expect(handler.hasNExpression).toBe(true);
             expect(handler.nExpression).toBeDefined();
@@ -29,8 +29,8 @@ describe('Classes handler', () => {
 
         it('should detect condition expression', () => {
             const el = createElementWithAttr('{active: ctx.isActive, disabled: ctx.isDisabled}');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             expect(handler.hasNExpression).toBe(true);
             expect(handler.nExpression!.type).toBe('condition');
@@ -38,8 +38,8 @@ describe('Classes handler', () => {
 
         it('should detect array expression', () => {
             const el = createElementWithAttr('[ctx.class1, ctx.class2]');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             expect(handler.hasNExpression).toBe(true);
             expect(handler.nExpression!.type).toBe('array');
@@ -47,16 +47,16 @@ describe('Classes handler', () => {
 
         it('should have no expression when attribute missing', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             expect(handler.hasNExpression).toBe(false);
         });
 
         it('should preserve existing classes', () => {
             const el = createElementWithAttr(undefined, 'existing-class');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             expect(handler.has('existing-class')).toBe(true);
         });
@@ -65,8 +65,8 @@ describe('Classes handler', () => {
     describe('add/remove/has/toggle', () => {
         it('should add a class', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.add('test-class');
             expect(handler.has('test-class')).toBe(true);
@@ -76,8 +76,8 @@ describe('Classes handler', () => {
         it('should not add duplicate class', () => {
             const el = document.createElement('div');
             el.className = 'existing';
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.add('existing');
             expect(handler.getAll().filter(c => c === 'existing').length).toBe(1);
@@ -86,8 +86,8 @@ describe('Classes handler', () => {
         it('should remove a class', () => {
             const el = document.createElement('div');
             el.className = 'to-remove';
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.remove('to-remove');
             expect(handler.has('to-remove')).toBe(false);
@@ -96,8 +96,8 @@ describe('Classes handler', () => {
 
         it('should toggle a class', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.toggle('toggled');
             expect(handler.has('toggled')).toBe(true);
@@ -110,7 +110,7 @@ describe('Classes handler', () => {
         // protected toggleInternal used by bind; public toggle(className) is a plain flip again.
         it('should swap the previous class for the new one when a simple nb-class value changes', () => {
             const el = createElementWithAttr('this.cls');
-            const handler = new Classes(el, new Attributes(el, () => false), () => hideClassName);
+            const handler = new Classes(el, new Attributes(el, false));
 
             handler.bind(undefined, () => 'alpha');
             handler.commit();
@@ -130,8 +130,8 @@ describe('Classes handler', () => {
 
         it('should add empty string as no-op', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.add('');
             expect(handler.isDirty).toBe(false);
@@ -141,8 +141,8 @@ describe('Classes handler', () => {
         it('should getAll classes', () => {
             const el = document.createElement('div');
             el.className = 'a b c';
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             const all = handler.getAll();
             expect(all).toEqual(['a', 'b', 'c']);
@@ -151,8 +151,8 @@ describe('Classes handler', () => {
         it('should return a frozen array from getAll()', () => {
             const el = document.createElement('div');
             el.className = 'a b';
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             const all = handler.getAll();
             expect(Object.isFrozen(all)).toBe(true);
@@ -161,8 +161,8 @@ describe('Classes handler', () => {
         it('should return a snapshot from getAll() (subsequent add not reflected)', () => {
             const el = document.createElement('div');
             el.className = 'a';
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             const snapshot = handler.getAll();
             handler.add('b');
@@ -175,20 +175,20 @@ describe('Classes handler', () => {
     describe('show/hide', () => {
         it('should add hide class on hide()', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
-            handler.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(true);
         });
 
         it('should remove hide class on show()', () => {
             const el = document.createElement('div');
             el.className = hideClassName;
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
-            handler.show(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(false);
         });
     });
@@ -196,69 +196,69 @@ describe('Classes handler', () => {
     describe('R2-3: hidden class is refcounted per requesting handler', () => {
         function createHandler(): Classes {
             const el = document.createElement('div');
-            return new Classes(el, new Attributes(el, () => false), () => hideClassName);
+            return new Classes(el, new Attributes(el, false));
         }
 
         it('should keep the hide class while another handler still requires it hidden', () => {
             const handler = createHandler();
 
-            handler.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
-            handler.hide(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
 
-            handler.show(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(true);
 
-            handler.show(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(false);
         });
 
         it('should keep the hide class when the last hiding handler is not the first one to show', () => {
             const handler = createHandler();
 
-            handler.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
-            handler.hide(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
 
-            handler.show(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(true);
 
-            handler.show(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(false);
         });
 
         it('should treat repeated hide() calls from the same handler as one', () => {
             const handler = createHandler();
 
-            handler.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
-            handler.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
 
-            handler.show(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(false);
         });
 
         it('should ignore show() from a handler that never hid the element', () => {
             const handler = createHandler();
 
-            handler.hide(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME);
 
-            handler.show(Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(true);
 
-            handler.show(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(false);
         });
 
         it('should support three visibility handlers on one element', () => {
             const handler = createHandler();
 
-            handler.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
-            handler.hide(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
-            handler.hide(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME);
 
-            handler.show(Constants.IF_HANDLER_ATTRIBUTE_NAME);
-            handler.show(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(true);
 
-            handler.show(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
             expect(handler.has(hideClassName)).toBe(false);
         });
     });
@@ -266,8 +266,8 @@ describe('Classes handler', () => {
     describe('bind with simple expression', () => {
         it('should toggle class based on expression result', () => {
             const el = createElementWithAttr('ctx.activeClass');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.bind(undefined, () => 'active');
             handler.commit();
@@ -279,8 +279,8 @@ describe('Classes handler', () => {
     describe('bind with condition expression', () => {
         it('should add class when condition is true', () => {
             const el = createElementWithAttr('{highlight: ctx.isHighlighted}');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.bind(undefined, () => true);
             handler.commit();
@@ -290,8 +290,8 @@ describe('Classes handler', () => {
 
         it('should remove class when condition turns false', () => {
             const el = createElementWithAttr('{highlight: ctx.isHighlighted}');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.bind(undefined, () => true);
             handler.commit();
@@ -307,8 +307,8 @@ describe('Classes handler', () => {
     describe('bind with array expression', () => {
         it('should toggle each array expression result independently', () => {
             const el = createElementWithAttr('[this.cls1; this.cls2]');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             let callIndex = 0;
             handler.bind(undefined, () => {
@@ -328,7 +328,7 @@ describe('Classes handler', () => {
         // it after the earlier entry had already (no-op) re-added it, losing the class for a cycle.
         function createArrayHandler(expression: string, existingClasses?: string) {
             const el = createElementWithAttr(expression, existingClasses);
-            const handler = new Classes(el, new Attributes(el, () => false), () => hideClassName);
+            const handler = new Classes(el, new Attributes(el, false));
             const state: Record<string, any> = {};
 
             const cycle = (): string[] => {
@@ -472,7 +472,7 @@ describe('Classes handler', () => {
 
         function createConditionHandler(expression: string, existingClasses?: string) {
             const el = createElementWithAttr(expression, existingClasses);
-            const handler = new Classes(el, new Attributes(el, () => false), () => hideClassName);
+            const handler = new Classes(el, new Attributes(el, false));
             return { el, handler };
         }
 
@@ -573,22 +573,22 @@ describe('Classes handler', () => {
             // Second entry has spaces before colon. After the per-entry trim it collapses to
             // ':ctx.isActive', which is reported as an incorrect conditional class expression.
             const el = createElementWithAttr('{active: ctx.x;  :ctx.isActive}');
-            const attrs = new Attributes(el, () => false);
-            new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            new Classes(el, attrs);
             expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, expect.stringContaining('incorrect conditional class expression'));
         });
 
         it('should log error for condition expression without colon separator', () => {
             const el = createElementWithAttr('{badExpression}');
-            const attrs = new Attributes(el, () => false);
-            new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            new Classes(el, attrs);
             expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, expect.stringContaining('incorrect conditional class expression'));
         });
 
         it('should log error for empty array expression', () => {
             const el = createElementWithAttr('[   ]');
-            const attrs = new Attributes(el, () => false);
-            new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            new Classes(el, attrs);
             expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, expect.stringContaining('has empty value'));
         });
 
@@ -598,8 +598,8 @@ describe('Classes handler', () => {
             // is now reachable — symmetric with the array form, where `[   ]` reports
             // "has empty value". No bindings are produced.
             const el = createElementWithAttr('{   }');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
             expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el, expect.stringContaining('has empty conditions set'));
             const cond = handler.nExpression as { rawExpression: Map<string, unknown> };
             expect(cond.rawExpression.size).toBe(0);
@@ -608,16 +608,16 @@ describe('Classes handler', () => {
         it('should treat malformed bracket expression as simple (starts with { but no closing })', () => {
             // This exercises SimpleExpressionData.isThisType false branches
             const el = createElementWithAttr('{foo');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
             // { without } doesn't match condition or array, falls through to simple
             expect(handler.hasNExpression).toBe(true);
         });
 
         it('should treat malformed square bracket expression as simple (starts with [ but no closing ])', () => {
             const el = createElementWithAttr('[foo');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
             expect(handler.hasNExpression).toBe(true);
         });
     });
@@ -637,8 +637,8 @@ describe('Classes handler', () => {
             // `{label: this.fn('a\;b')}` must not split on the semicolon inside the string
             // literal. The backslash is the escape marker and is stripped from the value.
             const el = createElementWithAttr("{label: this.fn('a\\;b')}");
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             expect(handler.nExpression!.type).toBe('condition');
             const cond = handler.nExpression as unknown as { rawExpression: Map<string, { expression: string }> };
@@ -649,8 +649,8 @@ describe('Classes handler', () => {
 
         it('should keep an escaped ";" inside an array entry as a single entry', () => {
             const el = createElementWithAttr("[this.fn('a\\;b')]");
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             expect(handler.nExpression!.type).toBe('array');
             const arr = handler.nExpression as unknown as { rawExpression: Array<{ expression: string }> };
@@ -661,7 +661,7 @@ describe('Classes handler', () => {
 
         it('should not split on an unescaped ";" inside a string literal of a condition value (L-15)', () => {
             const el = createElementWithAttr(`{label: this.fn('a;b'); other: this.x === "c;d"}`);
-            const handler = new Classes(el, new Attributes(el, () => false), () => hideClassName);
+            const handler = new Classes(el, new Attributes(el, false));
 
             const cond = handler.nExpression as unknown as { rawExpression: Map<string, { expression: string }> };
             expect(cond.rawExpression.size).toBe(2);   // pre-fix: broken entries + "incorrect conditional class expression" errors
@@ -672,7 +672,7 @@ describe('Classes handler', () => {
 
         it('should not split on an unescaped ";" inside a string literal of an array entry (L-15)', () => {
             const el = createElementWithAttr("[this.fn('a;b'); `x;${this.y}`]");
-            const handler = new Classes(el, new Attributes(el, () => false), () => hideClassName);
+            const handler = new Classes(el, new Attributes(el, false));
 
             const arr = handler.nExpression as unknown as { rawExpression: Array<{ expression: string }> };
             expect(arr.rawExpression.map(entry => entry.expression)).toEqual(["this.fn('a;b')", '`x;${this.y}`']);
@@ -683,8 +683,8 @@ describe('Classes handler', () => {
     describe('commit', () => {
         it('should update element className on commit', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.add('new-class');
             handler.commit();
@@ -694,8 +694,8 @@ describe('Classes handler', () => {
 
         it('should return false when not dirty', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             expect(handler.commit()).toBe(false);
         });
@@ -703,8 +703,8 @@ describe('Classes handler', () => {
         it('should update element className when same length but different contents', () => {
             const el = document.createElement('div');
             el.className = 'aaa bbb';
-            const attrs = new Attributes(el, () => false);
-            const handler = new Classes(el, attrs, () => hideClassName);
+            const attrs = new Attributes(el, false);
+            const handler = new Classes(el, attrs);
 
             handler.remove('bbb');
             handler.add('ccc');
@@ -720,9 +720,9 @@ describe('Classes handler', () => {
         // routes SVG writes through setAttribute('class', ...).
         it('should write to the SVG class attribute via setAttribute', () => {
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CLASS_HANDLER_ATTRIBUTE_NAME}`, 'ctx.cls');
-            const attrs = new Attributes(svg, () => false);
-            const handler = new Classes(svg, attrs, () => hideClassName);
+            svg.setAttribute(`${Constants.HANDLERS.CLASS_HANDLER_ATTRIBUTE_NAME}`, 'ctx.cls');
+            const attrs = new Attributes(svg, false);
+            const handler = new Classes(svg, attrs);
 
             handler.add('alpha');
             handler.commit();
@@ -732,8 +732,8 @@ describe('Classes handler', () => {
 
         it('should append multiple classes to SVG via class attribute', () => {
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            const attrs = new Attributes(svg, () => false);
-            const handler = new Classes(svg, attrs, () => hideClassName);
+            const attrs = new Attributes(svg, false);
+            const handler = new Classes(svg, attrs);
 
             handler.add('alpha');
             handler.add('beta');
@@ -754,14 +754,14 @@ describe('Classes handler', () => {
                 svg.setAttribute('class', existingClasses);
             }
             if (expression !== undefined) {
-                svg.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CLASS_HANDLER_ATTRIBUTE_NAME}`, expression);
+                svg.setAttribute(`${Constants.HANDLERS.CLASS_HANDLER_ATTRIBUTE_NAME}`, expression);
             }
             return svg;
         }
 
         it('should seed the model with the authored SVG classes', () => {
             const svg = createSvg('icon icon-large');
-            const handler = new Classes(svg, new Attributes(svg, () => false), () => hideClassName);
+            const handler = new Classes(svg, new Attributes(svg, false));
 
             expect(handler.getAll()).toEqual(['icon', 'icon-large']);
             expect(handler.has('icon')).toBe(true);
@@ -770,9 +770,9 @@ describe('Classes handler', () => {
 
         it('should keep the authored SVG classes when hide() writes the class attribute', () => {
             const svg = createSvg('icon icon-large');
-            const handler = new Classes(svg, new Attributes(svg, () => false), () => hideClassName);
+            const handler = new Classes(svg, new Attributes(svg, false));
 
-            handler.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
             handler.commit();
 
             expect(svg.getAttribute('class')).toBe(`icon icon-large ${hideClassName}`);
@@ -780,11 +780,11 @@ describe('Classes handler', () => {
 
         it('should restore the authored SVG classes after hide() then show()', () => {
             const svg = createSvg('icon icon-large');
-            const handler = new Classes(svg, new Attributes(svg, () => false), () => hideClassName);
+            const handler = new Classes(svg, new Attributes(svg, false));
 
-            handler.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
             handler.commit();
-            handler.show(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+            handler.show(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
             handler.commit();
 
             expect(svg.getAttribute('class')).toBe('icon icon-large');
@@ -792,7 +792,7 @@ describe('Classes handler', () => {
 
         it('should append a bound class to the authored SVG classes', () => {
             const svg = createSvg('icon', 'ctx.cls');
-            const handler = new Classes(svg, new Attributes(svg, () => false), () => hideClassName);
+            const handler = new Classes(svg, new Attributes(svg, false));
 
             handler.add('active');
             handler.commit();
@@ -802,7 +802,7 @@ describe('Classes handler', () => {
 
         it('should remove an authored SVG class on request', () => {
             const svg = createSvg('icon icon-large');
-            const handler = new Classes(svg, new Attributes(svg, () => false), () => hideClassName);
+            const handler = new Classes(svg, new Attributes(svg, false));
 
             handler.remove('icon');
             handler.commit();
@@ -812,23 +812,67 @@ describe('Classes handler', () => {
 
         it('should treat a missing class attribute on SVG as no classes', () => {
             const svg = createSvg();
-            const handler = new Classes(svg, new Attributes(svg, () => false), () => hideClassName);
+            const handler = new Classes(svg, new Attributes(svg, false));
 
             expect(handler.getAll()).toEqual([]);
         });
 
         it('should ignore a whitespace-only class attribute on SVG', () => {
             const svg = createSvg('   ');
-            const handler = new Classes(svg, new Attributes(svg, () => false), () => hideClassName);
+            const handler = new Classes(svg, new Attributes(svg, false));
 
             expect(handler.getAll()).toEqual([]);
         });
 
         it('should still seed the model from a plain HTML element className', () => {
             const el = createElementWithAttr(undefined, 'alpha beta');
-            const handler = new Classes(el, new Attributes(el, () => false), () => hideClassName);
+            const handler = new Classes(el, new Attributes(el, false));
 
             expect(handler.getAll()).toEqual(['alpha', 'beta']);
+        });
+    });
+
+    // ExpressionDetails instances are shared between handlers that use the same raw expression
+    // (ExpressionDetails.create), so per-element state such as the previous class must not live on them.
+    describe('handlers sharing one nb-class expression', () => {
+        function createRow(expression: string): { el: Element; handler: Classes } {
+            const el = createElementWithAttr(expression);
+            return { el, handler: new Classes(el, new Attributes(el, false)) };
+        }
+
+        it('simple form: each element swaps its own previous class', () => {
+            const row1 = createRow('item.cls');
+            const row2 = createRow('item.cls');
+
+            row1.handler.bind(undefined, () => 'a'); row1.handler.commit();
+            row2.handler.bind(undefined, () => 'b'); row2.handler.commit();
+            row1.handler.bind(undefined, () => 'c'); row1.handler.commit();
+
+            expect(row1.el.className).toBe('c');
+            expect(row2.el.className).toBe('b');
+        });
+
+        it('array form: each element swaps its own previous class', () => {
+            const row1 = createRow('[item.cls]');
+            const row2 = createRow('[item.cls]');
+
+            row1.handler.bind(undefined, () => 'a'); row1.handler.commit();
+            row2.handler.bind(undefined, () => 'b'); row2.handler.commit();
+            row1.handler.bind(undefined, () => 'c'); row1.handler.commit();
+
+            expect(row1.el.className).toBe('c');
+            expect(row2.el.className).toBe('b');
+        });
+
+        it('condition form: each element toggles its own key', () => {
+            const row1 = createRow('{danger: item.selected}');
+            const row2 = createRow('{danger: item.selected}');
+
+            row1.handler.bind(undefined, () => true); row1.handler.commit();
+            row2.handler.bind(undefined, () => false); row2.handler.commit();
+
+            expect(row1.el.className).toBe('danger');
+            expect(row2.el.className).toBe('');
         });
     });
 });

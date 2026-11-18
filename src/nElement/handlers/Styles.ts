@@ -36,7 +36,7 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
         this._nativeElement = <HTMLElement>nativeElement;
         this._previousStyles = new Map<string, string>();
 
-        const expression = <string | undefined>attributes.get(Constants.STYLE_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.STYLE_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this.hasNExpression = true;
             
@@ -47,7 +47,7 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
                 if (firstSeparatorIndex > 0) {
                     const stylePropertyName = el.substring(0, firstSeparatorIndex).trim();
                     if (stylePropertyName.length > 0) {
-                        this.nExpression.set(stylePropertyName, new ExpressionDetails(el.substring(firstSeparatorIndex + 1)));
+                        this.nExpression.set(stylePropertyName, ExpressionDetails.create(el.substring(firstSeparatorIndex + 1)));
                         this._previousStyles.set(stylePropertyName, this._nativeElement.style.getPropertyValue(stylePropertyName));   
                     } else {
                         Console.error(nativeElement, `style property name can't be empty`);
@@ -99,7 +99,7 @@ export class Styles extends Base implements IHandler<Map<string, IExpressionDeta
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
             for (const [key, value] of this.nExpression!) {
-                this.processExpressionExecution(value, `${Constants.STYLE_HANDLER_ATTRIBUTE_NAME}:${key}`, 
+                this.processExpressionExecution(value, `${Constants.HANDLERS.STYLE_HANDLER_ATTRIBUTE_NAME}:${key}`, 
                                                 expression => executeExpression(expression, executionParams),
                                                 data => this.set(key, data));
             }

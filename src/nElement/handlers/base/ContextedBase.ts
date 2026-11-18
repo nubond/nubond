@@ -49,12 +49,10 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
     private _executionParams: ExecutionParams | undefined;
     private _executeExpression: ((expression: string | null | undefined, executionParams: ExecutionParams | undefined) => any) | undefined;
 
-    protected readonly isElementVisible: (() => boolean) | undefined;
-    protected readonly notifyContextAttached: ((context: object) => void) | undefined;
-    protected readonly notifyContextDetached: ((context: object) => void) | undefined;
-
     protected readonly parentContextBinder: IContextBinder | undefined;
     protected readonly parentNElement: INElement | undefined;
+
+    protected readonly containerAttachedDetachedNotifications: boolean;
 
     protected contextBinder: IContextBinder | undefined;
 
@@ -102,27 +100,23 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
     constructor(expression: string | undefined, nativeElement: Element, attributes: Attributes,
                 parentContextBinder: IContextBinder, parentNElement: INElement,
                 handlerAttributeName: string,
-                isElementVisible: () => boolean,
-                notifyContextAttached?: (context: object) => void,
-                notifyContextDetached?: (context: object) => void) {
+                containerAttachedDetachedNotifications: boolean) {
         super(nativeElement, handlerAttributeName);
         
         if (Helpers.isString(expression)) {
             this.parentContextBinder = parentContextBinder;
             this.parentNElement = parentNElement;
-            this.isElementVisible = isElementVisible;
-            this.notifyContextAttached = notifyContextAttached;
-            this.notifyContextDetached = notifyContextDetached;
+            this.containerAttachedDetachedNotifications = containerAttachedDetachedNotifications === true;
 
             this.hasNExpression = true;
 
-            const expressionDetails = new ExpressionDetails(expression!);
+            const expressionDetails = ExpressionDetails.create(expression!);
 
-            if (attributes.has(Constants.IN_HANDLER_ATTRIBUTE_NAME, true, true) || attributes.has(Constants.IN_REF_HANDLER_ATTRIBUTE_NAME, true, true)) {
+            if (attributes.has(Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME, true, true) || attributes.has(Constants.HANDLERS.IN_REF_HANDLER_ATTRIBUTE_NAME, true, true)) {
                 const nInExpression = new Map<string, IContextInExpressionDetails>();
                 this.nExpression = new ContextBaseBindings(expressionDetails, nInExpression);
 
-                for (const handlerName of [Constants.IN_HANDLER_ATTRIBUTE_NAME, Constants.IN_REF_HANDLER_ATTRIBUTE_NAME]) {
+                for (const handlerName of [Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME, Constants.HANDLERS.IN_REF_HANDLER_ATTRIBUTE_NAME]) {
                     for (const [key, value] of attributes.getAll(handlerName, true)) {
                         const propertyName = key.replace(handlerName + Constants.META_VALUE_SEPARATOR, '');
                         if (propertyName.length > 0) {
@@ -131,8 +125,8 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
                                 if (normalizedHandlerName != '__proto__') {
                                     if (!nInExpression.has(normalizedHandlerName)) {
                                         nInExpression.set(normalizedHandlerName,
-                                                        new ContextInExpressionDetails(new ExpressionDetails(value!), 
-                                                                                        handlerName == Constants.IN_REF_HANDLER_ATTRIBUTE_NAME));  
+                                                        new ContextInExpressionDetails(ExpressionDetails.create(value!), 
+                                                                                        handlerName == Constants.HANDLERS.IN_REF_HANDLER_ATTRIBUTE_NAME));  
                                     } else {
                                         Console.error(nativeElement, `multiple handlers for one in (${normalizedHandlerName}) are not supported`);
                                     }
@@ -152,6 +146,7 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
             }
         } else {
             this.hasNExpression = false;
+            this.containerAttachedDetachedNotifications = false;
         }
     }
 
@@ -161,7 +156,7 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
         if (this.hasNExpression) {
             let currentExecutionParams = executionParams;
 
-            this.isVisible = this.isElementVisible!();
+            this.isVisible = this.parentNElement!.isVisible;
 
             currentExecutionParams = this.onBind(currentExecutionParams, executeExpression);
 
@@ -205,8 +200,8 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
                             this.bindInputs(this._executionParams!, this._executeExpression!);
                         }
 
-                        if (Helpers.isFunction(this.notifyContextAttached)) {
-                            this.notifyContextAttached!(this.contextBinder!.context!);
+                        if (this.containerAttachedDetachedNotifications) {
+                            this.parentContextBinder!.containerAttached(this.contextBinder!.context!);
                         }
 
                         this._previousEntityData = this._currentEntityData;
@@ -290,14 +285,14 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
 
     protected prepareInputs(): void {
         for (const [key, value] of this.nExpression!.nInExpression!) {
-            this.resetExpressionExecutionState(value.nExpression, `${Constants.IN_HANDLER_ATTRIBUTE_NAME}:${key}`);
+            this.resetExpressionExecutionState(value.nExpression, `${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}:${key}`);
         }
     }
 
     protected bindInputs(executionParams: ExecutionParams | undefined, executeExpression: (expression: string | null | undefined, 
                                                                                            executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         for (const [key, value] of this.nExpression!.nInExpression!) {
-            this.processExpressionExecution(value.nExpression, `${Constants.IN_HANDLER_ATTRIBUTE_NAME}:${key}`,
+            this.processExpressionExecution(value.nExpression, `${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}:${key}`,
                                             expression => executeExpression(expression, executionParams), 
                                             data => this.setInputValue!(key, data, value.ref));
         }
@@ -350,20 +345,20 @@ export abstract class ContextedBase<T> extends InitializableBase implements IHan
 
     private disposeProtected(full: boolean): void {
         if (full) {
-            delete this._previousEntityData;
-            delete this._currentEntityData;
+            this._previousEntityData = undefined;
+            this._currentEntityData = undefined;
         }
 
         if (!Helpers.isUndefined(this.contextBinder)) {
-            if (Helpers.isFunction(this.notifyContextDetached)) {
-                this.notifyContextDetached!(this.contextBinder!.context!);
+            if (this.containerAttachedDetachedNotifications) {
+                this.parentContextBinder!.containerDetached(this.contextBinder!.context!);
             }
 
             this.contextBinder!.dispose();
 
-            delete this.contextBinder;
-            delete this.contextInputValues;
-            delete this.contextInputsWithChangedValue;
+            this.contextBinder = undefined;
+            this.contextInputValues = undefined;
+            this.contextInputsWithChangedValue = undefined;
         }
     }
 }

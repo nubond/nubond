@@ -30,7 +30,7 @@
 
 | Decorator | Purpose |
 |-----------|---------|
-| `@AppRoot(...metadata)` | Bootstraps the application. Accepts (in any order) an element selector string or `Element` (defaults to `document.body` when omitted), a route template string starting with `/`, an `IGlobalConfig`, `$Template`/`$AdoptedStyle` registration arrays, and any Container/Component/Aspect/Transformer/Injectable dependencies used by the app. Unlike the soft-failing entity decorators, `@AppRoot` **throws** on conflicting metadata (multiple selectors, route templates, or global configs). |
+| `@AppRoot(...metadata)` | Bootstraps the application. Accepts (in any order) an element selector string or `Element` (defaults to `document.body` when omitted), a route template string starting with `/` **or** a custom router (any object implementing `IRouter` — see [Custom Router](#custom-router)), an `IGlobalConfig`, `$Template`/`$AdoptedStyle` registration arrays, and any Container/Component/Aspect/Transformer/Injectable dependencies used by the app. Unlike the soft-failing entity decorators, `@AppRoot` **throws** on conflicting metadata (multiple selectors, route templates / custom routers, or global configs). |
 | `@Container(templateOrTuple, ...metadata)` | Registers a container — a context-bound HTML template region without Shadow DOM isolation. `templateOrTuple` is either an HTML template / `ITemplateProvider`, or a `[name, templateOrProvider]` tuple. Additional metadata can include `IContextConfig`, `$Template`/`$AdoptedStyle` arrays, and entity dependencies. |
 | `@Component(templateOrTuple, ...metadata)` | Registers a web component with Shadow DOM. `templateOrTuple` is the HTML template (string / `ITemplateProvider`) or a `[name, templateOrProvider]` tuple. Additional metadata can include a style template, a `CustomElementConstructor`, an `IComponentContextConfig`, an `Array<string>` of adopted-style names, and entity dependencies. |
 | `@Aspect(styleOrTuple?, ...metadata)` | Registers an aspect — a reusable, element-level behavior/mixin attached via `nb-aspect`. Optional first argument is a style template (string / `ITemplateProvider`) or a `[name, styleOrProvider]` tuple. Additional metadata can include an `Array<string>` of adopted-style names and a `(style: string) => string` sanitizer (applied to URL-/provider-resolved CSS only — inline CSS is trusted; [§19](#19-sanitization--trusted-content)). |
@@ -55,7 +55,7 @@ Both are implemented via `Object.defineProperty` and can only be applied to simp
 | `$Injectable(target, singleton?, ...dependencies)` | Programmatic injectable registration. Also accepts an existing object instance — `$Injectable(instance)` registers it as a singleton under its constructor. |
 | `$Config(globalConfig)` | Applies global framework configuration. |
 | `$GlobalShadowRootConfig(shadowRootConfig)` | Sets the default `IShadowRootConfig` for components that have no per-component `shadowRootConfig`. Each `@Component` captures it when its decorator runs, so call it in a module evaluated **before** any component module — see [§5](#shadow-dom-configuration). |
-| `$Route(routeConfig)` | Configures routing programmatically. |
+| `$Route(routeConfigOrRouter)` | Configures routing programmatically — a route template string or a custom router (`IRouter`, see [Custom Router](#custom-router)). Call it before the first `@AppRoot`: the router is created once, and a later route configuration only logs `Router is already initialized`. |
 
 ---
 
@@ -798,12 +798,33 @@ export class App {
 
 ### Behavior Notes
 
-- **All Router methods throw** an `Error` when the router is not configured (no route template provided) — unlike the rest of the framework, which soft-fails via `Console.error`. Check `router.isConfigured` before use when routing is optional.
+- **All methods of the built-in `Router` throw** an `Error` when the router is not configured (no route template provided) — unlike the rest of the framework, which soft-fails via `Console.error`. Check `router.isConfigured` before use when routing is optional.
 - **`router.go()` is all-or-nothing.** If any value is rejected — a **container slot** (`[NAME]`) set to a name that is not a registered container, or a key that names no slot — the whole call is dropped: no slot changes, no callbacks fire, history is untouched. Each rejection is logged regardless of `showDebugInfo`: an unknown container with `Console.error`, an unknown key with `Console.warn`.
 - **Navigation from a state-change callback is queued.** `go()` / `goBack()` / `goForward()` / `goTo()` called from `onBeforeStateChange` or `onAfterStateChange` runs only after the current change has finished — after every `onAfterStateChange` subscriber got the current change — and `goBack()` / `goForward()` / `goTo()` work out their target at that point. If several are called, only the last one runs.
 - **URL input is lenient.** On startup and for hash links / typed URLs, a container slot naming an unknown container keeps its current value (logged), the other slots are applied, and the URL is rewritten to the canonical form.
 - A default container (`[NAME=DEFAULT]`) is not checked when the router is created, since containers may register later. If it is still unregistered when a rejected or prevented change has to roll back to it, the rollback fails and logs `Router is not able roll-back to previous change, check route configuration`; the rejected container name then stays in the slot and is applied by the next navigation.
 - When an earlier slot in the route template has no value, subsequent slot values are serialized as **query parameters** (`/?name=value`) instead of path segments. On startup, query parameters are matched to slot names case-insensitively.
+
+### Custom Router
+
+The built-in `Router` can be replaced by any object implementing the exported `IRouter` interface — the members of the [Router API](#router-api) table: `isConfigured`, `hashBased`, `path`, `state`, `go`, `goBack`, `goTo`, `goForward`, `onBeforeStateChange`, `onAfterStateChange`. Pass it to `@AppRoot` in place of the route template, or to `$Route(router)` before the first `@AppRoot`.
+
+```typescript
+class MemoryRouter implements IRouter {
+    // isConfigured, hashBased, path, state, go(), goBack(), goTo(), goForward(),
+    // onBeforeStateChange(), onAfterStateChange() — own state, no URL
+}
+
+@AppRoot('#app', new MemoryRouter(), Home, Settings)
+export class App {
+    constructor(public router: MemoryRouter) { }
+}
+```
+
+- **Recognition:** `@AppRoot` takes an object for a router when every `IRouter` member is present — own or inherited, so class instances with getters and methods on the prototype qualify — and each method member is a function.
+- **What it drives:** it is what `Environment.router` returns; `nb-container="%slot"` reads the slot from its `state` and re-renders from its `onAfterStateChange` callbacks; nb-event expressions get it as `router` while its `isConfigured` is `true`. A route slot bound to a router whose `isConfigured` is `false` logs `container is mapped to route, that is not configured.`
+- **Dependency injection:** it is registered under its **own class** — type the constructor parameter with that class (`router: MemoryRouter`). A `Router`-typed parameter is not resolved when a custom router is in place (by design).
+- **Behaviour is the router's own:** history, URL handling, guards and the "throws when not configured" rule above belong to the built-in `Router`; a custom router defines its own.
 
 ---
 
@@ -977,7 +998,7 @@ Built-in services available for constructor injection:
 | `EventDispatcher` | Dispatches events on the entity's root element: `dispatch(name, data?)` creates a `CustomEvent` named `name` **lowercased** (see the event-name note in [Event Handling](#event-handling)) with `data` as `detail`; `dispatch(event)` dispatches a pre-built `Event`. Returns `boolean` (`false` if a handler called `preventDefault()`). |
 | `ElementManipulations` | Facade for element DOM manipulation: properties (`get`/`set`), attributes (`has`/`get`/`getAll`/`set`/`remove`), styles (`has`/`get`/`getAll`/`set`/`remove`), classes (`has`/`getAll`/`add`/`remove`/`toggle`). |
 | `ElementSubscriptions` | Manages event subscriptions with `subscribe(eventName, callback, options?, debounce?)`. Each call registers its own listener and returns the unsubscribe function for that subscription only. |
-| `Router` | Route navigation and state management (see [Routing](#12-routing)). |
+| `Router` | Route navigation and state management (see [Routing](#12-routing)). A [custom router](#custom-router) replaces it and is injected by its own class instead. |
 
 ### Availability per Entity Type
 
@@ -991,7 +1012,7 @@ Built-in services are **not** universally injectable — each entity type receiv
 | `ElementSubscriptions` | — | — | ✓ | ✓ |
 | `Router` | ✓ | ✓ | ✓ | ✓ |
 
-`ElementManipulations` and `ElementSubscriptions` operate on the entity's root element and are only provided to components and aspects. `Router` is registered as a global injectable and resolves anywhere (its methods throw on use if routing is not configured — see [Routing](#12-routing)). User-defined `@Injectable` classes resolve in every entity type, including transformers.
+`ElementManipulations` and `ElementSubscriptions` operate on the entity's root element and are only provided to components and aspects. `Router` is registered as a global injectable and resolves anywhere (its methods throw on use if routing is not configured — see [Routing](#12-routing)); a [custom router](#custom-router) is registered the same way under its own class. User-defined `@Injectable` classes resolve in every entity type, including transformers.
 
 ---
 
@@ -1092,7 +1113,7 @@ export class RichTextComponent { }
 
 ```
 @AppRoot
-├── Router (hash or path-based navigation)
+├── Router (hash or path-based navigation, or a custom IRouter)
 ├── Environment (singleton global state)
 │   ├── Containers registry
 │   ├── Components registry

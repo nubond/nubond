@@ -15,9 +15,8 @@ describe('ContextBinder', () => {
         return new ContextBinder(null, null, 
             config,                    // contextConfig
             false,                     // pessimisticChangeDetectionStrategyDefault
-            () => 'nb-hidden',         // getHiddenClassName
+            false,                     // showDebugInfo
             undefined,                 // htmlSanitizer
-            () => false,               // getShowDebugInfo
             () => undefined,           // getDetectors
             () => undefined            // getEventers
         );
@@ -184,15 +183,19 @@ describe('ContextBinder', () => {
         });
     });
 
-    describe('getShowDebugInfo and getHiddenClassName', () => {
-        it('should expose getShowDebugInfo', () => {
+    describe('showDebugInfo', () => {
+        it('should expose the showDebugInfo value it was created with', () => {
             const binder = createBinder();
-            expect(binder.getShowDebugInfo()).toBe(false);
+            expect(binder.showDebugInfo).toBe(false);
+
+            const debugBinder = new ContextBinder(null, null, undefined, false, true, undefined, () => undefined, () => undefined);
+            expect(debugBinder.showDebugInfo).toBe(true);
         });
 
-        it('should expose getHiddenClassName', () => {
+        it('should no longer expose a hidden class name (the default one is read from Constants)', () => {
             const binder = createBinder();
-            expect(binder.getHiddenClassName()).toBe('nb-hidden');
+            expect('getHiddenClassName' in binder).toBe(false);
+            expect('hiddenClassName' in binder).toBe(false);
         });
     });
 
@@ -285,9 +288,8 @@ describe('ContextBinder', () => {
             return new ContextBinder(null, null, 
                 undefined,
                 false,
-                () => 'nb-hidden',
+                false,
                 undefined,
-                () => false,
                 () => new Set(detectors),
                 () => undefined
             );
@@ -516,9 +518,8 @@ describe('ContextBinder', () => {
             return new ContextBinder(null, null, 
                 undefined,
                 false,
-                () => 'nb-hidden',
+                false,
                 undefined,
-                () => false,
                 () => undefined,
                 () => eventers
             );
@@ -802,9 +803,8 @@ describe('ContextBinder', () => {
             return new ContextBinder(null, null, 
                 { pessimisticChangeDetectionStrategy: true } as any,
                 false,
-                () => 'nb-hidden',
+                false,
                 undefined,
-                () => false,
                 () => undefined,
                 () => undefined
             );
@@ -1007,9 +1007,8 @@ describe('ContextBinder', () => {
             const binder = new ContextBinder(null, null, 
                 { pessimisticChangeDetectionStrategy: false } as any,
                 false,
-                () => 'nb-hidden',
+                false,
                 globalSanitizer,
-                () => false,
                 () => undefined,
                 () => undefined
             );
@@ -1024,9 +1023,8 @@ describe('ContextBinder', () => {
             const binder = new ContextBinder(null, null, 
                 undefined,
                 false,
-                () => 'nb-hidden',
+                false,
                 globalSanitizer,
-                () => false,
                 () => undefined,
                 () => undefined
             );
@@ -1040,9 +1038,8 @@ describe('ContextBinder', () => {
             const binder = new RootContextBinder(
                 undefined,
                 false,
-                () => 'nb-hidden',
+                false,
                 globalSanitizer,
-                () => false,
                 () => undefined,
                 () => undefined
             );
@@ -1056,16 +1053,15 @@ describe('ContextBinder', () => {
             const binder = new ContextBinder(null, null, 
                 undefined,
                 false,
-                () => 'nb-hidden',
+                false,
                 globalSanitizer,
-                () => false,
                 () => undefined,
                 () => undefined
             );
 
             const root = document.createElement('div');
             const target = document.createElement('span');
-            target.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.HTML_HANDLER_ATTRIBUTE_NAME}`,
+            target.setAttribute(`${Constants.HANDLERS.HTML_HANDLER_ATTRIBUTE_NAME}`,
                                 'this.html');
             root.appendChild(target);
 
@@ -1079,9 +1075,8 @@ describe('ContextBinder', () => {
             const binder = new ContextBinder(null, null, 
                 { pessimisticChangeDetectionStrategy: false } as any,
                 false,
-                () => 'nb-hidden',
+                false,
                 undefined,
-                () => false,
                 () => undefined,
                 () => undefined
             );
@@ -1506,7 +1501,7 @@ describe('ContextBinder', () => {
             binder.bind(root, host, true, false);
             jest.runAllTimers();
 
-            const childBinder = ((binder as any).rootNElement as any)._children[0]._disposeSequence.find((handler: any) => handler instanceof Container).contextBinder;
+            const childBinder = ((binder as any).rootNElement as any).children[0]._disposeSequence.find((handler: any) => handler instanceof Container).contextBinder;
 
             return { binder, host, childContext, childBinder, root };
         }
@@ -1577,8 +1572,8 @@ describe('ContextBinder', () => {
         let errorSpy: jest.SpyInstance;
 
         function createPessimisticBinder(): ContextBinder {
-            return new ContextBinder(null, null, undefined, true, () => 'nb-hidden', undefined,
-                                     () => false, () => undefined, () => undefined);
+            return new ContextBinder(null, null, undefined, true, false, undefined,
+                                     () => undefined, () => undefined);
         }
 
         function build(view: any, pessimistic: boolean): { binder: ContextBinder; host: any; root: Element } {
@@ -1749,23 +1744,23 @@ describe('ContextBinder', () => {
         let errorSpy: jest.SpyInstance;
 
         function attr(name: string): string {
-            return `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${name}`;
+            return name;                                    // handler names are full (nb-…) already
         }
 
         function build(context: any, detectors: string[], execs: string[], values: string[] = [], pessimistic = false): { binder: ContextBinder; root: Element; passes: () => number } {
-            const binder = new ContextBinder(null, null, undefined, pessimistic, () => 'nb-hidden', undefined,
-                                             () => false, () => new Set(detectors), () => undefined);
+            const binder = new ContextBinder(null, null, undefined, pessimistic, false, undefined,
+                                             () => new Set(detectors), () => undefined);
             const root = document.createElement('div');
 
             for (const exec of execs) {
                 const el = document.createElement('div');
-                el.setAttribute(attr(Constants.EXEC_HANDLER_ATTRIBUTE_NAME), exec);
+                el.setAttribute(attr(Constants.HANDLERS.EXEC_HANDLER_ATTRIBUTE_NAME), exec);
                 root.appendChild(el);
             }
 
             for (const value of values) {
                 const el = document.createElement('span');
-                el.setAttribute(attr(Constants.VALUE_HANDLER_ATTRIBUTE_NAME), value);
+                el.setAttribute(attr(Constants.HANDLERS.VALUE_HANDLER_ATTRIBUTE_NAME), value);
                 root.appendChild(el);
             }
 
@@ -2291,9 +2286,8 @@ describe('RootContextBinder', () => {
         return new RootContextBinder(
             undefined,
             false,
-            () => 'nb-hidden',
+            false,
             undefined,
-            () => false,
             getDetectors ?? (() => undefined),
             getEventers ?? (() => undefined)
         );
@@ -2371,5 +2365,65 @@ describe('RootContextBinder', () => {
         // Should not throw
         expect(() => binder.detectChanges()).not.toThrow();
         document.body.removeChild(el);
+    });
+});
+
+// Whole-tree check of the Constants restructure: every handler family reads its attributes by the full
+// (prefix-dependent) name, in both modes. Each of these silently did nothing while Attributes still
+// prepended / stripped the prefix itself.
+describe('ContextBinder — handlers resolve their full attribute names', () => {
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+        jest.useFakeTimers();
+        errorSpy = jest.spyOn(Console, 'error').mockImplementation();
+    });
+
+    afterEach(() => {
+        errorSpy.mockRestore();
+        jest.useRealTimers();
+        Constants.changeCompliancyWithW3C(false);
+        document.body.innerHTML = '';
+    });
+
+    it.each([false, true])('binds repeat, prefixed repeat, event, var, prop, attr and if (W3C: %s)', (compliant) => {
+        Constants.changeCompliancyWithW3C(compliant);
+        const H = Constants.HANDLERS, M = Constants.META_VALUE_SEPARATOR;
+
+        const root = document.createElement('div');
+        root.innerHTML = `
+            <ul><li ${H.REPEAT_HANDLER_ATTRIBUTE_NAME}="this.items" ${H.VALUE_HANDLER_ATTRIBUTE_NAME}="item.n + index"></li></ul>
+            <ol><li ${H.REPEAT_HANDLER_ATTRIBUTE_NAME}${M}row="this.items" ${H.VALUE_HANDLER_ATTRIBUTE_NAME}="rowItem.n + rowIndex"></li></ol>
+            <button ${H.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${M}click="this.click()" ${H.VARIABLE_HANDLER_PREFIX_NAME}${M}x="'v'"
+                    ${H.PROPERTY_HANDLER_ATTRIBUTE_NAME}${M}title="x" ${H.ATTRIBUTE_HANDLER_ATTRIBUTE_NAME}${M}data-q="'q'"></button>
+            <p ${H.IF_HANDLER_ATTRIBUTE_NAME}="this.show"></p>`;
+        document.body.appendChild(root);
+
+        const context = { items: [{ n: 'a' }, { n: 'b' }], clicks: 0, show: true, click() { this.clicks++; } };
+        const binder = new ContextBinder(null, null, undefined, false, false, undefined, () => undefined, () => undefined);
+        binder.bind(root, context, true, false);
+        jest.runAllTimers();
+
+        expect(Array.from(root.querySelectorAll('ul li')).map(el => el.textContent)).toEqual(['a0', 'b1']);
+        expect(Array.from(root.querySelectorAll('ol li')).map(el => el.textContent)).toEqual(['a0', 'b1']);
+
+        const button = root.querySelector('button')!;
+        expect(button.title).toBe('v');
+        expect(button.getAttribute('data-q')).toBe('q');
+        button.click();
+        jest.runAllTimers();
+        expect(context.clicks).toBe(1);
+
+        const p = root.querySelector('p')!;
+        expect(p.hasAttribute(H.getReadyAttributeName(H.IF_HANDLER_ATTRIBUTE_NAME))).toBe(true);
+        expect(root.querySelector('ul li')!.hasAttribute(H.getReadyAttributeName(H.REPEAT_HANDLER_ATTRIBUTE_NAME))).toBe(true);
+
+        context.show = false;
+        binder.detectChanges();
+        jest.runAllTimers();
+        expect(p.classList.contains(Constants.STYLES.DEFAULT_HIDE_CLASS_NAME)).toBe(true);
+
+        expect(errorSpy).not.toHaveBeenCalled();
+        binder.dispose();
     });
 });

@@ -50,14 +50,14 @@ export class Switch extends InitializableBase implements IHandler<IExpressionDet
     }
 
     constructor(nativeElement: Element, attributes: Attributes, classes: Classes) {
-        super(nativeElement, Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+        super(nativeElement, Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME);
         
-        const expression = <string | undefined>attributes.get(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this._classes = classes;
             
             this.hasNExpression = true;
-            this.nExpression = new ExpressionDetails(expression!);
+            this.nExpression = ExpressionDetails.create(expression!);
 
             this._cases = [];
         } else {
@@ -69,7 +69,7 @@ export class Switch extends InitializableBase implements IHandler<IExpressionDet
                 executeExpression: (expression: string | null | undefined, 
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
-            this.processExpressionExecution(this.nExpression!, Constants.SWITCH_HANDLER_ATTRIBUTE_NAME,
+            this.processExpressionExecution(this.nExpression!, Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME,
                                             expression => executeExpression(expression, executionParams), 
                                             data => this.value = Helpers.isPrimitive(data) && 
                                                                  (!Helpers.isNumber(data) || Helpers.isNumber(data) && !isNaN(data))
@@ -114,9 +114,9 @@ export class Switch extends InitializableBase implements IHandler<IExpressionDet
 
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.show(Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide(Constants.SWITCH_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.hide(Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;

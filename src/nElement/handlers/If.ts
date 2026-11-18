@@ -39,14 +39,14 @@ export class If extends InitializableBase implements IHandler<IExpressionDetails
     }
 
     constructor(nativeElement: Element, attributes: Attributes, classes: Classes) {
-        super(nativeElement, Constants.IF_HANDLER_ATTRIBUTE_NAME);
+        super(nativeElement, Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
         
-        const expression = <string | undefined>attributes.get(Constants.IF_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this._classes = classes;
 
             this.hasNExpression = true;
-            this.nExpression = new ExpressionDetails(expression!);
+            this.nExpression = ExpressionDetails.create(expression!);
         } else {
             this.hasNExpression = false;
         }
@@ -56,7 +56,7 @@ export class If extends InitializableBase implements IHandler<IExpressionDetails
                 executeExpression: (expression: string | null | undefined, 
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
-            this.processExpressionExecution(this.nExpression!, Constants.IF_HANDLER_ATTRIBUTE_NAME,
+            this.processExpressionExecution(this.nExpression!, Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME,
                                             expression => executeExpression(expression, executionParams), 
                                             data => this.isVisible = !!data);
         }
@@ -75,9 +75,9 @@ export class If extends InitializableBase implements IHandler<IExpressionDetails
 
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.show(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide(Constants.IF_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.hide(Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;

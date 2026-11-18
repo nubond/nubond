@@ -21,10 +21,10 @@ export class Exec extends Base implements IHandler<IExpressionDetails> {
     constructor(attributes: Attributes) {
         super();
         
-        const expression = <string | undefined>attributes.get(Constants.EXEC_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.EXEC_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this.hasNExpression = true;
-            this.nExpression = new ExpressionDetails(expression!);
+            this.nExpression = ExpressionDetails.create(expression!);
         } else {
             this.hasNExpression = false;
         }
@@ -34,7 +34,7 @@ export class Exec extends Base implements IHandler<IExpressionDetails> {
                 executeExpression: (expression: string | null | undefined, 
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
-            this.processExpressionExecution(this.nExpression!, Constants.EXEC_HANDLER_ATTRIBUTE_NAME, 
+            this.processExpressionExecution(this.nExpression!, Constants.HANDLERS.EXEC_HANDLER_ATTRIBUTE_NAME, 
                                             expression => executeExpression(expression, executionParams),
                                             data => {});
         }

@@ -4,15 +4,15 @@ import { Classes } from '../../../src/nElement/handlers/Classes';
 import { Constants } from '../../../src/Constants';
 
 describe('If handler', () => {
-    const hideClassName = 'nb-hidden';
+    const hideClassName = Constants.STYLES.DEFAULT_HIDE_CLASS_NAME;   // Classes reads it from Constants (no getter is injected any more)
 
     function createElements(expression?: string): { el: Element; attrs: Attributes; classes: Classes } {
         const el = document.createElement('div');
         if (expression !== undefined) {
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IF_HANDLER_ATTRIBUTE_NAME}`, expression);
+            el.setAttribute(`${Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME}`, expression);
         }
-        const attrs = new Attributes(el, () => false);
-        const classes = new Classes(el, attrs, () => hideClassName);
+        const attrs = new Attributes(el, false);
+        const classes = new Classes(el, attrs);
         return { el, attrs, classes };
     }
 
@@ -115,7 +115,7 @@ describe('If handler', () => {
     it('should set the ready attribute directly on the element on first commit', () => {
         const { el, attrs, classes } = createElements('ctx.show');
         const handler = new If(el, attrs, classes);
-        const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IF_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+        const readyAttr = `${Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
 
         handler.bind(undefined, () => false);
         expect(el.hasAttribute(readyAttr)).toBe(false);
@@ -130,7 +130,7 @@ describe('If handler', () => {
     it('should not re-add the ready attribute on later commits once it was removed', () => {
         const { el, attrs, classes } = createElements('ctx.show');
         const handler = new If(el, attrs, classes);
-        const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IF_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+        const readyAttr = `${Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
 
         handler.bind(undefined, () => false);
         handler.commit();

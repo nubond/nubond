@@ -104,14 +104,13 @@ class TemplateEntityWithNameMetaData extends TemplateEntityMetaData {
             this._validated = true;
 
             const lowerName = this.name.toLowerCase();
-            const attributeName = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.TEMPLATE_HANDLER_ATTRIBUTE_NAME}`;
-            const templates = this.htmlTemplate!.content.querySelectorAll(`[${attributeName}]`);
+            const templates = this.htmlTemplate!.content.querySelectorAll(`[${Constants.HANDLERS.TEMPLATE_HANDLER_ATTRIBUTE_NAME}]`);
             if (templates.length > 0) {
                 for (const el of Array.from(templates)) {
-                    const templateAttribute = el.attributes.getNamedItem(attributeName);
+                    const templateAttribute = el.attributes.getNamedItem(Constants.HANDLERS.TEMPLATE_HANDLER_ATTRIBUTE_NAME);
                     if (templateAttribute !== null) {
                         const trimmedAttributeValue = templateAttribute.value.trim();
-                        if (trimmedAttributeValue.startsWith(Constants.CONSTANT_BIND_PREFIX_CHAR) && (trimmedAttributeValue.substring(1).toLowerCase() === lowerName)) {
+                        if (trimmedAttributeValue.startsWith(Constants.EXPRESSIONS.CONSTANT_BIND_PREFIX_CHAR) && (trimmedAttributeValue.substring(1).toLowerCase() === lowerName)) {
                             const errorMessage = `Invalid template '${this.name}': html templates cannot reference themselves.`;
 
                             this.setHtmlTemplate(this._getShowDebugInfo() ? errorMessage : '', true);

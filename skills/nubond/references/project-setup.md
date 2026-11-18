@@ -129,7 +129,7 @@ Known problems in the `create-nubond` 1.0.11 templates:
     "lib": ["dom", "ESNext"],
     "experimentalDecorators": true,     // REQUIRED
     "emitDecoratorMetadata": true,      // REQUIRED — DI reads design:paramtypes
-    "module": "commonjs",
+    "module": "ESNext",
     "rootDir": "./src",
     "paths": { "~*": ["./*"], "@shared/*": ["./src/shared/*"] },
     "types": ["node"],
@@ -218,8 +218,11 @@ error. **Never name a component `index` or `app`.**
 
 - `ref:` forces Parcel to reference an asset rather than inline it:
   `<link rel="stylesheet" href="ref:animate.min.css">`
-- Combine with `npm:` for `node_modules` assets:
-  `<link rel="stylesheet" href="ref:npm:@picocss/pico/css/pico.min.css">`
+- For `node_modules` assets use the `~` (project root) path:
+  `<link rel="stylesheet" href="ref:~/node_modules/bootstrap/dist/css/bootstrap-grid.min.css">`.
+  `ref:npm:<pkg>/…` also resolves, but on Node 26 Parcel 2.16 fails the build with
+  `Invalid port in url` for an **unscoped** package (Node's legacy `url.parse` reads `npm:bootstrap` as
+  host:port; `ref:npm:@scope/…` happens to survive).
 
 ### `parcel.d.ts`
 
@@ -256,6 +259,48 @@ including route slot containers declared directly in `index.html`.
 3. Watch the browser console — nuBond prefixes every message with `nuBond: `.
 4. `npm run build` for production. Configure the minifier to **preserve class names**: container,
    component, aspect and transformer names are derived from them.
+
+## Unit tests
+
+The scaffolded templates ship no test setup. Importing `nubond` runs its initializers at once — they
+create and adopt the built-in stylesheets — so any test that imports it under jsdom needs a setup file
+(every version, 1.0.9 included):
+
+```js
+// test-setup.js — Jest `setupFiles` / Vitest `test.setupFiles`
+if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {           // else: "replaceSync is not a function"
+    CSSStyleSheet.prototype.replaceSync = function () {};
+}
+if (!Array.isArray(document.adoptedStyleSheets)) {                        // else: "reading 'push'" on import
+    Object.defineProperty(Document.prototype, 'adoptedStyleSheets', { value: [], writable: true, configurable: true });
+}
+globalThis.structuredClone ??= value => JSON.parse(JSON.stringify(value));  // older jsdom; nb-in clones inputs
+```
+
+**Package format.** Up to 1.0.16 the package is CommonJS and Jest loads it as is. **Releases after
+1.0.16 are ES modules** (`import`/`export`, extensionless relative imports, no `"type"` field) — check
+`node_modules/nubond/src/index.js`. Bundlers and Vitest (`environment: 'jsdom'`) handle that without
+configuration; Jest does not compile `node_modules` and fails with
+`SyntaxError: Cannot use import statement outside a module`. It needs **both** of these — either one
+alone still fails:
+
+```js
+// jest.config.js
+module.exports = {
+    testEnvironment: 'jsdom',
+    transform: { '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }] },   // match .js too
+    transformIgnorePatterns: ['/node_modules/(?!nubond/)'],                                          // compile nubond
+    setupFiles: ['<rootDir>/test-setup.js'],
+};
+```
+
+```jsonc
+// tsconfig.spec.json — keeps the app's decorator options, lets ts-jest compile nubond's .js
+{ "extends": "./tsconfig.json", "compilerOptions": { "rootDir": ".", "allowJs": true, "types": ["jest"] } }
+```
+
+Do not add `"type": "module"` to the installed package to work around this — its imports have no file
+extensions, so Node / webpack resolution of them breaks.
 
 ## Ecosystem packages
 

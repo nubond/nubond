@@ -219,7 +219,7 @@ subclasses — redeclare it on the concrete context.
 | `$Injectable(target, singleton?, ...deps)` | Programmatic registration. `$Injectable(instance)` registers an existing object as a singleton under its constructor — the way to inject third-party classes. |
 | `$Config(globalConfig)` | Applies global configuration (before any app root). |
 | `$GlobalShadowRootConfig(shadowRootConfig)` | Sets the default `IShadowRootConfig` for components without their own. Captured by each `@Component` at decoration — call it before any component module is imported. |
-| `$Route(routeConfig)` | Configures routing (before any app root). |
+| `$Route(routeConfig)` | Configures routing (before any app root). From 1.0.17 it also accepts a custom router — any object implementing the exported `IRouter` (as does `@AppRoot` in place of the route template); it is injected by its own class, not as `Router`. |
 
 Because `$Template`/`$AdoptedStyle` return the name, they compose neatly inside a decorator's
 `Array<string>` slot — registering and referencing in one expression:

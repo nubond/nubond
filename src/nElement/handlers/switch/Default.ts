@@ -44,7 +44,7 @@ export class Default extends Base implements IHandler<IExpressionDetails>, IDisp
     constructor(nativeElement: Element, attributes: Attributes, classes: Classes, controllingSwitch: Switch | undefined) {
         super();
         
-        const expression = <string | undefined>attributes.get(Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             if (expression!.length === 0) {
                 if (!Helpers.isUndefined(controllingSwitch) && controllingSwitch!.hasNExpression) {
@@ -57,17 +57,17 @@ export class Default extends Base implements IHandler<IExpressionDetails>, IDisp
                     } catch {
                         this.hasNExpression = false;
 
-                        Console.error(nativeElement, `invalid operation: there should be only one ${Constants.DEFAULT_PREFIX}-default for one ${Constants.DEFAULT_PREFIX}-switch`);
+                        Console.error(nativeElement, `invalid operation: there should be only one ${Constants.HANDLERS.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME} for one ${Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME}`);
                     }
                 } else {
                     this.hasNExpression = false;
 
-                    Console.error(nativeElement, `invalid operation: ${Constants.DEFAULT_PREFIX}-default must have direct ${Constants.DEFAULT_PREFIX}-switch ${Constants.DISPLAY_NAME} parent`);
+                    Console.error(nativeElement, `invalid operation: ${Constants.HANDLERS.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME} must have direct ${Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME} ${Constants.DISPLAY_NAME} parent`);
                 }
             } else {
                 this.hasNExpression = false;
 
-                Console.error(nativeElement, `invalid operation: ${Constants.DEFAULT_PREFIX}-default can't have value`);
+                Console.error(nativeElement, `invalid operation: ${Constants.HANDLERS.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME} can't have value`);
             }
         } else {
             this.hasNExpression = false;
@@ -86,9 +86,9 @@ export class Default extends Base implements IHandler<IExpressionDetails>, IDisp
         if (this._isDirty) {
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show(Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.show(Constants.HANDLERS.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide(Constants.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.hide(Constants.HANDLERS.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;

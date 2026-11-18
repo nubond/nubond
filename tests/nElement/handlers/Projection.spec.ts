@@ -4,6 +4,7 @@ import { ContextBinder } from '../../../src/ContextBinder';
 import { Environment } from '../../../src/Environment';
 import { Constants } from '../../../src/Constants';
 import { Console } from '../../../src/Console';
+import { IContextBinder } from '../../../src/interfaces/contextBinders/IContextBinder';
 
 // L-29 / L-35: projected content is bound by the context that AUTHORED it (the outer context), not by the
 // container / component that receives it. Projected clones carry the system marker nb-encapsulated; the tree
@@ -17,9 +18,12 @@ if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
 let uid = 0;
 const name = (base: string) => `${base}${++uid}`;
 
+// the handler now calls contextBinder.detectChanges() itself (it used to get a requestDetectChanges closure)
+const binderWith = (detectChanges: () => void): IContextBinder => <IContextBinder><unknown>{ detectChanges };
+
 function createBinder(pessimistic = false): ContextBinder {
-    return new ContextBinder(null, null, undefined, pessimistic, () => 'nb-hidden', undefined,
-                             () => false, () => undefined, () => undefined);
+    return new ContextBinder(null, null, undefined, pessimistic, false, undefined,
+                             () => undefined, () => undefined);
 }
 
 function render(html: string, host: any = { outer: 'OUTER' }, pessimistic = false) {
@@ -40,7 +44,7 @@ function texts(root: ParentNode, selector: string): Array<string> {
 
 /** children of the first NElement under the binder root, i.e. of the outer host element */
 function hostChildren(binder: ContextBinder): number {
-    return (binder as any).rootNElement._children[0]._children.length;
+    return (binder as any).rootNElement.children[0].children.length;
 }
 
 function lifecycleCounter() {
@@ -55,7 +59,7 @@ describe('Projection handler (unit)', () => {
         for (const [key, value] of Object.entries(attrs)) {
             el.setAttribute(key, value);
         }
-        return new Attributes(el, () => false);
+        return new Attributes(el, false);
     }
 
     function immediateParent(visible = true, parent: any = null) {
@@ -71,33 +75,38 @@ describe('Projection handler (unit)', () => {
     }
 
     it('is inactive without an immediate parent (element was not re-parented)', () => {
-        const handler = new Projection(undefined, attributesFor({ 'nb-projection': '' }), jest.fn(), jest.fn());
+        const requestDetect = jest.fn();
+        const handler = new Projection(undefined, attributesFor({ 'nb-projection': '' }), binderWith(requestDetect), jest.fn());
 
         expect(handler.hasNExpression).toBe(false);
         expect(handler.isVisible).toBe(true);
-        expect(() => handler.construct()).not.toThrow();
+        expect(requestDetect).not.toHaveBeenCalled();
+        expect(() => handler.dispose()).not.toThrow();
     });
 
     it('is inactive without nb-projection', () => {
-        const handler = new Projection(immediateParent(), attributesFor({ 'nb-value': 'this.x' }), jest.fn(), jest.fn());
+        const parent = immediateParent();
+        const requestDetect = jest.fn();
+        const handler = new Projection(parent, attributesFor({ 'nb-value': 'this.x' }), binderWith(requestDetect), jest.fn());
 
         expect(handler.hasNExpression).toBe(false);
+        expect(parent.onDispose).not.toHaveBeenCalled();
+        expect(requestDetect).not.toHaveBeenCalled();
     });
 
     it.each([[''], ['slot']])('is active for nb-projection="%s" with an immediate parent (default and named slot)', (value) => {
-        const handler = new Projection(immediateParent(), attributesFor({ 'nb-projection': value }), jest.fn(), jest.fn());
+        const handler = new Projection(immediateParent(), attributesFor({ 'nb-projection': value }), binderWith(jest.fn()), jest.fn());
 
         expect(handler.hasNExpression).toBe(true);
     });
 
-    it('construct() subscribes to the immediate parent dispose and requests one detection', () => {
+    it('the constructor subscribes to the immediate parent dispose and requests one detection (no separate construct() step)', () => {
         const parent = immediateParent();
         const requestDetect = jest.fn();
         const disposeNElement = jest.fn();
-        const handler = new Projection(parent, attributesFor({ 'nb-projection': '' }), requestDetect, disposeNElement);
+        const handler = new Projection(parent, attributesFor({ 'nb-projection': '' }), binderWith(requestDetect), disposeNElement);
 
-        handler.construct();
-
+        expect((handler as any).construct).toBeUndefined();
         expect(parent.onDispose).toHaveBeenCalledTimes(1);
         expect(requestDetect).toHaveBeenCalledTimes(1);
 
@@ -107,9 +116,8 @@ describe('Projection handler (unit)', () => {
 
     it('dispose() unsubscribes from the immediate parent', () => {
         const parent = immediateParent();
-        const handler = new Projection(parent, attributesFor({ 'nb-projection': '' }), jest.fn(), jest.fn());
+        const handler = new Projection(parent, attributesFor({ 'nb-projection': '' }), binderWith(jest.fn()), jest.fn());
 
-        handler.construct();
         handler.dispose();
         handler.dispose();
 
@@ -119,7 +127,7 @@ describe('Projection handler (unit)', () => {
     it('isVisible walks the whole inner parent chain', () => {
         const grandParent = immediateParent(false);
         const parent = immediateParent(true, grandParent);
-        const handler = new Projection(parent, attributesFor({ 'nb-projection': '' }), jest.fn(), jest.fn());
+        const handler = new Projection(parent, attributesFor({ 'nb-projection': '' }), binderWith(jest.fn()), jest.fn());
 
         expect(handler.isVisible).toBe(false);
 

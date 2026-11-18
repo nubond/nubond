@@ -11,9 +11,8 @@ describe('TreeBuilder', () => {
         return new ContextBinder(null, null, 
             undefined,
             false,
-            () => 'nb-hidden',
+            false,
             undefined,
-            () => false,
             () => undefined,
             () => undefined
         );
@@ -105,8 +104,8 @@ describe('TreeBuilder', () => {
             el.innerHTML = html;
             const binder = createContextBinder();
             binder.bind(el, context, false, false);
-            const grandChildrenCounts = (((binder as any).rootNElement as any)._children as Array<any>)
-                                            .map(child => child._children.length);
+            const grandChildrenCounts = (((binder as any).rootNElement as any).children as Array<any>)
+                                            .map(child => child.children.length);
             return { binder, el, grandChildrenCounts };
         }
 

@@ -3,8 +3,11 @@ import { IAspectContext } from '../../interfaces/contexts/IAspectContext';
 import { IAspectBindings } from '../../interfaces/nElement/bindings/IAspectBindings';
 
 import { IHandler } from '../../interfaces/nElement/IHandler';
-import { IConstructable } from '../../interfaces/nElement/IConstructable';
+import { IElementManipulationsConsumer } from '../../interfaces/nElement/IElementManipulationsConsumer';
+import { IElementSubscriptionsConsumer } from '../../interfaces/nElement/IElementSubscriptionsConsumer';
 import { IDisposable } from '../../interfaces/IDisposable';
+
+import { IContextBinder } from '../../interfaces/contextBinders/IContextBinder';
 
 import { Base } from './base/Base';
 
@@ -35,21 +38,17 @@ class AspectBindings implements IAspectBindings {
     }
 }
 
-export class Aspects extends Base implements IHandler<Map<string, IAspectBindings>>, IDisposable, IConstructable {
+export class Aspects extends Base implements IHandler<Map<string, IAspectBindings>>, IElementManipulationsConsumer, IElementSubscriptionsConsumer, IDisposable {
     private static readonly _adoptedCssStyleSheetsTracker = new Map<Document | ShadowRoot, Map<CSSStyleSheet, number>>();
-
-    private _nativeElement: Element | undefined;
-    private _attributes: Attributes | undefined;
-    private _getElementManipulations: (() => ElementManipulations) | undefined;
-    private _getElementSubscriptions: (() => ElementSubscriptions) | undefined;
-    private _getEventDispatcher: (() => EventDispatcher) | undefined;
-    private _requestDetectChanges: (() => void) | undefined;
 
     private _isDisposed = false;
 
     private _adoptedStylesRoot: Document | ShadowRoot | undefined;
     private _adoptedCssStyleSheet: Array<CSSStyleSheet> | undefined;
-    
+
+    public readonly hasElementManipulations: boolean;
+    public readonly hasElementSubscriptions: boolean;
+
     public readonly nExpression: Map<string, IAspectBindings> | undefined;
     public readonly hasNExpression: boolean;
 
@@ -59,56 +58,42 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
     }
 
     constructor(nativeElement: Element, attributes: Attributes,
-                getElementManipulations: () => ElementManipulations, getElementSubscriptions: () => ElementSubscriptions, getEventDispatcher: () => EventDispatcher,
-                requestDetectChanges: () => void) {
+                contextBinder: IContextBinder,
+                getElementManipulations: () => ElementManipulations, getElementSubscriptions: () => ElementSubscriptions, 
+                getEventDispatcher: () => EventDispatcher) {
         super();
         
-        if (attributes.has(Constants.ASPECT_HANDLER_PREFIX_NAME, true, true)) {
+        if (attributes.has(Constants.HANDLERS.ASPECT_HANDLER_PREFIX_NAME, true, true)) {
             this.hasNExpression = true;
             this.nExpression = new Map<string, IAspectBindings>();
-
-            this._nativeElement = nativeElement;
-            this._attributes = attributes;
-            this._getElementManipulations = getElementManipulations;
-            this._getElementSubscriptions = getElementSubscriptions;
-            this._getEventDispatcher = getEventDispatcher;
-            this._requestDetectChanges = requestDetectChanges;
-        } else {
-            this.hasNExpression = false;
-        }
-    }
-
-    public construct(): void {
-        if (this.hasNExpression) {
-            const nativeElement = this._nativeElement!;
-            const attributes = this._attributes!;
-            const getElementManipulations = this._getElementManipulations!;
-            const getElementSubscriptions = this._getElementSubscriptions!;
-            const getEventDispatcher = this._getEventDispatcher!;
-            const requestDetectChanges = this._requestDetectChanges!;
-
-            delete this._nativeElement;
-            delete this._attributes;
-            delete this._getElementManipulations;
-            delete this._getElementSubscriptions;
-            delete this._getEventDispatcher;
-            delete this._requestDetectChanges;
+            
+            const handlerNameWithMeta = Constants.HANDLERS.ASPECT_HANDLER_PREFIX_NAME + Constants.META_VALUE_SEPARATOR;
 
             let root: Document | ShadowRoot | undefined;
+            let hasElementManipulations = false;
+            let hasElementSubscriptions = false;
 
-            for (const [key, value] of attributes.getAll(Constants.ASPECT_HANDLER_PREFIX_NAME, true)) {
-                const aspectName = key.replace(Constants.ASPECT_HANDLER_PREFIX_NAME + Constants.META_VALUE_SEPARATOR, '');
+            for (const [key, value] of attributes.getAll(Constants.HANDLERS.ASPECT_HANDLER_PREFIX_NAME, true)) {
+                const aspectName = key.replace(handlerNameWithMeta, '');
                 if (aspectName.length > 0) {
                     if (Environment.aspects.has(aspectName)) {//TODO: consider migration to bind or commit and on first bind\commit construct aspect
                         if (!this.nExpression!.has(aspectName)) {
+                            if (!hasElementManipulations || !hasElementSubscriptions ) {
+                                const dependencies = Environment.aspects.getDependencies(aspectName);
+                                if (!Helpers.isUndefined(dependencies)) {
+                                    hasElementManipulations = hasElementManipulations || dependencies!.has(ElementManipulations);
+                                    hasElementSubscriptions = hasElementSubscriptions || dependencies!.has(ElementSubscriptions);
+                                }
+                            }
+
                             const aspectMetaData = Environment.aspects.instantiate(aspectName, nativeElement, 
-                                                                                   new ChangeDetector(() => requestDetectChanges()),
+                                                                                   new ChangeDetector(() => contextBinder.detectChanges()),
                                                                                    getElementManipulations(),
                                                                                    getElementSubscriptions(), 
                                                                                    getEventDispatcher());
                             if (!Helpers.isUndefined(aspectMetaData)) {
                                 const [aspect, hasStyles] = aspectMetaData!;
-                                this.nExpression!.set(aspectName, new AspectBindings(Helpers.isNotEmptyString(value) ? new ExpressionDetails(value!) : undefined, 
+                                this.nExpression!.set(aspectName, new AspectBindings(Helpers.isNotEmptyString(value) ? ExpressionDetails.create(value!) : undefined, 
                                                                                      <IAspectContext>aspect));
 
                                 if (hasStyles) {
@@ -204,6 +189,13 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
                     Console.error(nativeElement, `aspect name can't be empty`);
                 }
             }
+
+            this.hasElementManipulations = hasElementManipulations;
+            this.hasElementSubscriptions = hasElementSubscriptions;
+        } else {
+            this.hasNExpression = false;
+            this.hasElementManipulations = false;
+            this.hasElementSubscriptions = false;
         }
     }
 
@@ -213,7 +205,7 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
         if (this.hasNExpression) {
             for (const [key, value] of this.nExpression!) {
                 if (!Helpers.isUndefined(value.nExpression)) {
-                    this.processExpressionExecution(value.nExpression!, `${Constants.ASPECT_HANDLER_PREFIX_NAME}:${key}`,
+                    this.processExpressionExecution(value.nExpression!, `${Constants.HANDLERS.ASPECT_HANDLER_PREFIX_NAME}:${key}`,
                                                     expression => executeExpression(expression, executionParams), 
                                                     data => this.set(key, data));
                 }
@@ -275,8 +267,8 @@ export class Aspects extends Base implements IHandler<Map<string, IAspectBinding
                     }
                 }
 
-                delete this._adoptedStylesRoot;
-                delete this._adoptedCssStyleSheet;
+                this._adoptedStylesRoot = undefined;
+                this._adoptedCssStyleSheet = undefined;
             } finally {
                 const disposeErrors: Array<string> = [];
                 

@@ -1,6 +1,7 @@
 import { IExpressionDetails } from '../../interfaces/expression/IExpressionDetails';
 
 import { IHandler } from '../../interfaces/nElement/IHandler';
+import { IElementManipulationsConsumer } from '../../interfaces/nElement/IElementManipulationsConsumer';
 
 import { Base } from './base/Base';
 
@@ -14,13 +15,15 @@ import { ElementManipulations } from '../../models/injections/ElementManipulatio
 import { Helpers } from '../../Helpers';
 import { Constants } from '../../Constants';
 
-export class Bound extends Base implements IHandler<IExpressionDetails> {
+export class Bound extends Base implements IHandler<IExpressionDetails | undefined>, IElementManipulationsConsumer {
     private _isFirstBind = true;
 
     private readonly _nativeElement: Element | undefined;
     private readonly _getElementManipulations: (() => ElementManipulations) | undefined;
 
-    public readonly nExpression: IExpressionDetails | undefined;
+    public readonly hasElementManipulations: boolean;
+
+    public nExpression: IExpressionDetails | undefined;
     public readonly hasNExpression: boolean;
     
     public readonly isDirty = false;
@@ -28,17 +31,22 @@ export class Bound extends Base implements IHandler<IExpressionDetails> {
     constructor(nativeElement: Element, attributes: Attributes, getElementManipulations: () => ElementManipulations) {
         super();
         
-        const expression = <string | undefined>attributes.get(Constants.BOUND_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.BOUND_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this._nativeElement = nativeElement;
-            this._getElementManipulations = getElementManipulations;
 
             this.hasNExpression = true;
-            this.nExpression = new ExpressionDetails((expression!.startsWith(Constants.SINGLE_BIND_PREFIX_CHAR) || expression!.startsWith(Constants.CONSTANT_BIND_PREFIX_CHAR)) 
+            this.nExpression = ExpressionDetails.create((expression!.startsWith(Constants.EXPRESSIONS.SINGLE_BIND_PREFIX_CHAR) || expression!.startsWith(Constants.EXPRESSIONS.CONSTANT_BIND_PREFIX_CHAR)) 
                                                                                         ? expression! 
-                                                                                        : `${Constants.SINGLE_BIND_PREFIX_CHAR}${expression!}`);
+                                                                                        : `${Constants.EXPRESSIONS.SINGLE_BIND_PREFIX_CHAR}${expression!}`);
+            this.hasElementManipulations = Constants.EXPRESSIONS.ELEMENT_EXECUTION_PARAM_REFERENCE_REGEXP.test(this.nExpression.expression);
+
+            if (this.hasElementManipulations) {
+                this._getElementManipulations = getElementManipulations;
+            }
         } else {
             this.hasNExpression = false;
+            this.hasElementManipulations = false;
         }
     }
     
@@ -48,11 +56,13 @@ export class Bound extends Base implements IHandler<IExpressionDetails> {
         if (this.hasNExpression && this._isFirstBind) {
             this._isFirstBind = false;
 
-            const extendedExecParams = ExpressionExecParamsHelper.createOrExtendBoundExecParams(this._nativeElement!, this._getElementManipulations!(), 
+            const extendedExecParams = ExpressionExecParamsHelper.createOrExtendBoundExecParams(this._nativeElement!, this._getElementManipulations?.(), 
                                                                                                 executionParams);
-            this.processExpressionExecution(this.nExpression!, Constants.BOUND_HANDLER_ATTRIBUTE_NAME, 
+            this.processExpressionExecution(this.nExpression!, Constants.HANDLERS.BOUND_HANDLER_ATTRIBUTE_NAME, 
                                             expression => executeExpression(expression, extendedExecParams),
                                             data => {});
+
+            this.nExpression = undefined;
         }
 
         return executionParams;

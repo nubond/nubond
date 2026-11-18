@@ -11,7 +11,6 @@ import { IContextBinder } from '../interfaces/contextBinders/IContextBinder';
 import { CallBackEvent } from '../CallBackEvent'; 
 
 import { ExecutionParams } from '../expression/ExpressionExecParamsHelper';
-import { ExpressionExecutor } from '../expression/ExpressionExecutor';
 
 import { Html } from './handlers/Html';
 import { Value } from './handlers/Value';
@@ -45,16 +44,18 @@ import { Console  } from '../Console';
 import { Constants } from '../Constants';
 
 export class NTreeElement implements INTreeElement {
-    protected readonly _childrenToRemove: Array<INTreeElement> = [];
-    protected readonly _children: Array<INTreeElement> = [];
+    private static readonly EMPTY_ARRAY = <Array<INTreeElement>>Object.freeze(new Array<INTreeElement>(0));
 
-    protected _onDisposeCallBackEvent: CallBackEvent<() => void> | undefined;
+    private _onDisposeCallBackEvent: CallBackEvent<() => void> | undefined;
+
+    private _childrenToRemove: Array<INTreeElement> | undefined;
+    protected children: Array<INTreeElement> = NTreeElement.EMPTY_ARRAY;
 
     public readonly isSubTreeHandled: boolean = false;
 
     protected _isStable = true;
     public get isStable(): boolean {
-        return this._isStable && this._children.every(el => el.isStable);
+        return this._isStable && this.children.every(el => el.isStable);
     }
 
     public get isVisible(): boolean {
@@ -68,22 +69,30 @@ export class NTreeElement implements INTreeElement {
     }
 
     public addChild(nElement: INTreeElement): void {
-        this._children.push(nElement);
+        if (this.children === NTreeElement.EMPTY_ARRAY) {
+            this.children = [nElement];
+        } else {
+            this.children.push(nElement);
+        }
     }
 
     public removeChild(nElement: INTreeElement, debounced: boolean = true): void {
         if (debounced) {
-            this._childrenToRemove.push(nElement);
+            if (!Helpers.isUndefined(this._childrenToRemove)) {
+                this._childrenToRemove!.push(nElement);
+            } else {
+                this._childrenToRemove = [nElement];
+            }
         } else {
-            const index = this._children.indexOf(nElement);
+            const index = this.children.indexOf(nElement);
             if (index >= 0) {
-                this._children.splice(index, 1);
+                this.children.splice(index, 1);
             }
         }
     }
 
     public detectChanges(context: object, executionParams?: ExecutionParams): void {
-        for (const el of this._children) {
+        for (const el of this.children) {
             el.detectChanges(context, executionParams);
         }
 
@@ -99,7 +108,7 @@ export class NTreeElement implements INTreeElement {
             }
         }
 
-        for (const el of this._children) {
+        for (const el of this.children) {
             el.dispose();
         }
     }
@@ -113,20 +122,17 @@ export class NTreeElement implements INTreeElement {
     }
 
     protected removeAndStabilizeChildren(): void {
-        while (this._children.length > 0) {
-            this._children.pop();
+        if (this.children !== NTreeElement.EMPTY_ARRAY) {
+            this.children.length = 0;
         }
-
-        while (this._childrenToRemove.length > 0) { 
-            this._childrenToRemove.pop();
-        }
+        this._childrenToRemove = undefined;
     }
 
     protected stabilizeChildren() {
-        while (this._childrenToRemove.length > 0) {
-            const expectedIndex = this._children.indexOf(this._childrenToRemove.pop()!);
+        while (this._childrenToRemove?.length ?? 0 > 0) {
+            const expectedIndex = this.children.indexOf(this._childrenToRemove!.pop()!);
             if (expectedIndex >= 0) {
-                this._children.splice(expectedIndex, 1);
+                this.children.splice(expectedIndex, 1);
             }
         }
     }
@@ -135,7 +141,7 @@ export class NTreeElement implements INTreeElement {
 export class NElement extends NTreeElement implements INElement {
     private readonly _contextBinder: IContextBinder;
 
-    private readonly _clone: ((nElementsParent: INElement, nElement: INElement) => void) | undefined;
+    private readonly _clone: ((contextBinder: IContextBinder, nElementsParent: INElement | INTreeElement, nElement: INElement) => void) | undefined;
     
     private readonly _bindSequenceInvisibleParentHandled: Array<IBindable> | undefined;
     private readonly _commitSequenceInvisibleParentHandled: Array<ICommittable> | undefined;
@@ -149,10 +155,6 @@ export class NElement extends NTreeElement implements INElement {
 
     private _removed = false;
     private _isDisposed = false;
-
-    private get _expressionExecutor(): ExpressionExecutor {
-        return this._contextBinder.expressionExecutor;
-    }
 
     //handlers that are handles in parents but changing child visibility
     private readonly _visibleParentHandlers: Array<IVisible> | undefined;
@@ -181,8 +183,8 @@ export class NElement extends NTreeElement implements INElement {
 
     constructor (contextBinder: IContextBinder, parent: INElement | INTreeElement | null, nativeElement: Element, 
                  cloneOf: INElement | undefined, immediateParent: INElement | undefined,
-                 clone: (nTreeElementParent: INElement | INTreeElement, nElement: INElement) => void,
-                 constructSubTree: (nTreeElementParent: INElement) => void) {
+                 clone: (contextBinder: IContextBinder, nTreeElementParent: INElement | INTreeElement, nElement: INElement) => void,
+                 constructSubTree: (contextBinder: IContextBinder, nTreeElementParent: INElement) => void) {
         super(nativeElement);
 
         this._contextBinder = contextBinder;
@@ -190,20 +192,18 @@ export class NElement extends NTreeElement implements INElement {
         this.immediateParent = immediateParent ?? cloneOf?.immediateParent;
 
         //handlers creation
-        const attributes = new Attributes(this.nativeElement, () => contextBinder.getShowDebugInfo());
+        const attributes = new Attributes(this.nativeElement, this._contextBinder.showDebugInfo);
         const properties = new Properties(this.nativeElement, attributes);
 
-        const classes = new Classes(this.nativeElement, attributes,
-                                   () => contextBinder.getHiddenClassName());
+        const classes = new Classes(this.nativeElement, attributes);
         const styles = new Styles(this.nativeElement, attributes);
 
         const value = new Value(this.nativeElement, attributes);
         const html = new Html(this.nativeElement, attributes,
                               contextBinder.htmlSanitizer);
 
-        const events = new Events(this.nativeElement, attributes,
-                                  this.getManipulationProxyCreator(properties, attributes, styles, classes), 
-                                  () => contextBinder.detectChanges());
+        const events = new Events(this.nativeElement, attributes, this._contextBinder,
+                                  this.getManipulationProxyCreator(properties, attributes, styles, classes));
         const exec = new Exec(attributes);
 
         const if_ = new If(this.nativeElement, attributes, classes);
@@ -211,41 +211,31 @@ export class NElement extends NTreeElement implements INElement {
         const case_ = new Case(this.nativeElement, attributes, classes, (<INElement>parent)?.switch);
         const default_ = new Default(this.nativeElement, attributes, classes, (<INElement>parent)?.switch);
 
-        const repeat = new Repeat(this.nativeElement, attributes, classes,
-                                  () => this.clone(), 
-                                  () => this._removed = true,
-                                  () => contextBinder.getShowDebugInfo(),
-                                  cloneOf?.repeat);
+        const repeat = new Repeat(this.nativeElement, attributes, classes, this,
+                                  cloneOf?.repeat,
+                                  this._contextBinder.showDebugInfo);
 
         const container = new Container(this.nativeElement, attributes,
                                         this._contextBinder, this,
                                         () => this.getEventDispatcher(),
-                                        () => this.isVisible,
-                                        () => constructSubTree(this),
-                                        () => this.removeChildren(),
-                                        () => contextBinder.detectChanges(),
-                                        context => contextBinder.containerAttached(context),
-                                        context => contextBinder.containerDetached(context));
+                                        () => constructSubTree(this._contextBinder, this),
+                                        () => this.removeChildren());
 
         const component = new Component(this.nativeElement, attributes,
                                         this._contextBinder, this,
-                                        this.getManipulationProxyCreator(properties, attributes, styles, classes), this.getSubscriptionsProxyCreator(events),
-                                        () => this.getEventDispatcher(),
-                                        () => this.isVisible);
+                                        this.getManipulationProxyCreator(properties, attributes, styles, classes), this.getSubscriptionsProxyCreator(),
+                                        () => this.getEventDispatcher());
 
-        const template = new Template(this.nativeElement, attributes, 
-                                      () => constructSubTree(this),
-                                      () => contextBinder.detectChanges());
+        const template = new Template(this.nativeElement, attributes, this._contextBinder,
+                                      () => constructSubTree(this._contextBinder, this));
 
-        const aspects = new Aspects(this.nativeElement, attributes,
-                                    this.getManipulationProxyCreator(properties, attributes, styles, classes), this.getSubscriptionsProxyCreator(events),
-                                    () => this.getEventDispatcher(),
-                                    () => contextBinder.detectChanges());
+        const aspects = new Aspects(this.nativeElement, attributes, this._contextBinder,
+                                    this.getManipulationProxyCreator(properties, attributes, styles, classes), this.getSubscriptionsProxyCreator(),
+                                    () => this.getEventDispatcher());
         
         const bound = new Bound(this.nativeElement, attributes, this.getManipulationProxyCreator(properties, attributes, styles, classes));
         const variables = new Variables(this.nativeElement, attributes);
-        const projection = new Projection(this.immediateParent, attributes, 
-                                          () => contextBinder.detectChanges(),
+        const projection = new Projection(this.immediateParent, attributes, this._contextBinder,
                                           () => {
                                             this.removeFromParent(false);
                                             this.dispose();
@@ -253,9 +243,10 @@ export class NElement extends NTreeElement implements INElement {
 
         //additional info
         const visibilityCanBeChanged = if_.hasNExpression || switch_.hasNExpression || case_.hasNExpression || default_.hasNExpression || repeat.hasNExpression;
-        const manipulationProxyCanBeUsed = events.hasNExpression || 
-                                           component.hasNExpression || aspects.hasNExpression || 
-                                           bound.hasNExpression;
+        const manipulationProxyCanBeUsed = events.hasElementManipulations || 
+                                           component.hasElementManipulations || aspects.hasElementManipulations || 
+                                           bound.hasElementManipulations;
+                                           
         //handlers based assignments
         this.switch = switch_.hasNExpression ? switch_ : undefined;
         
@@ -275,40 +266,36 @@ export class NElement extends NTreeElement implements INElement {
                                 value.hasNExpression || html.hasNExpression;
 
         //visibility sequences
-        const visibleParentHandlers = [
+        this._visibleParentHandlers = this.sequence<IVisible>(
             case_,
             default_
-        ].filter(el => el.hasNExpression);
-        this._visibleParentHandlers = visibleParentHandlers.length > 0 ? visibleParentHandlers : undefined;
+        );
 
-        const visibilityHandlers = [
+        this._visibilityHandlers = this.sequence<IVisible>(
             if_,
             repeat,
             switch_,
             projection
-        ].filter(el => el.hasNExpression);
-        this._visibilityHandlers = visibilityHandlers.length > 0 ? visibilityHandlers : undefined;
+        );
         
         //
         //soft removers sequences
         //
         //bind sequence
-        const bindSequenceSoftRemovers = [
+        this._bindSequenceSoftRemovers = this.sequence<IBindable>(
             repeat
-        ].filter(el => el.hasNExpression);
-        this._bindSequenceSoftRemovers = bindSequenceSoftRemovers.length > 0 ? bindSequenceSoftRemovers : undefined;
+        );
 
         //commit sequence
-        const commitSequenceSoftRemovers = [
+        this._commitSequenceSoftRemovers = this.sequence<ICommittable>(
             repeat
-        ].filter(el => el.hasNExpression);
-        this._commitSequenceSoftRemovers = commitSequenceSoftRemovers.length > 0 ? commitSequenceSoftRemovers : undefined;
+        );
 
         //
         //regular sequences
         //
         //bind sequence
-        const bindSequence = [
+        this._bindSequence = this.sequence<IBindable>(
             //should be first due to possibility of context creation
             variables,
             
@@ -331,11 +318,16 @@ export class NElement extends NTreeElement implements INElement {
             classes,
             properties,
             attributes
-        ].filter(el => el.hasNExpression);
-        this._bindSequence= bindSequence.length > 0 ? bindSequence : undefined;
+        );
             
         //commit sequence
-        const commitSequence = [
+        this._commitSequence = this.sequenceTailed<ICommittable>(
+            [
+                classes.hasNExpression || visibilityCanBeChanged || manipulationProxyCanBeUsed ? classes : undefined,
+                styles.hasNExpression || manipulationProxyCanBeUsed ? styles : undefined,
+                attributes.hasNExpression || manipulationProxyCanBeUsed ? attributes : undefined,
+                properties.hasNExpression || manipulationProxyCanBeUsed ? properties : undefined
+            ],
             //sub-tree changers 
             if_,
             switch_,
@@ -347,31 +339,9 @@ export class NElement extends NTreeElement implements INElement {
             container,
             component,
             aspects
-        ].filter(el => el.hasNExpression);
-        this._commitSequence = (commitSequence.length > 0) ||
-                                classes.hasNExpression || styles.hasNExpression || attributes.hasNExpression || properties.hasNExpression ||
-                                visibilityCanBeChanged || manipulationProxyCanBeUsed
-                                    ? commitSequence 
-                                    : undefined;
+        );
 
-        //should be last due to usage by other handlers
-        if (classes.hasNExpression || visibilityCanBeChanged || manipulationProxyCanBeUsed) {
-            this._commitSequence!.push(classes);
-        }
-
-        if (styles.hasNExpression || manipulationProxyCanBeUsed) {
-            this._commitSequence!.push(styles);
-        }
-        
-        if (attributes.hasNExpression || manipulationProxyCanBeUsed) {
-            this._commitSequence!.push(attributes);
-        }
-        
-        if (properties.hasNExpression || manipulationProxyCanBeUsed) {
-            this._commitSequence!.push(properties);
-        }
-
-        const disposeSequence = [
+        this._disposeSequence = this.sequence<IDisposable>(
             container,
             component,
             aspects,
@@ -379,38 +349,26 @@ export class NElement extends NTreeElement implements INElement {
             default_,
             events,
             projection
-        ].filter(el => el.hasNExpression);
-        this._disposeSequence = disposeSequence.length > 0 ? disposeSequence : undefined;
+        );
 
         //
         //sequences for for invisible nElements for cases when visibility is handled by parent nElement
         //
         //bind sequence
-        const bindSequenceInvisibleParentHandled = [
+        this._bindSequenceInvisibleParentHandled = this.sequence<IBindable>(
             container,
             component
-        ].filter(el => el.hasNExpression);
-        this._bindSequenceInvisibleParentHandled = bindSequenceInvisibleParentHandled.length > 0 ? bindSequenceInvisibleParentHandled : undefined;
+        );
 
         //commit sequence
-        const commitSequenceInvisibleParentHandled = [
+        this._commitSequenceInvisibleParentHandled = this.sequenceTailed<ICommittable>(
+            [
+                classes.hasNExpression || visibilityCanBeChanged || manipulationProxyCanBeUsed ? classes : undefined,
+                attributes.hasNExpression || manipulationProxyCanBeUsed ? attributes : undefined
+            ],
             container,
             component
-        ].filter(el => el.hasNExpression);
-        this._commitSequenceInvisibleParentHandled = (commitSequenceInvisibleParentHandled.length > 0) ||
-                                                      classes.hasNExpression || attributes.hasNExpression ||
-                                                      visibilityCanBeChanged || manipulationProxyCanBeUsed
-                                                                ? commitSequenceInvisibleParentHandled 
-                                                                : undefined;
-
-        //should be last due to usage by other handlers
-        if (classes.hasNExpression || visibilityCanBeChanged || manipulationProxyCanBeUsed) {
-            this._commitSequenceInvisibleParentHandled!.push(classes);
-        }
-
-        if (attributes.hasNExpression || manipulationProxyCanBeUsed) {
-            this._commitSequenceInvisibleParentHandled!.push(attributes);
-        }
+        );
 
         //validate
         const invalidHandlers = this.validate(value, html, 
@@ -420,10 +378,13 @@ export class NElement extends NTreeElement implements INElement {
                                               template);
 
         //process constructable
-        for (const el of [aspects, template, projection]) {
-            if (el.hasNExpression && !invalidHandlers.has(el)) {
-                el.construct();
-            }
+        // for (const el of [template]) {
+        //     if (el.hasNExpression && !invalidHandlers.has(el)) {
+        //         el.construct();
+        //     }
+        // }
+        if (template.hasNExpression && !invalidHandlers.has(template)) {
+            template.construct();
         }
     }
 
@@ -446,6 +407,20 @@ export class NElement extends NTreeElement implements INElement {
 
         if (this.isVisible && !this._removed) {
             super.detectChanges(context, currentExecutionParams);
+        }
+    }
+
+    public remove(): void {
+        this._removed = true;
+    }
+
+    public clone(): void {
+        if (!this._removed) {
+            if ((this.parent !== null) && (this.nativeElement.parentNode !== null)) {
+                this._clone!(this._contextBinder, this.parent, this);
+            } else {
+                Console.error(this.nativeElement, 'attempt to clone orphaned element');
+            }
         }
     }
 
@@ -475,9 +450,9 @@ export class NElement extends NTreeElement implements INElement {
             for (const el of bindSequence!) {
                 try {
                     currentExecutionParams = el.bind(currentExecutionParams, (expression, executionParams) => 
-                                                                            this._expressionExecutor.executeExpression(expression, context, 
-                                                                                                                        this.nativeElement, 
-                                                                                                                        executionParams));
+                                                     this._contextBinder.expressionExecutor.executeExpression(expression, context, 
+                                                                                                              this.nativeElement, 
+                                                                                                              executionParams));
                 } catch(ex) {
                     Console.error(this.nativeElement, 'handler', el, `bind error: ${ex}`);
                 }
@@ -511,16 +486,6 @@ export class NElement extends NTreeElement implements INElement {
         return currentExecutionParams;
     }
 
-    private clone(): void {
-        if (!this._removed) {
-            if ((this.parent !== null) && (this.nativeElement.parentNode !== null)) {
-                this._clone!(<INElement>this.parent, this);
-            } else {
-                Console.error(this.nativeElement, 'attempt to clone orphaned element');
-            }
-        }
-    }
-
     private validate(value: Value, html: Html, 
                      if_: If, switch_: Switch, case_: Case, default_: Default,
                      repeat: Repeat,
@@ -528,16 +493,16 @@ export class NElement extends NTreeElement implements INElement {
                      template: Template): ReadonlySet<IConstructable | IBindable | ICommittable | IDisposable> {
         const invalidHandlers = new Set<IConstructable | IBindable | ICommittable | IDisposable>();
 
-        const valueHandler = { handler: value, name: 'value' };
-        const htmlHandler = { handler: html, name: 'html' };
-        const ifHandler = { handler: if_, name: 'if'};
-        const switchHandler = { handler: switch_, name: 'switch' };
-        const caseHandler = { handler: case_, name: 'case' };
-        const defaultHandler = { handler: default_, name: 'default' };
-        const repeatHandler = { handler: repeat, name: 'repeat'};
-        const containerHandler = { handler: container, name: 'container' };
-        const componentHandler = { handler: component, name: 'component' };
-        const templateHandler = { handler: template, name: 'template' };
+        const valueHandler = { handler: value, name: Constants.HANDLERS.VALUE_HANDLER_ATTRIBUTE_NAME };
+        const htmlHandler = { handler: html, name: Constants.HANDLERS.HTML_HANDLER_ATTRIBUTE_NAME };
+        const ifHandler = { handler: if_, name: Constants.HANDLERS.IF_HANDLER_ATTRIBUTE_NAME};
+        const switchHandler = { handler: switch_, name: Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME };
+        const caseHandler = { handler: case_, name: Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME };
+        const defaultHandler = { handler: default_, name: Constants.HANDLERS.SWITCH_DEFAULT_HANDLER_ATTRIBUTE_NAME };
+        const repeatHandler = { handler: repeat, name: Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME};
+        const containerHandler = { handler: container, name: Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME };
+        const componentHandler = { handler: component, name: Constants.HANDLERS.COMPONENT_MARKER_ATTRIBUTE_NAME };
+        const templateHandler = { handler: template, name: Constants.HANDLERS.TEMPLATE_HANDLER_ATTRIBUTE_NAME };
 
         //handler content conflicts
         const contentChangers = [
@@ -558,7 +523,7 @@ export class NElement extends NTreeElement implements INElement {
             
             this.removeFromProcessingSequences(contentChangerHandlers);
 
-            Console.error(this.nativeElement, `element can't have ${contentChangers.map(el => `${Constants.DEFAULT_PREFIX}-${el.name}`).join(' and ')} bindings at the same time.`);
+            Console.error(this.nativeElement, `element can't have ${contentChangers.map(el => `${el.name}`).join(' and ')} bindings at the same time.`);
         }
 
         //handler structure conflict
@@ -577,7 +542,7 @@ export class NElement extends NTreeElement implements INElement {
 
             this.removeFromProcessingSequences(structureChangerHandlers);
 
-            Console.error(this.nativeElement, `element can't have ${structureChangers.map(el => `${Constants.DEFAULT_PREFIX}-${el.name}`).join(' and ')} bindings at the same time.`);
+            Console.error(this.nativeElement, `element can't have ${structureChangers.map(el => `${el.name}`).join(' and ')} bindings at the same time.`);
         }
 
         //handler function conflict
@@ -596,11 +561,11 @@ export class NElement extends NTreeElement implements INElement {
 
             this.removeFromProcessingSequences(functionChangerHandlers);
 
-            Console.error(this.nativeElement, `element can't have ${functionChangers.map(el => `${Constants.DEFAULT_PREFIX}-${el.name}`).join(' and ')} bindings at the same time.`);
+            Console.error(this.nativeElement, `element can't have ${functionChangers.map(el => `${el.name}`).join(' and ')} bindings at the same time.`);
         }
 
         //child elements changers conflict
-        if (this._contextBinder.getShowDebugInfo()) {
+        if (this._contextBinder.showDebugInfo) {
             const childElementsChangers = [
                 valueHandler, 
                 htmlHandler
@@ -610,7 +575,7 @@ export class NElement extends NTreeElement implements INElement {
                                                                      ((el.nodeType == Node.TEXT_NODE) &&
                                                                       Helpers.isNotEmptyString(el.textContent) &&
                                                                       (el.textContent!.trim().length > 0)))) {
-                Console.warn(this.nativeElement, `element original children will be replaced by ${Constants.DEFAULT_PREFIX}-${childElementsChangers[0].name}`);
+                Console.warn(this.nativeElement, `element original children will be replaced by '${childElementsChangers[0].name}'`);
             }
         }
 
@@ -673,17 +638,7 @@ export class NElement extends NTreeElement implements INElement {
 
         return this._eventDispatcher!;
     }
-    private getSubscriptionsProxyCreator(events: Events): () => ElementSubscriptions {
-        return () => {
-            if (Helpers.isUndefined(this._elementSubscriptions)) {
-                this._elementSubscriptions = new ElementSubscriptions((eventName, callBack, optionsOrDebounce, debounce) => Helpers.isNumber(optionsOrDebounce) && !isNaN(<number>optionsOrDebounce)
-                                                                                                                                        ? events.subscribe(eventName, callBack, undefined, <number>optionsOrDebounce)
-                                                                                                                                        : events.subscribe(eventName, callBack, <boolean | AddEventListenerOptions | undefined>optionsOrDebounce, debounce));
-            }
-
-            return this._elementSubscriptions!;
-        }
-    }
+    
 
     private removeFromParent(debounce: boolean = true): void {
         if (this.parent !== null) { 
@@ -692,11 +647,57 @@ export class NElement extends NTreeElement implements INElement {
     }
 
     private removeChildren(): void {
-        for (const el of this._children) {
-            el.dispose();
+        if (!Helpers.isUndefined(this.children)) {
+            for (const el of this.children!) {
+                el.dispose();
+            }
         }
 
         this.removeAndStabilizeChildren();
+    }
+
+    private sequence<T>(...items: Array<{ hasNExpression: boolean } & T>): Array<T> | undefined {
+        const buffer = new Array<T>(items.length);
+        let index = 0;
+
+        for (const el of items) {
+            if (el.hasNExpression) {
+                buffer[index++] = el;
+            }
+        }
+
+        return index > 0 ? buffer.slice(0, index) : undefined;
+    }
+
+    private sequenceTailed<T>(tail: Array<T | undefined>, ...items: Array<{ hasNExpression: boolean } & T>): Array<T> | undefined {
+        const buffer = new Array<T>(items.length + tail.length);
+        let index = 0;
+
+        for (const el of items) {
+            if (el.hasNExpression) {
+                buffer[index++] = el;
+            }
+        }
+
+        for (const el of tail) {
+            if (!Helpers.isUndefined(el)) {
+                buffer[index++] = el!;
+            }
+        }
+
+        return index > 0 ? buffer.slice(0, index) : undefined;
+    }
+
+    private getSubscriptionsProxyCreator(): () => ElementSubscriptions {
+        return () => {
+            if (Helpers.isUndefined(this._elementSubscriptions)) {
+                this._elementSubscriptions = new ElementSubscriptions((eventName, callBack, optionsOrDebounce, debounce) => Helpers.isNumber(optionsOrDebounce) && !isNaN(<number>optionsOrDebounce)
+                                                                                                                                        ? Events.subscribe(this.nativeElement, eventName, callBack, undefined, <number>optionsOrDebounce)
+                                                                                                                                        : Events.subscribe(this.nativeElement, eventName, callBack, <boolean | AddEventListenerOptions | undefined>optionsOrDebounce, debounce));
+            }
+
+            return this._elementSubscriptions!;
+        }
     }
 
     //TODO: Think about validation on manipulations on properties, attributes and styles when handler already exists and injection is trying to manipulate the same

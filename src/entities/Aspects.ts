@@ -187,6 +187,15 @@ export class Aspects extends TemplateEntity<TemplateEntityWithNameMetaData> {
             }
         }
     }
+
+    public getDependencies(name: string): ReadonlySet<ObjectConstructor | IInjectableConstructor> | undefined {
+        const lowerCasedName = name.toLowerCase();
+        const aspectMetaData = this.data.get(lowerCasedName);
+
+        if (!Helpers.isUndefined(aspectMetaData)) {
+            return this._injectables.getDependencies(aspectMetaData!.aspect);
+        }
+    }
     
     public add(name: string, aspect: IAspectContextConstructor, dependencies: Array<IInjectableConstructor>, 
                styleTemplateOrPathOrProvider: string | ITemplateProvider | undefined, adoptedStyleNames: Array<string> | undefined,

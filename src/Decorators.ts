@@ -12,6 +12,8 @@ import { IComponentContextConfig } from './interfaces/contexts/configs/IComponen
 
 import { ITemplateProvider } from './interfaces/ITemplateProvider';
 
+import { IRouter } from './Router';
+
 import { Environment } from './Environment';
 
 import { Helpers } from './Helpers';
@@ -27,12 +29,12 @@ const GLOBAL_CONFIG_TEMPLATE: IGlobalConfig = {
     complyWithW3C: false,
     pessimisticChangeDetectionStrategy: false,
     htmlSanitizer: (html: string) => html,
-    styleSanitizer: (style: string) => style,
+    styleSanitizer: (style: string) => style
 }
 
 const CONTEXT_CONFIG_TEMPLATE: IContextConfig = {
     htmlSanitizer: (html: string) => html,
-    pessimisticChangeDetectionStrategy: false,
+    pessimisticChangeDetectionStrategy: false
 };
 
 const COMPONENT_CONTEXT_CONFIG_TEMPLATE: IComponentContextConfig = {
@@ -50,21 +52,38 @@ const TEMPLATE_PROVIDER_TEMPLATE: ITemplateProvider = {
     get: () => ''
 };
 
+const ROUTER_TEMPLATE: IRouter = {
+    isConfigured: false,
+    hashBased: false,
+
+    path: undefined,
+    state: undefined,
+
+    go: () => {},
+    goBack: () => {},
+    goTo: () => {},
+    goForward: () => {},
+
+    onBeforeStateChange: () => (() => {}),
+    onAfterStateChange: () => (() => {})
+};
+
 /**
  * Register the application root.
  *
  * @param appBootstrapMetaData bootstrap metadata:
  * * string: if it starts with '/' - the app route template; otherwise the app root element selector
+ * * IRouter: custom router
  * * Element: app root element
  * * IGlobalConfig: global configuration
  * * Array<string>: $Template or $AdoptedStyle registration
  * * IEntityDependencyConstructor: dependencies (containers, components, aspects, transformers or injectables) used globally or in the application root
  */
-export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: Array<string | Element | IGlobalConfig | 
+export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: Array<string | IRouter | Element | IGlobalConfig |
                                                                                 Array<string> | IEntityDependencyConstructor>): (target: T) => T {
     return (target: T) => {
         let selectorOrElement: string | Element | undefined;
-        let routeConfig: string | undefined;
+        let routerConfigOrRouter: string | undefined | IRouter;
         let globalConfig: IGlobalConfig | undefined;
 
         for (const el of appBootstrapMetaData) {
@@ -74,8 +93,8 @@ export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: 
                 if (Helpers.isString(el)) {
                     const trimmedEL = (<string>el).trim();
                     if (trimmedEL.startsWith('/')) {
-                        if (Helpers.isUndefined(routeConfig)) {
-                            routeConfig = trimmedEL;
+                        if (Helpers.isUndefined(routerConfigOrRouter)) {
+                            routerConfigOrRouter = trimmedEL;
                         } else {
                             throw new Error(`${Constants.DISPLAY_NAME}: wrong app initialization meta data detected: multiple app route templates found.`);
                         }
@@ -104,6 +123,12 @@ export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: 
                     } else {
                         throw new Error(`${Constants.DISPLAY_NAME}: wrong app initialization meta data detected: multiple app global configs found.`);
                     }
+                } else if (isOfClassType(<object>el, ROUTER_TEMPLATE)) {
+                    if (Helpers.isUndefined(routerConfigOrRouter)) {
+                        routerConfigOrRouter = <IRouter>el;
+                    } else {
+                        throw new Error(`${Constants.DISPLAY_NAME}: wrong app initialization meta data detected: multiple custom routers or route templates and custom router found.`);
+                    }
                 }
             }
         }
@@ -112,7 +137,7 @@ export function AppRoot<T extends IContextConstructor>(...appBootstrapMetaData: 
             Environment.config(globalConfig!);
         }
 
-        Environment.setupRouter(routeConfig);
+        Environment.setupRouter(routerConfigOrRouter);
         Environment.addApp(selectorOrElement, target, getConstructorInjections(target));
         
         return target;
@@ -586,10 +611,23 @@ export function $Config(config: IGlobalConfig): void {
  * Use this when the application has multiple @AppRoot entries.
  * Otherwise, provide the route config in @AppRoot.
  *
- * @param routeConfig route config
+ * @param routerConfigOrRouter route config or custom routers
  */
-export function $Route(routeConfig: string): void {
-    Environment.setupRouter(routeConfig);
+export function $Route(routerConfigOrRouter: string | IRouter): void {
+    Environment.setupRouter(routerConfigOrRouter);
+}
+
+function isOfClassType(obj: {[key: string]: any}, templateObj: {[key: string]: any}): boolean {
+    let result = false;
+
+    for (const name of Object.getOwnPropertyNames(templateObj)) {
+        result = ((name in obj) && (Helpers.isFunction((<{[key: string]: any}>templateObj)[name]) == Helpers.isFunction(obj[name])))
+        if (!result) {
+            break;
+        }
+    }
+
+    return result;
 }
 
 function isOfType(obj: {[key: string]: any}, templateObj: {[key: string]: any}): boolean {

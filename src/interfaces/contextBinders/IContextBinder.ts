@@ -14,8 +14,7 @@ export interface IContextBinder extends IDisposable {
 
     readonly changeDetectionEnabled: boolean;
 
-    readonly getShowDebugInfo: () => boolean;
-    readonly getHiddenClassName: () => string;
+    readonly showDebugInfo: boolean;
     readonly htmlSanitizer: ((html: string) => string) | undefined;
 
     readonly expressionExecutor: ExpressionExecutor;

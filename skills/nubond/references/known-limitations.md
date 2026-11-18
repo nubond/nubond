@@ -19,7 +19,10 @@ The framework targets **modern browsers only** — an explicit design decision:
 - **No SSR, no bare-Node import.** Importing the package runs DOM initializers immediately. For unit
   tests, keep framework-free logic in modules that never import `nubond`, and test entities under
   jsdom (which has no `structuredClone` — polyfill it, or every non-primitive `nb-in` value fails to
-  clone and arrives as `undefined`).
+  clone and arrives as `undefined`). jsdom also lacks `CSSStyleSheet.replaceSync` and
+  `document.adoptedStyleSheets`, which the import itself uses — without polyfills the test file fails
+  before any test runs. Releases after 1.0.16 are ES modules, which Jest additionally has to be told to
+  compile. Setup file and Jest config: `project-setup.md` → *Unit tests*.
 
 ## Configuration timing
 

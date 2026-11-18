@@ -6,14 +6,14 @@ describe('Value handler', () => {
     function createElementWithAttr(expression?: string): Element {
         const el = document.createElement('div');
         if (expression !== undefined) {
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}`, expression);
+            el.setAttribute(`${Constants.HANDLERS.VALUE_HANDLER_ATTRIBUTE_NAME}`, expression);
         }
         return el;
     }
 
     it('should detect expression from element attribute', () => {
         const el = createElementWithAttr('context.title');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         expect(handler.hasNExpression).toBe(true);
@@ -22,7 +22,7 @@ describe('Value handler', () => {
 
     it('should have no expression if attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         expect(handler.hasNExpression).toBe(false);
@@ -31,7 +31,7 @@ describe('Value handler', () => {
 
     it('should not be dirty initially when expression exists', () => {
         const el = createElementWithAttr('ctx.name');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         expect(handler.isDirty).toBe(false);
@@ -39,7 +39,7 @@ describe('Value handler', () => {
 
     it('should set textContent on commit after bind', () => {
         const el = createElementWithAttr('ctx.name');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         handler.bind(undefined, (expr) => 'Hello World');
@@ -52,7 +52,7 @@ describe('Value handler', () => {
 
     it('should not update DOM when value has not changed', () => {
         const el = createElementWithAttr('ctx.name');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         handler.bind(undefined, () => 'Same');
@@ -68,7 +68,7 @@ describe('Value handler', () => {
 
     it('should return executionParams from bind', () => {
         const el = createElementWithAttr('ctx.name');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         const params = { some: 'params' } as any;
@@ -78,7 +78,7 @@ describe('Value handler', () => {
 
     it('commit should return false when not dirty', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         expect(handler.commit()).toBe(false);
@@ -86,7 +86,7 @@ describe('Value handler', () => {
 
     it('should set value via bind triggering the value setter', () => {
         const el = createElementWithAttr('ctx.name');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         handler.bind(undefined, () => 'first');
@@ -104,7 +104,7 @@ describe('Value handler', () => {
     it('should clear authored placeholder content when the first value is empty (R7-3)', () => {
         const el = createElementWithAttr('ctx.empty');
         el.textContent = 'placeholder';
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         handler.bind(undefined, () => '');
@@ -116,7 +116,7 @@ describe('Value handler', () => {
         for (const value of [undefined, null, () => 1, Symbol('s')]) {
             const el = createElementWithAttr('ctx.value');
             el.textContent = 'placeholder';
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Value(el, attrs);
 
             handler.bind(undefined, () => value);
@@ -128,7 +128,7 @@ describe('Value handler', () => {
     it('should clear the placeholder for a one-time expression resolving to empty (R7-3)', () => {
         const el = createElementWithAttr('#ctx.empty');
         el.textContent = 'placeholder';
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         handler.bind(undefined, () => '');
@@ -139,7 +139,7 @@ describe('Value handler', () => {
     it('should not rewrite the DOM while the value stays empty (R7-3)', () => {
         const el = createElementWithAttr('ctx.empty');
         el.textContent = 'placeholder';
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Value(el, attrs);
 
         handler.bind(undefined, () => '');
@@ -155,7 +155,7 @@ describe('Value handler', () => {
 
         try {
             const el = createElementWithAttr('this.stats');
-            const handler = new Value(el, new Attributes(el, () => false));
+            const handler = new Value(el, new Attributes(el, false));
             const stats: any = { users: BigInt(10) };
             stats.self = stats;
 

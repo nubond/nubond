@@ -86,10 +86,64 @@ class RouteSlot {
     }
 }
 
+export interface IRouter {
+    //is router configured
+    readonly isConfigured: boolean;
+    //is router is hash-based
+    readonly hashBased: boolean;
+
+    //current path
+    readonly path: string | undefined;
+    //current state
+    readonly state: Readonly<{[key: string]: string | undefined}> | undefined;
+
+    /**
+     * Go to a specific state.
+     *
+     * @param state state
+     * @param partialState true - the new state is merged with the current state; false - the new state replaces the current state
+     * @param removeHistory true - replace the current history entry; false - push a new history entry
+     */
+    go(state?: {[key: string]: string | number | null | undefined} | string, partialState?: boolean, removeHistory?: boolean): void;
+
+    /**
+     * Go to the previous state.
+     */
+    goBack(): void;
+
+    /**
+     * Go to a specific state in history by offset.
+     *
+     * @param offset history offset
+     */
+    goTo(offset: number): void;
+
+    /**
+     * Go to the next state.
+     */
+    goForward(): void;
+
+    /**
+     * Subscribe to a BeforeStateChange event.
+     *
+     * @param callBack callback
+     * @returns function to unsubscribe from the event
+     */
+    onBeforeStateChange(callBack: (preventChange: () => void, oldState: Readonly<{[key: string]: string | undefined}>, newState: Readonly<{[key: string]: string | undefined}>, oldPath: string, newPath: string) => void): () => void;
+
+    /**
+     * Subscribe to an AfterStateChange event.
+     *
+     * @param callBack callback
+     * @returns function to unsubscribe from the event
+     */
+    onAfterStateChange(callBack: (oldState: Readonly<{[key: string]: string | undefined}>, newState: Readonly<{[key: string]: string | undefined}>, oldPath: string, newPath: string) => void): () => void;
+}
+
 /**
 * State-based router.
 */
-export class Router {
+export class Router implements IRouter {
     private readonly _getShowDebugInfo: () => boolean;
 
     private readonly _documentPath: string | undefined;

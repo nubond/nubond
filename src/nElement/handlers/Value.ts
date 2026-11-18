@@ -37,12 +37,12 @@ export class Value extends Base implements IHandler<IExpressionDetails> {
     constructor(nativeElement: Element, attributes: Attributes) {
         super();
 
-        const expression = <string | undefined>attributes.get(Constants.VALUE_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.VALUE_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             this._nativeElement = nativeElement;
 
             this.hasNExpression = true;
-            this.nExpression = new ExpressionDetails(expression!);
+            this.nExpression = ExpressionDetails.create(expression!);
         } else {
             this.hasNExpression = false;
         }
@@ -52,7 +52,7 @@ export class Value extends Base implements IHandler<IExpressionDetails> {
                 executeExpression: (expression: string | null | undefined, 
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
-            this.processExpressionExecution(this.nExpression!, Constants.VALUE_HANDLER_ATTRIBUTE_NAME, 
+            this.processExpressionExecution(this.nExpression!, Constants.HANDLERS.VALUE_HANDLER_ATTRIBUTE_NAME, 
                                             expression => executeExpression(expression, executionParams), 
                                             data => this.value = Helpers.stringify(data));
         }

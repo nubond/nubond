@@ -53,20 +53,20 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
     constructor(nativeElement: Element, attributes: Attributes, classes: Classes, controllingSwitch: Switch | undefined) {
         super();
         
-        const expression = <string | undefined>attributes.get(Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME, true);
+        const expression = <string | undefined>attributes.get(Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME, true);
         if (Helpers.isString(expression)) {
             if (!Helpers.isUndefined(controllingSwitch) && controllingSwitch!.hasNExpression) {
                 this._classes = classes;
                 this._controllingSwitch = controllingSwitch;
 
                 this.hasNExpression = true;
-                this.nExpression = new ExpressionDetails(expression!);
+                this.nExpression = ExpressionDetails.create(expression!);
                 
                 this._removeFromParentSwitch = controllingSwitch!.addCase(this);
             } else {
                 this.hasNExpression = false;
 
-                Console.error(nativeElement, `invalid operation: ${Constants.DEFAULT_PREFIX}-case must have direct ${Constants.DEFAULT_PREFIX}-switch ${Constants.DISPLAY_NAME} parent`);
+                Console.error(nativeElement, `invalid operation: ${Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME} must have direct ${Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME} ${Constants.DISPLAY_NAME} parent`);
             }
         } else {
             this.hasNExpression = false;
@@ -78,7 +78,7 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
                 executeExpression: (expression: string | null | undefined, 
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
-            this.processExpressionExecution(this.nExpression!, Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME,
+            this.processExpressionExecution(this.nExpression!, Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME,
                                             expression => executeExpression(expression, executionParams), 
                                             data => this.value = Helpers.isPrimitive(data) && 
                                                                  (!Helpers.isNumber(data) || Helpers.isNumber(data) && !isNaN(data))
@@ -97,9 +97,9 @@ export class Case extends Base implements IHandler<IExpressionDetails>, IDisposa
         if (this._isDirty) {
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show(Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.show(Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide(Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.hide(Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;

@@ -16,7 +16,7 @@ describe('Variables handler', () => {
         const el = document.createElement('div');
         for (const [name, expression] of Object.entries(vars)) {
             el.setAttribute(
-                `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VARIABLE_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}${name}`,
+                `${Constants.HANDLERS.VARIABLE_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}${name}`,
                 expression
             );
         }
@@ -25,7 +25,7 @@ describe('Variables handler', () => {
 
     it('should detect variable bindings', () => {
         const el = createElementWithVars({ 'my-var': 'ctx.value' });
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Variables(el, attrs);
 
         expect(handler.hasNExpression).toBe(true);
@@ -35,7 +35,7 @@ describe('Variables handler', () => {
 
     it('should have no expression when no variable attributes', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Variables(el, attrs);
 
         expect(handler.hasNExpression).toBe(false);
@@ -43,7 +43,7 @@ describe('Variables handler', () => {
 
     it('should convert kebab-case variable names to camelCase', () => {
         const el = createElementWithVars({ 'my-var-name': 'ctx.value' });
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Variables(el, attrs);
 
         expect(handler.nExpression!.has('myVarName')).toBe(true);
@@ -51,7 +51,7 @@ describe('Variables handler', () => {
 
     it('should extend execution params with variable values on bind', () => {
         const el = createElementWithVars({ 'total': 'ctx.count' });
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Variables(el, attrs);
 
         const result = handler.bind(undefined, () => 42);
@@ -61,7 +61,7 @@ describe('Variables handler', () => {
 
     it('should pass through executionParams when no expression', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Variables(el, attrs);
 
         const params = { existing: true } as any;
@@ -73,7 +73,7 @@ describe('Variables handler', () => {
         // never called, so the var keeps its initial undefined value. bind still rebuilds the
         // params (left-to-right sibling resolution), extending them with the var set to undefined.
         const el = createElementWithVars({ 'lazy': '#ctx.maybe' });
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Variables(el, attrs);
 
         const params = createParams(['existing'], [true]);
@@ -87,7 +87,7 @@ describe('Variables handler', () => {
 
     it('isDirty should always be false', () => {
         const el = createElementWithVars({ 'x': 'ctx.x' });
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Variables(el, attrs);
 
         handler.bind(undefined, () => 'val');
@@ -96,7 +96,7 @@ describe('Variables handler', () => {
 
     it('commit should always return false', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Variables(el, attrs);
 
         expect(handler.commit()).toBe(false);
@@ -107,10 +107,10 @@ describe('Variables handler', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const el = document.createElement('div');
             el.setAttribute(
-                `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VARIABLE_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}`,
+                `${Constants.HANDLERS.VARIABLE_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}`,
                 'ctx.x'
             );
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Variables(el, attrs);
 
             expect(consoleSpy).toHaveBeenCalled();
@@ -120,7 +120,7 @@ describe('Variables handler', () => {
         it('should error when variable value is undefined', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             const el = document.createElement('div');
-            const varKey = `${Constants.VARIABLE_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}my-var`;
+            const varKey = `${Constants.HANDLERS.VARIABLE_HANDLER_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}my-var`;
             const mockAttrs = {
                 has: (_name: string, _sys?: boolean, _prefix?: boolean) => true,
                 getAll: () => new Map<string, string | undefined>([[varKey, undefined]]),
@@ -136,7 +136,7 @@ describe('Variables handler', () => {
             const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
             // 'item' is one of the reserved repeat names (RESERVED_CONTEXT_NAMES).
             const el = createElementWithVars({ 'item': 'ctx.value' });
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Variables(el, attrs);
 
             expect(consoleSpy).toHaveBeenCalledWith(
@@ -157,7 +157,7 @@ describe('Variables handler', () => {
 
             try {
                 const el = createElementWithVars({ 'mytransformer': 'ctx.value' });
-                const attrs = new Attributes(el, () => false);
+                const attrs = new Attributes(el, false);
                 const handler = new Variables(el, attrs);
 
                 expect(consoleSpy).toHaveBeenCalledWith(
@@ -188,7 +188,7 @@ describe('Variables handler', () => {
 
             try {
                 const el = createElementWithVars({ 'my-fn': 'ctx.value' });
-                const attrs = new Attributes(el, () => false);
+                const attrs = new Attributes(el, false);
                 const handler = new Variables(el, attrs);
 
                 expect(consoleSpy).toHaveBeenCalledWith(
@@ -226,7 +226,7 @@ describe('Variables handler', () => {
             it.each(invalidNames)('should error and skip the variable named %s', (name) => {
                 const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
                 const el = createElementWithVars({ [name]: 'ctx.value' });
-                const attrs = new Attributes(el, () => false);
+                const attrs = new Attributes(el, false);
                 const handler = new Variables(el, attrs);
 
                 expect(consoleSpy).toHaveBeenCalledWith(
@@ -241,7 +241,7 @@ describe('Variables handler', () => {
             it('should keep a valid variable that shares an element with a rejected one', () => {
                 const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
                 const el = createElementWithVars({ 'let': 'ctx.bad', 'total': 'ctx.count' });
-                const attrs = new Attributes(el, () => false);
+                const attrs = new Attributes(el, false);
                 const handler = new Variables(el, attrs);
 
                 expect(handler.nExpression!.has('let')).toBe(false);
@@ -256,7 +256,7 @@ describe('Variables handler', () => {
                 'should accept the valid identifier %s', (name) => {
                 const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
                 const el = createElementWithVars({ [name]: 'ctx.value' });
-                const attrs = new Attributes(el, () => false);
+                const attrs = new Attributes(el, false);
                 const handler = new Variables(el, attrs);
 
                 expect(handler.nExpression!.has(name)).toBe(true);
@@ -268,7 +268,7 @@ describe('Variables handler', () => {
                 // identifier — lowercasing it first would falsely reject it as the reserved word 'class'.
                 const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
                 const el = createElementWithVars({ 'c-lass': 'ctx.value' });
-                const attrs = new Attributes(el, () => false);
+                const attrs = new Attributes(el, false);
                 const handler = new Variables(el, attrs);
 
                 expect(handler.nExpression!.has('cLass')).toBe(true);

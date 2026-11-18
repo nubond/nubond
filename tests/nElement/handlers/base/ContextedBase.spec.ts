@@ -2,6 +2,7 @@ import { ContextedBase, ContextInExpressionDetails, ContextBaseBindings } from '
 import { Attributes } from '../../../../src/nElement/handlers/Attributes';
 import { ContextBinder } from '../../../../src/ContextBinder';
 import { IContextBinder } from '../../../../src/interfaces/contextBinders/IContextBinder';
+import { INElement } from '../../../../src/interfaces/nElement/INElement';
 import { ExecutionParams } from '../../../../src/expression/ExpressionExecParamsHelper';
 import { ExpressionDetails } from '../../../../src/expression/ExpressionDetails';
 import { Constants } from '../../../../src/Constants';
@@ -14,6 +15,10 @@ function createParams(names: Array<string>, values: Array<any>): ExecutionParams
     names.forEach((name, index) => params.add(name, values[index]));
     return params;
 }
+
+// the handler reads its visibility from the host NElement (parentNElement.isVisible) on every bind;
+// a getter keeps the mock live, so a spec can flip the value between binds
+const parentWithVisibility = (isVisible: () => boolean): INElement => <INElement><unknown>{ get isVisible() { return isVisible(); } };
 
 // polyfill structuredClone for jsdom
 if (typeof globalThis.structuredClone !== 'function') {
@@ -72,44 +77,44 @@ function createElement(attrs?: Record<string, string>): Element {
     return el;
 }
 
-const PREFIX = Constants.DEFAULT_PREFIX + Constants.DEFAULT_SEPARATOR; // "nb-"
+const PREFIX = Constants.PREFIX_AND_SEPARATOR; // "nb-"
 
 function createHandlerSimple(expression?: string) {
     const el = createElement();
     if (expression !== undefined) {
         el.setAttribute(`${PREFIX}container`, expression);
     }
-    const attrs = new Attributes(el, () => false);
-    return new TestContextedBase(expression, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+    const attrs = new Attributes(el, false);
+    return new TestContextedBase(expression, el, attrs, null as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
 }
 
 function createHandlerWithIn(expression: string, inAttrs: Record<string, string>, inRefAttrs?: Record<string, string>) {
     const attrMap: Record<string, string> = { [`${PREFIX}container`]: expression };
     for (const [prop, val] of Object.entries(inAttrs)) {
-        attrMap[`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}${prop}`] = val;
+        attrMap[`${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}${prop}`] = val;
     }
     if (inRefAttrs) {
         for (const [prop, val] of Object.entries(inRefAttrs)) {
-            attrMap[`${PREFIX}${Constants.IN_REF_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}${prop}`] = val;
+            attrMap[`${Constants.HANDLERS.IN_REF_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}${prop}`] = val;
         }
     }
     const el = createElement(attrMap);
-    const attrs = new Attributes(el, () => false);
-    return new TestContextedBase(expression, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+    const attrs = new Attributes(el, false);
+    return new TestContextedBase(expression, el, attrs, null as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
 }
 
 // --- Tests -------------------------------------------------------------------
 
 describe('ContextInExpressionDetails', () => {
     it('stores nExpression and ref=false', () => {
-        const expr = new ExpressionDetails('this.value');
+        const expr = ExpressionDetails.create('this.value');
         const detail = new ContextInExpressionDetails(expr, false);
         expect(detail.nExpression).toBe(expr);
         expect(detail.ref).toBe(false);
     });
 
     it('stores nExpression and ref=true', () => {
-        const expr = new ExpressionDetails('this.value');
+        const expr = ExpressionDetails.create('this.value');
         const detail = new ContextInExpressionDetails(expr, true);
         expect(detail.ref).toBe(true);
     });
@@ -117,7 +122,7 @@ describe('ContextInExpressionDetails', () => {
 
 describe('ContextBaseBindings', () => {
     it('sets hasNInExpression to true when map supplied', () => {
-        const expr = new ExpressionDetails('this.x');
+        const expr = ExpressionDetails.create('this.x');
         const map = new Map();
         const bindings = new ContextBaseBindings(expr, map);
         expect(bindings.hasNInExpression).toBe(true);
@@ -125,7 +130,7 @@ describe('ContextBaseBindings', () => {
     });
 
     it('sets hasNInExpression to false when map omitted', () => {
-        const expr = new ExpressionDetails('this.x');
+        const expr = ExpressionDetails.create('this.x');
         const bindings = new ContextBaseBindings(expr);
         expect(bindings.hasNInExpression).toBe(false);
         expect(bindings.nInExpression).toBeUndefined();
@@ -149,19 +154,19 @@ describe('ContextedBase', () => {
     describe('constructor', () => {
         it('marks the element ready under the handler attribute name it was constructed with', () => {
             const el = createElement();
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.COMPONENT_MARKER_ATTRIBUTE_NAME, () => true);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, parentWithVisibility(() => true), Constants.HANDLERS.COMPONENT_MARKER_ATTRIBUTE_NAME, false);
 
             handler.exposedMarkAsReady();
 
-            expect(el.hasAttribute(`${PREFIX}${Constants.COMPONENT_MARKER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`)).toBe(true);
-            expect(el.hasAttribute(`${PREFIX}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`)).toBe(false);
+            expect(el.hasAttribute(`${Constants.HANDLERS.COMPONENT_MARKER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`)).toBe(true);
+            expect(el.hasAttribute(`${Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`)).toBe(false);
         });
 
         it('sets hasNExpression=false when expression is undefined', () => {
             const el = createElement();
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase(undefined, el, attrs, null as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
             expect(handler.hasNExpression).toBe(false);
             expect(handler.nExpression).toBeUndefined();
         });
@@ -212,12 +217,12 @@ describe('ContextedBase', () => {
         it('lets in win over in-ref on a name collision even when in-ref is declared first', () => {
             const attrMap: Record<string, string> = {
                 [`${PREFIX}container`]: 'this.data',
-                [`${PREFIX}${Constants.IN_REF_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.refValue',
-                [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value',
+                [`${Constants.HANDLERS.IN_REF_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.refValue',
+                [`${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value',
             };
             const el = createElement(attrMap);
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
             const inMap = handler.nExpression!.nInExpression!;
             expect(inMap.size).toBe(1);
             expect(inMap.get('myProp')!.ref).toBe(false);
@@ -233,10 +238,10 @@ describe('ContextedBase', () => {
             // An attribute like nb-in: (no property name after :) triggers "name can't be empty".
             const el = createElement({
                 [`${PREFIX}container`]: 'this.data',
-                [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}`]: 'this.x',
+                [`${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}`]: 'this.x',
             });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
             // The property name after "in:" is empty → Console.error
             expect(consoleSpy).toHaveBeenCalled();
         });
@@ -284,21 +289,40 @@ describe('ContextedBase', () => {
     describe('bind', () => {
         it('returns executionParams unchanged when hasNExpression is false', () => {
             const el = createElement();
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase(undefined, el, attrs, null as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
             const params = createParams([], []);
             const result = handler.bind(params, jest.fn());
             expect(result).toBe(params);
         });
 
-        it('sets isVisible from isElementVisible and calls onBind', () => {
+        it('sets isVisible from the host NElement (parentNElement.isVisible) and calls onBind', () => {
             let visible = false;
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, parentWithVisibility(() => visible), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
             const execExpr = jest.fn();
             handler.bind(undefined, execExpr);
             expect(handler.exposedIsVisible).toBe(false);
+        });
+
+        it('re-reads the host NElement visibility on every bind (no isElementVisible closure kept)', () => {
+            const host = { isVisible: false };
+            const el = createElement({ [`${PREFIX}container`]: 'this.data' });
+            const handler = new TestContextedBase('this.data', el, new Attributes(el, false), null as any, host as any,
+                                                  Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
+
+            handler.bind(undefined, jest.fn());
+            expect(handler.exposedIsVisible).toBe(false);
+
+            host.isVisible = true;
+            handler.bind(undefined, jest.fn());
+            expect(handler.exposedIsVisible).toBe(true);
+
+            host.isVisible = false;
+            handler.bind(undefined, jest.fn());
+            expect(handler.exposedIsVisible).toBe(false);
+            expect((handler as any).isElementVisible).toBeUndefined();
         });
 
         it('does not call bindInputs when hasNInExpression is false', () => {
@@ -340,10 +364,10 @@ describe('ContextedBase', () => {
             let visible = true;
             const el = createElement({
                 [`${PREFIX}container`]: 'this.data',
-                [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value',
+                [`${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value',
             });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, parentWithVisibility(() => visible), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
             const mockBinder = createMockContextBinder({ myProp: 'old' });
             handler.entityChangeReturnValue = mockBinder;
 
@@ -406,11 +430,11 @@ describe('ContextedBase', () => {
             expect(handler.exposedPreviousEntityData).toBe('entity-2');
         });
 
-        it('calls notifyContextAttached when provided', () => {
+        it('calls parentContextBinder.containerAttached when notifications are enabled', () => {
             const attached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, attached);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, { containerAttached: attached, containerDetached: jest.fn() } as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, true);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
             handler.entityChangeReturnValue = mockBinder;
@@ -645,8 +669,8 @@ describe('ContextedBase', () => {
         it('pays the owed request on the first visible commit', () => {
             const attached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, attached);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, { containerAttached: attached, containerDetached: jest.fn() } as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, true);
             const onCommit = jest.spyOn(handler as any, 'onCommit');
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
@@ -715,8 +739,8 @@ describe('ContextedBase', () => {
         it('defers a disposal (onCommit returning undefined) of an existing entity until it is visible again', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, { containerAttached: jest.fn(), containerDetached: detached } as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, true);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
 
@@ -762,10 +786,10 @@ describe('ContextedBase', () => {
             let visible = false;
             const el = createElement({
                 [`${PREFIX}container`]: 'this.data',
-                [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value'
+                [`${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}my-prop`]: 'this.value'
             });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => visible);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, null as any, parentWithVisibility(() => visible), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
             const ctx: Record<string, any> = { myProp: 'initial' };
             handler.entityChangeReturnValue = createMockContextBinder(ctx);
             handler.exposedIsEntityDataDirty = true;
@@ -794,17 +818,17 @@ describe('ContextedBase', () => {
     describe('dispose', () => {
         it('does nothing when hasNExpression is false', () => {
             const el = createElement();
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase(undefined, el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase(undefined, el, attrs, null as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
             // Should not throw
             handler.dispose();
         });
 
-        it('disposes contextBinder and calls notifyContextDetached', () => {
+        it('disposes contextBinder and calls parentContextBinder.containerDetached', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, { containerAttached: jest.fn(), containerDetached: detached } as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, true);
             const ctx = { someProp: 'test' };
             const mockBinder = createMockContextBinder(ctx);
             handler.entityChangeReturnValue = mockBinder;
@@ -821,7 +845,7 @@ describe('ContextedBase', () => {
             expect(handler.exposedCurrentEntityData).toBeUndefined();
         });
 
-        it('disposes without notifyContextDetached when callback not provided', () => {
+        it('disposes without notifying the parent when notifications are disabled', () => {
             const handler = createHandlerSimple('this.data');
             const mockBinder = createMockContextBinder();
             handler.entityChangeReturnValue = mockBinder;
@@ -831,6 +855,21 @@ describe('ContextedBase', () => {
 
             handler.dispose();
             expect(mockBinder.dispose).toHaveBeenCalled();
+        });
+
+        it('never touches the parent binder notifications when the flag is false (component path)', () => {
+            const parent = { containerAttached: jest.fn(), containerDetached: jest.fn() };
+            const el = createElement({ [`${PREFIX}container`]: 'this.data' });
+            const handler = new TestContextedBase('this.data', el, new Attributes(el, false), parent as any, parentWithVisibility(() => true),
+                                                  Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
+            handler.entityChangeReturnValue = createMockContextBinder();
+            handler.commitReturnValue = 'entity-1';
+            handler.exposedIsEntityDataDirty = true;
+            handler.commit();
+            handler.dispose();
+
+            expect(parent.containerAttached).not.toHaveBeenCalled();
+            expect(parent.containerDetached).not.toHaveBeenCalled();
         });
 
         it('handles dispose when contextBinder was never created', () => {
@@ -1339,8 +1378,8 @@ describe('ContextedBase', () => {
         it('preserves previousEntityData/currentEntityData on partial dispose', () => {
             const detached = jest.fn();
             const el = createElement({ [`${PREFIX}container`]: 'this.data' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new TestContextedBase('this.data', el, attrs, null as any, null as any, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true, undefined, detached);
+            const attrs = new Attributes(el, false);
+            const handler = new TestContextedBase('this.data', el, attrs, { containerAttached: jest.fn(), containerDetached: detached } as any, parentWithVisibility(() => true), Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, true);
             const ctx1 = { prop: 'v1' };
             const mockBinder1 = createMockContextBinder(ctx1);
             const ctx2 = { prop: 'v2' };
@@ -1542,16 +1581,16 @@ describe('L-22: special-name guard on input targets', () => {
     });
 
     it.each([
-        [Constants.IN_HANDLER_ATTRIBUTE_NAME],
-        [Constants.IN_REF_HANDLER_ATTRIBUTE_NAME],
+        [Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME],
+        [Constants.HANDLERS.IN_REF_HANDLER_ATTRIBUTE_NAME],
     ])('rejects %s:__proto__ at construction and keeps the other inputs', (handlerName) => {
         const el = createElement({
             [`${PREFIX}container`]: 'this.data',
-            [`${PREFIX}${handlerName}${Constants.META_VALUE_SEPARATOR}__proto__`]: 'this.evil',
-            [`${PREFIX}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}label`]: 'this.label',
+            [`${handlerName}${Constants.META_VALUE_SEPARATOR}__proto__`]: 'this.evil',
+            [`${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}label`]: 'this.label',
         });
-        const handler = new TestContextedBase('this.data', el, new Attributes(el, () => false), null as any, null as any,
-                                              Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+        const handler = new TestContextedBase('this.data', el, new Attributes(el, false), null as any, parentWithVisibility(() => true),
+                                              Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
 
         const inMap = handler.nExpression!.nInExpression!;
         expect(inMap.has('__proto__')).toBe(false);
@@ -1566,12 +1605,12 @@ describe('L-22: special-name guard on input targets', () => {
             'data-nb-container': 'this.data',
             'data-nb-in--__proto__': 'this.evil',
         });
-        const handler = new TestContextedBase('this.data', el, new Attributes(el, () => false), null as any, null as any,
-                                              Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, () => true);
+        const handler = new TestContextedBase('this.data', el, new Attributes(el, false), null as any, parentWithVisibility(() => true),
+                                              Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, false);
 
         expect(handler.nExpression!.nInExpression!.has('__proto__')).toBe(false);
         expect(errorSpy).toHaveBeenCalledWith(`${Constants.DISPLAY_NAME}: `, el,
-            'in handler should not change system native __proto__ property');
+            'data-nb-in handler should not change system native __proto__ property');
     });
 
     it('a real container keeps its prototype and methods', () => {
@@ -1589,8 +1628,8 @@ describe('L-22: special-name guard on input targets', () => {
         root.innerHTML = '<div nb-container="@L22Child" nb-in:__proto__="this.evil" nb-in:label="this.label"></div>';
         document.body.appendChild(root);
 
-        const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined,
-                                         () => false, () => undefined, () => undefined);
+        const binder = new ContextBinder(null, null, undefined, false, false, undefined,
+                                         () => undefined, () => undefined);
         binder.bind(root, host as any, true, false);
         jest.runAllTimers();
 
@@ -1607,8 +1646,8 @@ describe('L-22: special-name guard on input targets', () => {
         const root = document.createElement('div');
         root.innerHTML = html;
         document.body.appendChild(root);
-        const binder = new ContextBinder(null, null, undefined, false, () => 'nb-hidden', undefined,
-                                         () => false, () => undefined, () => undefined);
+        const binder = new ContextBinder(null, null, undefined, false, false, undefined,
+                                         () => undefined, () => undefined);
         binder.bind(root, host as any, true, false);
         jest.runAllTimers();
         return { binder, root };

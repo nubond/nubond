@@ -32,32 +32,34 @@ export class Properties extends Base implements IHandler<Map<string, IExpression
         this._nativeElement = <HTMLElement>nativeElement;
         this._elementValues = new Map<string, any>();
 
-        if (attributes.has(Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME, true, true)) {
+        if (attributes.has(Constants.HANDLERS.PROPERTY_HANDLER_ATTRIBUTE_NAME, true, true)) {
             this.hasNExpression = true;
             this.nExpression = new Map<string, IExpressionDetails>();
 
-            for (const [key, value] of attributes.getAll(Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME, true)) {
-                const rawPropertyName = key.replace(Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME + Constants.META_VALUE_SEPARATOR, '');
+            const handlerNameWithMeta = Constants.HANDLERS.PROPERTY_HANDLER_ATTRIBUTE_NAME + Constants.META_VALUE_SEPARATOR;
+
+            for (const [key, value] of attributes.getAll(Constants.HANDLERS.PROPERTY_HANDLER_ATTRIBUTE_NAME, true)) {
+                const rawPropertyName = key.replace(handlerNameWithMeta, '');
                 if (rawPropertyName.length > 0) {
                     if (!Helpers.isUndefined(value)) {
                         const propertyName = Helpers.fromKebabToCamelCase(rawPropertyName);
                         const propertyNameLower = propertyName.toLowerCase();
 
                         if ((propertyNameLower == 'classlist') || (propertyNameLower == 'classname')) {
-                            Console.error(nativeElement, `classes should be changed via ${Constants.DEFAULT_PREFIX_AND_SEPARATOR}class`);
+                            Console.error(nativeElement, `classes should be changed via ${Constants.HANDLERS.CLASS_HANDLER_ATTRIBUTE_NAME}`);
                         } else if (propertyNameLower == 'style') {
-                            Console.error(nativeElement, `styles should be changed via ${Constants.DEFAULT_PREFIX_AND_SEPARATOR}style`);
+                            Console.error(nativeElement, `styles should be changed via ${Constants.HANDLERS.STYLE_HANDLER_ATTRIBUTE_NAME}`);
                         } else if ((propertyNameLower == 'textcontent') || (propertyNameLower == 'innertext')) {
-                            Console.error(nativeElement, `text content should be changed via ${Constants.DEFAULT_PREFIX_AND_SEPARATOR}value`);
+                            Console.error(nativeElement, `text content should be changed via ${Constants.HANDLERS.VALUE_HANDLER_ATTRIBUTE_NAME}`);
                         } else if (propertyNameLower == 'innerhtml') {
-                            Console.error(nativeElement, `html content should be changed via ${Constants.DEFAULT_PREFIX_AND_SEPARATOR}html`);
+                            Console.error(nativeElement, `html content should be changed via ${Constants.HANDLERS.HTML_HANDLER_ATTRIBUTE_NAME}`);
                         } else if (propertyNameLower == 'outerhtml') {
                             Console.error(nativeElement, `outerHTML cannot be changed`);
                         } else if (propertyNameLower == '__proto__') {
                             Console.error(nativeElement, `__proto__ cannot be changed`);
                         } else {
                             if (!this.nExpression.has(propertyName)) {
-                                this.nExpression.set(propertyName, new ExpressionDetails(value!));   
+                                this.nExpression.set(propertyName, ExpressionDetails.create(value!));   
                             } else {
                                 Console.error(nativeElement, `multiple handlers for one property (${propertyName}) are not supported`);
                             }
@@ -90,7 +92,7 @@ export class Properties extends Base implements IHandler<Map<string, IExpression
                                     executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (this.hasNExpression) {
             for (const [key, value] of this.nExpression!) {
-                this.processExpressionExecution(value, `${Constants.PROPERTY_HANDLER_ATTRIBUTE_NAME}:${key}`,
+                this.processExpressionExecution(value, `${Constants.HANDLERS.PROPERTY_HANDLER_ATTRIBUTE_NAME}:${key}`,
                                                 expression => executeExpression(expression, executionParams), 
                                                 data => this.set(key, data));
             }

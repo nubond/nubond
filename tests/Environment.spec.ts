@@ -292,7 +292,7 @@ describe('Environment', () => {
                 expect(Array.from(Environment.detectors.get(DoubleDecoratedCtx as unknown as ObjectConstructor)!)).toEqual(['count']);
 
                 const div = document.createElement('div');
-                div.innerHTML = `<span ${Constants.DEFAULT_PREFIX}-value="this.count"></span>`;
+                div.innerHTML = `<span ${Constants.PREFIX}-value="this.count"></span>`;
                 document.body.appendChild(div);
                 try {
                     Environment.addApp(div, DoubleDecoratedCtx as any, []);
@@ -413,9 +413,8 @@ describe('Environment', () => {
             const result = Environment.containers.instantiateBinder('instantiate-container', null as any, null as any);
             expect(result).toBeDefined();
             expect(result!.contextBinder).toBeDefined();
-            // Invoke the lazy lambdas passed to the ContextBinder to cover their bodies
-            expect(result!.contextBinder.getHiddenClassName()).toBe(Constants.DEFAULT_HIDE_CLASS_NAME);
-            expect(typeof result!.contextBinder.getShowDebugInfo()).toBe('boolean');
+            // the binder receives the global showDebugInfo value, not a getter
+            expect(typeof result!.contextBinder.showDebugInfo).toBe('boolean');
         });
 
         it('should exercise htmlSanitizer lambda fallback to global sanitizer', () => {
@@ -436,9 +435,8 @@ describe('Environment', () => {
                                      undefined, '<div>inst</div>', undefined, undefined, undefined);
             const binder = Environment.components.instantiateBinder('inst-binder-comp', null as any, null as any);
             expect(binder).toBeDefined();
-            // Invoke getHiddenClassName/getShowDebugInfo to cover lambdas
-            expect(binder!.getHiddenClassName()).toBe(Constants.DEFAULT_HIDE_CLASS_NAME);
-            expect(typeof binder!.getShowDebugInfo()).toBe('boolean');
+            // the binder receives the global showDebugInfo value, not a getter
+            expect(typeof binder!.showDebugInfo).toBe('boolean');
         });
 
         it('should exercise htmlSanitizer/styleSanitizer lambdas with contextConfig', () => {
@@ -614,7 +612,7 @@ describe('Environment', () => {
             // template must stay untouched, not half-rendered.
             (console.error as jest.Mock).mockClear();
             const div = document.createElement('div');
-            div.innerHTML = `<span ${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.VALUE_HANDLER_ATTRIBUTE_NAME}="this.text">placeholder</span>`;
+            div.innerHTML = `<span ${Constants.HANDLERS.VALUE_HANDLER_ATTRIBUTE_NAME}="this.text">placeholder</span>`;
             class OffscreenCtx { public text = 'bound'; }
 
             Environment.addApp(div, OffscreenCtx as any, []);
@@ -781,7 +779,7 @@ describe('Environment', () => {
             Environment.addAspect('life-aspect', LifeAspect as any, [], undefined, undefined, undefined);
 
             const div = document.createElement('div');
-            div.innerHTML = `<span ${Constants.DEFAULT_PREFIX}-aspect:life-aspect></span><i ${Constants.DEFAULT_PREFIX}-aspect:life-aspect></i>`;
+            div.innerHTML = `<span ${Constants.PREFIX}-aspect:life-aspect></span><i ${Constants.PREFIX}-aspect:life-aspect></i>`;
             document.body.appendChild(div);
             testElements.push(div);
 
@@ -810,7 +808,7 @@ describe('Environment', () => {
             Environment.addAspect('quiet-aspect', QuietAspect as any, [], undefined, undefined, undefined);
 
             const div = document.createElement('div');
-            div.innerHTML = `<span ${Constants.DEFAULT_PREFIX}-aspect:failing-aspect></span><i ${Constants.DEFAULT_PREFIX}-aspect:quiet-aspect></i>`;
+            div.innerHTML = `<span ${Constants.PREFIX}-aspect:failing-aspect></span><i ${Constants.PREFIX}-aspect:quiet-aspect></i>`;
             document.body.appendChild(div);
             testElements.push(div);
 

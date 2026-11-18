@@ -5,6 +5,12 @@ import { NElement, NTreeElement } from './nElement/NElement';
 import { NElementProjection } from './nElement/NElementProjection';
 
 export class TreeBuilder {
+    //shared by every NElement, nothing is captured per element
+    private static readonly _cloneTreeCallBack = (contextBinder: IContextBinder, nTreeElementParent: INElement | INTreeElement, nElement: INElement) =>
+                                                    TreeBuilder.cloneTree(contextBinder, nTreeElementParent, nElement);
+    private static readonly _constructSubTreeCallBack = (contextBinder: IContextBinder, nElement: INElement) =>
+                                                           TreeBuilder.constructTreePrivate(contextBinder, nElement, nElement.nativeElement);
+
     private constructor() {}
 
     public static constructTree(contextBinder: IContextBinder, nativeElement: Element | ShadowRoot, bindRootElement: boolean): INTreeElement {
@@ -76,8 +82,8 @@ export class TreeBuilder {
                                   cloneOfNElement?: INElement, immediateParent?: INElement): INElement {
         return new NElement(contextBinder, nElementParent, nativeElement,
                             cloneOfNElement, immediateParent,
-                            (nTreeElementParent, nElement) => this.cloneTree(contextBinder, nTreeElementParent, nElement),
-                            (nTreeElementParent) => this.constructTreePrivate(contextBinder, nTreeElementParent, nativeElement));
+                            TreeBuilder._cloneTreeCallBack,
+                            TreeBuilder._constructSubTreeCallBack);
     }
 
     private static createNTreeElement(nativeElement: Element): INTreeElement {

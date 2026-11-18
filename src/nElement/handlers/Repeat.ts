@@ -3,6 +3,8 @@ import { IExpressionDetails } from '../../interfaces/expression/IExpressionDetai
 import { IHandler } from '../../interfaces/nElement/IHandler';
 import { IVisible } from '../../interfaces/nElement/IVisible';
 
+import { INElement } from '../../interfaces/nElement/INElement';
+
 import { InitializableBase } from './base/InitializableBase';
 
 import { Attributes } from './Attributes';
@@ -22,10 +24,9 @@ type RepeatDataType = 'array-like' | 'object' | 'number';
 export class Repeat extends InitializableBase implements IHandler<IExpressionDetails>, IVisible {
     private readonly _nativeElement: Element | undefined;
     private readonly _classes: Classes | undefined;
-    private readonly _showDebugInfo: (() => boolean) | undefined;
+    private readonly _showDebugInfo: boolean | undefined;
 
-    private readonly _requestNElementClone: (() => void) | undefined;
-    private readonly _requestNElementRemoval: (() => void) | undefined;
+    private readonly _nElement: INElement | undefined;
     private readonly _dataSource: Repeat | undefined;
     private readonly _cloneOf: Repeat | undefined;
 
@@ -75,17 +76,17 @@ export class Repeat extends InitializableBase implements IHandler<IExpressionDet
     }
 
     constructor(nativeElement: Element, attributes: Attributes, classes: Classes,
-                requestNElementClone: () => void, requestNElementRemoval: () => void,
-                getShowDebugInfo: () => boolean,
-                cloneOf?: Repeat) {
-        super(nativeElement, Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+                nElement: INElement,
+                cloneOf: Repeat | undefined,
+                showDebugInfo: boolean) {
+        super(nativeElement, Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
 
-        const attributeData = attributes.get(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME, true, true, false);
+        const attributeData = attributes.get(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME, true, true, false);
         if (Helpers.isArray(attributeData)) {
             const attributeName = (<[string, string]>attributeData)[0];
-            const prefix = attributeName === Constants.REPEAT_HANDLER_ATTRIBUTE_NAME
+            const prefix = attributeName === Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME
                                 ? undefined
-                                : attributeName.replace(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME + Constants.META_VALUE_SEPARATOR, '');
+                                : attributeName.replace(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME + Constants.META_VALUE_SEPARATOR, '');
             let isValidPrefix = true;
 
             if (!Helpers.isUndefined(prefix)) {
@@ -93,17 +94,17 @@ export class Repeat extends InitializableBase implements IHandler<IExpressionDet
                     isValidPrefix = false;
                     Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is not a valid identifier.`);
                 } else {
-                    const itemPrefixed = this.getContextParameterName(Constants.ITEM_EXECUTION_PARAM_NAME, prefix);
+                    const itemPrefixed = this.getContextParameterName(Constants.EXPRESSIONS.ITEM_EXECUTION_PARAM_NAME, prefix);
                     if (Environment.transformers.names.indexOf(itemPrefixed) >= 0) {
                         isValidPrefix = false;
                         Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${itemPrefixed} transformer.`);
                     } else {
-                        const indexPrefixed = this.getContextParameterName(Constants.INDEX_EXECUTION_PARAM_NAME, prefix);
+                        const indexPrefixed = this.getContextParameterName(Constants.EXPRESSIONS.INDEX_EXECUTION_PARAM_NAME, prefix);
                         if (Environment.transformers.names.indexOf(indexPrefixed) >= 0) {
                             isValidPrefix = false;
                             Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${indexPrefixed} transformer.`);
                         } else {
-                            const totalCountPrefixed = this.getContextParameterName(Constants.TOTAL_COUNT_EXECUTION_PARAM_NAME, prefix);
+                            const totalCountPrefixed = this.getContextParameterName(Constants.EXPRESSIONS.TOTAL_COUNT_EXECUTION_PARAM_NAME, prefix);
                             if (Environment.transformers.names.indexOf(totalCountPrefixed) >= 0) {
                                 isValidPrefix = false;
                                 Console.error(nativeElement,`repeat prefix '${prefix}' name cannot be created, it is conflicting with ${totalCountPrefixed} transformer.`);
@@ -116,13 +117,12 @@ export class Repeat extends InitializableBase implements IHandler<IExpressionDet
             if (isValidPrefix) {
                 this._nativeElement = nativeElement;
                 this._classes = classes;
-                this._requestNElementClone = requestNElementClone;
-                this._requestNElementRemoval = requestNElementRemoval;
-                this._showDebugInfo = getShowDebugInfo;
+                this._nElement = nElement;
+                this._showDebugInfo = showDebugInfo;
 
                 this.prefix = prefix;
                 this.hasNExpression = true;
-                this.nExpression = new ExpressionDetails((<[string, string]>attributeData)[1]);
+                this.nExpression = ExpressionDetails.create((<[string, string]>attributeData)[1]);
 
                 if (!Helpers.isUndefined(cloneOf)) {
                     this._cloneOf = cloneOf;
@@ -147,7 +147,7 @@ export class Repeat extends InitializableBase implements IHandler<IExpressionDet
             let currentExecutionParams = executionParams;
 
             if (this.repeatIndex === 0) {
-                this.processExpressionExecution(this.nExpression!, Constants.REPEAT_HANDLER_ATTRIBUTE_NAME, 
+                this.processExpressionExecution(this.nExpression!, Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME, 
                                                 expression => executeExpression(expression, executionParams),  
                                                 data => {
                                                     this.processData(data);
@@ -175,9 +175,9 @@ export class Repeat extends InitializableBase implements IHandler<IExpressionDet
 
             if (this._previousIsVisible !== this._isVisible) {
                 if (this._isVisible) {
-                    this._classes!.show(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.show(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
                 } else {
-                    this._classes!.hide(Constants.REPEAT_HANDLER_ATTRIBUTE_NAME);
+                    this._classes!.hide(Constants.HANDLERS.REPEAT_HANDLER_ATTRIBUTE_NAME);
                 }
 
                 this._previousIsVisible = this._isVisible;
@@ -213,7 +213,7 @@ export class Repeat extends InitializableBase implements IHandler<IExpressionDet
                         totalCount = rawTotalCount;
                     }
                 } else {
-                    if (this._showDebugInfo!()) {
+                    if (this._showDebugInfo) {
                         Console.warn(this._nativeElement, "Low performance for repeat expression is expected, consider refactoring to repeat thru array-like objects and not over: ", rawData);
                     }
 
@@ -252,7 +252,7 @@ export class Repeat extends InitializableBase implements IHandler<IExpressionDet
 
             if (this.totalCount > this.repeatIndex! + 1) {
                 if (!this.hasClone) {
-                    this._requestNElementClone!();
+                    this._nElement!.clone();
                     this.hasClone = true;
                 }
             }
@@ -260,7 +260,7 @@ export class Repeat extends InitializableBase implements IHandler<IExpressionDet
             if (this.repeatIndex === 0) {
                 this.isVisible = false;
             } else {
-                this._requestNElementRemoval!();
+                this._nElement!.remove();
                 this._cloneOf!.hasClone = false;
                 removeRequested = true;
             }

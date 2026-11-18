@@ -3,6 +3,9 @@ import { Injectables } from '../../src/entities/Injectables';
 import { AdoptedStyles } from '../../src/entities/AdoptedStyles';
 import { IComponentContext } from '../../src/interfaces/contexts/IComponentContext';
 import { Constants } from '../../src/Constants';
+import { ElementManipulations } from '../../src/models/injections/ElementManipulations';
+import { ElementSubscriptions } from '../../src/models/injections/ElementSubscriptions';
+import { ChangeDetector } from '../../src/models/injections/ChangeDetector';
 
 // Polyfill CSSStyleSheet for jsdom
 if (typeof CSSStyleSheet !== 'undefined' && !CSSStyleSheet.prototype.replaceSync) {
@@ -790,6 +793,80 @@ describe('Components', () => {
             jest.runAllTimers();
             expect(cb2).toHaveBeenCalledWith(true);
             expect((globalThis as any).fetch).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    describe('getDependencies', () => {
+        const addComponent = (name: string, ctx: any, dependencies: Array<any>) =>
+            components.add(name, ctx, dependencies, undefined, '<div></div>', undefined, undefined,
+                           mockBinderCreator, () => undefined, () => undefined, () => undefined);
+
+        it('should return undefined for an unknown component', () => {
+            expect(components.getDependencies('missing-component')).toBeUndefined();
+        });
+
+        // components.add also calls customElements.define, whose registry is shared by the whole file — so every test uses its own tag
+        it('should return the dependencies registered with the component context', () => {
+            class InjectingCtx implements IComponentContext {}
+            addComponent('deps-injecting-component', InjectingCtx, [ElementManipulations, ElementSubscriptions]);
+
+            const dependencies = components.getDependencies('deps-injecting-component')!;
+            expect(dependencies.has(ElementManipulations as any)).toBe(true);
+            expect(dependencies.has(ElementSubscriptions as any)).toBe(true);
+            expect(dependencies.has(ChangeDetector as any)).toBe(false);
+        });
+
+        it('should be case-insensitive like the tag-name lookup', () => {
+            class InjectingCtx implements IComponentContext {}
+            addComponent('deps-case-component', InjectingCtx, [ChangeDetector]);
+
+            expect(components.getDependencies('DEPS-CASE-COMPONENT')!.has(ChangeDetector as any)).toBe(true);
+        });
+
+        it('should return an empty set for a component without dependencies', () => {
+            class PlainCtx implements IComponentContext {}
+            addComponent('deps-plain-component', PlainCtx, []);
+
+            expect(components.getDependencies('deps-plain-component')!.size).toBe(0);
+        });
+
+        it('should return undefined for a rejected (invalid) component name', () => {
+            class InvalidCtx implements IComponentContext {}
+            addComponent('invalidname', InvalidCtx, [ElementManipulations]);
+
+            expect(components.getDependencies('invalidname')).toBeUndefined();
+        });
+    });
+
+    // The Component handler passes undefined for an ElementManipulations / ElementSubscriptions proxy the
+    // context does not inject; those holes are dropped before the injections reach the resolver.
+    describe('instantiateContext with undefined context-dependent injections', () => {
+        const addComponent = (name: string, ctx: any, dependencies: Array<any>) =>
+            components.add(name, ctx, dependencies, undefined, '<div></div>', undefined, undefined,
+                           mockBinderCreator, () => undefined, () => undefined, () => undefined);
+
+        it('should skip undefined injections and still resolve the provided ones', () => {
+            class DetectingCtx implements IComponentContext {
+                constructor(public readonly detector: ChangeDetector) {}
+            }
+            addComponent('undefined-injections-component', DetectingCtx, [ChangeDetector]);
+            const detector = new ChangeDetector(() => {});
+
+            const ctx = components.instantiateContext('undefined-injections-component',
+                                                      undefined, detector, undefined) as DetectingCtx;
+
+            expect(ctx).toBeInstanceOf(DetectingCtx);
+            expect(ctx.detector).toBe(detector);
+            expect(console.error).not.toHaveBeenCalled();
+        });
+
+        it('should instantiate a context without dependencies when every injection is undefined', () => {
+            class PlainCtx implements IComponentContext {}
+            addComponent('all-undefined-injections-component', PlainCtx, []);
+
+            expect(components.instantiateContext('all-undefined-injections-component', undefined, undefined))
+                .toBeInstanceOf(PlainCtx);
+            expect(console.error).not.toHaveBeenCalled();
         });
     });
 });

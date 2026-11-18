@@ -66,22 +66,20 @@ export class ContextBinder implements IBindableContextBinder {
         return this._context;
     }
 
-    public readonly getShowDebugInfo: () => boolean;
-    public readonly getHiddenClassName: () => string;
+    public readonly showDebugInfo: boolean;
     public readonly htmlSanitizer: ((html: string) => string) | undefined;
     public readonly expressionExecutor: ExpressionExecutor;
     
     constructor(parent: IContextBinder | null, parentNElement: INElement | null,
                 contextConfig: IContextConfig | undefined,
                 pessimisticChangeDetectionStrategyDefault: boolean,
-                getHiddenClassName: () => string, htmlSanitizer: ((html: string) => string) | undefined,
-                getShowDebugInfo: () => boolean,
+                showDebugInfo: boolean,
+                htmlSanitizer: ((html: string) => string) | undefined,
                 getDetectors: (obj: object) => ReadonlySet<string> | undefined,
                 getEventers: (obj: object) => ReadonlyMap<string, string> | undefined) {
         this._parent = parent;
         this._parentNElement = parentNElement;
-        this.getShowDebugInfo = getShowDebugInfo;
-        this.getHiddenClassName = getHiddenClassName;
+        this.showDebugInfo = showDebugInfo;
         this._getDetectors = getDetectors;
         this._getEventers = getEventers;
 
@@ -104,7 +102,7 @@ export class ContextBinder implements IBindableContextBinder {
             this._pessimisticChangeDetectionStrategy = pessimisticChangeDetectionStrategyDefault;
         }
 
-        this.expressionExecutor = new ExpressionExecutor(this.getShowDebugInfo);
+        this.expressionExecutor = new ExpressionExecutor(this.showDebugInfo);
     }
 
     public bind(element: Element | ShadowRoot, context: IContext | IComponentContext, elementBindable: boolean, debounced: boolean = true): boolean {
@@ -136,7 +134,7 @@ export class ContextBinder implements IBindableContextBinder {
             
             if (Helpers.isNumber(this._detectChangesTimeout)) {
                 clearTimeout(this._detectChangesTimeout!);
-                delete this._detectChangesTimeout;
+                this._detectChangesTimeout = undefined;
             }
 
             if (!Helpers.isUndefined(this.rootNElement)) {
@@ -154,11 +152,11 @@ export class ContextBinder implements IBindableContextBinder {
             this._parent = null;
             this._parentNElement = null;
 
-            delete this.rootNElement;
-            delete this._context;
-            delete this._detectorsSelfTriggeringCounts;
-            delete this._detectorsValueContainer;
-            delete this._eventersValueContainer;
+            this.rootNElement = undefined;
+            this._context = undefined;
+            this._detectorsSelfTriggeringCounts = undefined;
+            this._detectorsValueContainer = undefined;
+            this._eventersValueContainer = undefined;
         }
     }
 
@@ -471,12 +469,13 @@ export class RootContextBinder extends ContextBinder {
 
     constructor(contextConfig: IContextConfig | undefined,
                 pessimisticChangeDetectionStrategyDefault: boolean,
-                getHiddenClassName: () => string, htmlSanitizer: ((html: string) => string) | undefined,
-                getShowDebugInfo: () => boolean,
+                showDebugInfo: boolean,
+                htmlSanitizer: ((html: string) => string) | undefined,
                 getDetectors: (obj: object) => ReadonlySet<string> | undefined,
                 getEventers: (obj: object) => ReadonlyMap<string, string> | undefined) {
         super(null, null, contextConfig, pessimisticChangeDetectionStrategyDefault,
-              getHiddenClassName, htmlSanitizer, getShowDebugInfo,
+              showDebugInfo,
+              htmlSanitizer,
               getDetectors, getEventers);
     }
 

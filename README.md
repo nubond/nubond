@@ -48,6 +48,40 @@ nuBond is a lightweight UI framework for building reactive progressive web appli
 - **Adopted styles** — share `CSSStyleSheet` instances across components.
 - **W3C compliance mode** — switch from `nb-*` to `data-nb-*` attributes when strict HTML conformance is required.
 
+## How it compares
+
+| | **nuBond** | **Angular** | **Vue** | **React** |
+|---|---|---|---|---|
+| Templates | ✅ Plain `.html` files + `nb-*` attributes | Angular template syntax | SFC / in-DOM templates | JSX inside JavaScript |
+| Template compiler needed | ✅ No — plain `tsc` | Yes (Angular compiler) | Yes, for SFCs | Yes (JSX transform) |
+| State | ✅ Plain class fields, change detection runs automatically | Signals (`signal`, `set`, `update`) | Reactive proxies (`ref`, `reactive`) | Immutable state + hooks |
+| Components are native Web Components | ✅ Always (Custom Element + Shadow DOM) | Opt-in (Angular Elements) | Opt-in (`defineCustomElement`) | ❌ |
+| Style isolation | ✅ Native Shadow DOM + shared adopted stylesheets | Emulated by default | `scoped` (emulated) | ❌ Not built in |
+| Dependency injection | ✅ Built in | ✅ Built in | `provide` / `inject` | ❌ Context only |
+| Router | ✅ Built in | ✅ Built in | Separate package | Third-party |
+| Runtime dependencies | ✅ None | RxJS, tslib | None | None |
+| Server-side rendering | ❌ | ✅ | ✅ | ✅ |
+| Learning curve | ✅ Low — a handful of decorators, ~20 `nb-*` attributes | Steep | Gentle | Moderate |
+
+### Performance
+
+The same data-table app (js-framework-benchmark style) is built in each framework and measured in headless Chrome. The median of 10 runs is shown; lower is better and the best value is in **bold**.
+
+| | **nuBond** 1.0.17 | **Angular** 21.2 | **Vue** 3.5 | **React** 19.3 |
+|---|---:|---:|---:|---:|
+| Create 1,000 rows (ms) | 39.2 | 22.4 | **22.0** | 23.8 |
+| Replace 1,000 rows (ms) | **32.1** | 40.3 | 34.6 | 35.2 |
+| Update every 10th row (ms) | 19.8 | 21.2 | 24.5 | **17.9** |
+| Select a row (ms) | 2.5 | **1.0** | 1.9 | 1.3 |
+| Swap two rows (ms) | **5.4** | 7.1 | 6.2 | 27.5 |
+| Remove a row (ms) | 32.3 | 6.3 | 7.2 | **6.0** |
+| Create 10,000 rows (ms) | 775.6 | 500.5 | **482.4** | 606.9 |
+| JS bundle, gzip (kB) | 29.9 | 36.8 | **24.7** | 66.7 |
+| Startup to first render (ms) | 34.2 | 33.5 | **28.4** | 45.4 |
+| JS heap with 1,000 rows (MB) | 3.4 | **2.6** | 2.7 | 3.1 |
+
+<sub>Chrome 157, Intel Core Ultra 5 125H, Windows 11, 2026-11-18. Re-run with `cd benchmarks && npm run all`.</sub>
+
 ## Quick Start
 
 The fastest way to scaffold a new app is via `create nubond`:
@@ -65,6 +99,45 @@ npm install nubond
 ```
 
 > **Requires** TypeScript with `experimentalDecorators` and `emitDecoratorMetadata` enabled.
+
+### Unit tests
+
+nuBond is published as ES modules and adopts its built-in styles as soon as it is imported, so a test that imports `nubond` under jsdom needs a little setup.
+
+jsdom has no constructable stylesheets — polyfill them in a setup file (for Jest `setupFiles`, for Vitest `test.setupFiles`):
+
+```js
+// test-setup.js
+if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
+    CSSStyleSheet.prototype.replaceSync = function () {};
+}
+if (!Array.isArray(document.adoptedStyleSheets)) {
+    Object.defineProperty(Document.prototype, 'adoptedStyleSheets', { value: [], writable: true, configurable: true });
+}
+// older jsdom versions also lack structuredClone, which nb-in uses to copy inputs
+globalThis.structuredClone ??= value => JSON.parse(JSON.stringify(value));
+```
+
+**Vitest** (`environment: 'jsdom'`) needs nothing else.
+
+**Jest** does not compile anything in `node_modules`, so it has to be told to compile `nubond`'s `.js` files too:
+
+```js
+// jest.config.js
+module.exports = {
+    testEnvironment: 'jsdom',
+    transform: { '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }] },   // .ts AND .js
+    transformIgnorePatterns: ['/node_modules/(?!nubond/)'],                                          // compile nubond too
+    setupFiles: ['<rootDir>/test-setup.js'],
+};
+```
+
+```json
+// tsconfig.spec.json
+{ "extends": "./tsconfig.json", "compilerOptions": { "rootDir": ".", "allowJs": true, "types": ["jest"] } }
+```
+
+Without these Jest stops at `SyntaxError: Cannot use import statement outside a module`.
 
 ## Hello, world
 

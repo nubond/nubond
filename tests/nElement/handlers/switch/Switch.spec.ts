@@ -4,15 +4,15 @@ import { Classes } from '../../../../src/nElement/handlers/Classes';
 import { Constants } from '../../../../src/Constants';
 
 describe('Switch handler', () => {
-    const hideClassName = 'nb-hidden';
+    const hideClassName = Constants.STYLES.DEFAULT_HIDE_CLASS_NAME;   // Classes reads it from Constants (no getter is injected any more)
 
     function createElements(expression?: string): { el: Element; attrs: Attributes; classes: Classes } {
         const el = document.createElement('div');
         if (expression !== undefined) {
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_HANDLER_ATTRIBUTE_NAME}`, expression);
+            el.setAttribute(`${Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME}`, expression);
         }
-        const attrs = new Attributes(el, () => false);
-        const classes = new Classes(el, attrs, () => hideClassName);
+        const attrs = new Attributes(el, false);
+        const classes = new Classes(el, attrs);
         return { el, attrs, classes };
     }
 
@@ -125,7 +125,7 @@ describe('Switch handler', () => {
         it('should set the ready attribute directly on the element on first commit', () => {
             const { el, attrs, classes } = createElements('ctx.tab');
             const handler = new Switch(el, attrs, classes);
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const readyAttr = `${Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
 
             handler.bind(undefined, () => 'home');
             expect(el.hasAttribute(readyAttr)).toBe(false);

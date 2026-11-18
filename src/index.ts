@@ -24,7 +24,7 @@ import { ElementManipulations } from './models/injections/ElementManipulations';
 import { ElementSubscriptions } from './models/injections/ElementSubscriptions';
 import { EventDispatcher } from './models/injections/EventDispatcher';
 
-import { Router } from './Router';
+import { IRouter, Router } from './Router';
 import { CallBackEvent } from './CallBackEvent';
 
 import { Helpers } from './Helpers';
@@ -68,7 +68,7 @@ export {
     ElementSubscriptions,
     EventDispatcher,
 
-    Router,
+    IRouter, Router,
     CallBackEvent,
     Helpers
 };

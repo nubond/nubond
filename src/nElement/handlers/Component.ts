@@ -1,5 +1,8 @@
 import { INElement } from '../../interfaces/nElement/INElement';
 
+import { IElementManipulationsConsumer } from '../../interfaces/nElement/IElementManipulationsConsumer';
+import { IElementSubscriptionsConsumer } from '../../interfaces/nElement/IElementSubscriptionsConsumer';
+
 import { ContextedBase } from './base/ContextedBase';
 
 import { Attributes } from './Attributes';
@@ -30,32 +33,54 @@ class ComponentContextEntityData {
     }
 }
 
-export class Component extends ContextedBase<ComponentContextEntityData> {
+export class Component extends ContextedBase<ComponentContextEntityData> implements IElementManipulationsConsumer, IElementSubscriptionsConsumer {
+    private readonly _getEventDispatcher: (() => EventDispatcher) | undefined;
+
     private readonly _getElementManipulations: (() => ElementManipulations) | undefined;
     private readonly _getElementSubscriptions: (() => ElementSubscriptions) | undefined;
-    private readonly _getEventDispatcher: (() => EventDispatcher) | undefined;
 
     private _isFirstComponentCommit = true;
 
     private _previousComponentName = '';
     private _currentComponentName = '';
 
+    public readonly hasElementManipulations: boolean;
+    public readonly hasElementSubscriptions: boolean;
+
     constructor(nativeElement: Element, attributes: Attributes,
                 parentContextBinder: IContextBinder, parentNElement: INElement,
-                getElementManipulations: () => ElementManipulations, getElementSubscriptions: () => ElementSubscriptions, getEventDispatcher: () => EventDispatcher,
-                isElementVisible: () => boolean) {
+                getElementManipulations: () => ElementManipulations, getElementSubscriptions: () => ElementSubscriptions, 
+                getEventDispatcher: () => EventDispatcher) {
         super(Environment.components.has(nativeElement.tagName) ? `@${nativeElement.tagName.toLowerCase()}` : undefined,
               nativeElement, attributes, parentContextBinder, parentNElement,
-              Constants.COMPONENT_MARKER_ATTRIBUTE_NAME,
-              isElementVisible);
+              Constants.HANDLERS.COMPONENT_MARKER_ATTRIBUTE_NAME,
+              false);
 
         if (this.hasNExpression) {
-            this._getElementManipulations = getElementManipulations;
-            this._getElementSubscriptions = getElementSubscriptions;
             this._getEventDispatcher = getEventDispatcher;
 
             this._currentComponentName = nativeElement.tagName.toLowerCase();
             this.isEntityDataDirty = true;
+
+            const dependencies = Environment.components.getDependencies(this._currentComponentName);
+            if (!Helpers.isUndefined(dependencies)) {
+                this.hasElementManipulations = dependencies!.has(ElementManipulations);
+                this.hasElementSubscriptions = dependencies!.has(ElementSubscriptions);
+
+                if (this.hasElementManipulations) {
+                    this._getElementManipulations = getElementManipulations;
+                }
+
+                if (this.hasElementSubscriptions) {
+                     this._getElementSubscriptions = getElementSubscriptions;
+                }
+            } else {
+                this.hasElementManipulations = false;
+                this.hasElementSubscriptions = false;
+            }
+        } else {
+            this.hasElementManipulations = false;
+            this.hasElementSubscriptions = false;
         }
     }
     
@@ -78,8 +103,8 @@ export class Component extends ContextedBase<ComponentContextEntityData> {
                             const context = Environment.components.instantiateContext(this._currentComponentName, 
                                                                                       this.nativeElement!,
                                                                                       new ChangeDetector(() => contextBinder!.detectChanges()),
-                                                                                      this._getElementManipulations!(),
-                                                                                      this._getElementSubscriptions!(),
+                                                                                      this._getElementManipulations?.(),
+                                                                                      this._getElementSubscriptions?.(),
                                                                                       this._getEventDispatcher!());
                             if (!Helpers.isUndefined(context)) {
                                 result = new ComponentContextEntityData(context!, contextBinder!);                    

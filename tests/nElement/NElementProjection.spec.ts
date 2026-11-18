@@ -2,10 +2,10 @@ import { NElementProjection } from '../../src/nElement/NElementProjection';
 import { Constants } from '../../src/Constants';
 
 describe('NElementProjection', () => {
-    const PROJECTION_ATTR = () => Constants.FULL_PROJECTION_ATTRIBUTE_NAME;
-    const ENCAPSULATED_ATTR = () => Constants.FULL_ENCAPSULATED_ATTRIBUTE_NAME;
-    const PROJECT_TO_ATTR = () => Constants.FULL_PROJECT_TO_ATTRIBUTE_NAME;
-    const PROJECT_INSTEAD_ATTR = () => Constants.FULL_PROJECT_INSTEAD_ATTRIBUTE_NAME;
+    const PROJECTION_ATTR = () => Constants.HANDLERS.PROJECTION_ATTRIBUTE_NAME;
+    const ENCAPSULATED_ATTR = () => Constants.HANDLERS.ENCAPSULATED_MARKER_ATTRIBUTE_NAME;
+    const PROJECT_TO_ATTR = () => Constants.HANDLERS.PROJECT_TO_ATTRIBUTE_NAME;
+    const PROJECT_INSTEAD_ATTR = () => Constants.HANDLERS.PROJECT_INSTEAD_ATTRIBUTE_NAME;
 
     function projected(name: string, text: string, tag = 'span'): HTMLElement {
         const el = document.createElement(tag);

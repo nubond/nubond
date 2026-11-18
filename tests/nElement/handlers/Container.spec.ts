@@ -13,16 +13,16 @@ describe('Container handler', () => {
     function createElementWithAttr(expression?: string): Element {
         const el = document.createElement('div');
         if (expression !== undefined) {
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}`, expression);
+            el.setAttribute(`${Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME}`, expression);
         }
         return el;
     }
 
     function createHandler(expression?: string) {
         const el = createElementWithAttr(expression);
-        const attrs = new Attributes(el, () => false);
-        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
-                                      mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+        const attrs = new Attributes(el, false);
+        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher,
+                                      mockConstructSubTree, mockRemoveChildren);
         return { el, attrs, handler };
     }
 
@@ -64,14 +64,14 @@ describe('Container handler', () => {
     }
 
     const mockGetEventDispatcher = () => ({} as any);
-    const mockIsVisible = () => true;
     const mockRequestParentsDetect = jest.fn();
     const mockConstructSubTree = jest.fn();
     const mockRemoveChildren = jest.fn();
-    const mockParentBinder = {} as any;
-    const mockParentNElement = {} as any;
     const mockContainerAttached = jest.fn();
     const mockContainerDetached = jest.fn();
+    // the handler reaches the parent binder directly (detectChanges / containerAttached / containerDetached)
+    const mockParentBinder = { detectChanges: mockRequestParentsDetect, containerAttached: mockContainerAttached, containerDetached: mockContainerDetached } as any;
+    const mockParentNElement = { isVisible: true } as any;   // visibility is read from the host NElement on bind
 
     beforeEach(() => {
         jest.clearAllMocks();
@@ -79,23 +79,23 @@ describe('Container handler', () => {
 
     it('should detect expression from attribute', () => {
         const el = createElementWithAttr('@myContainer');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
 
         // Register a container first
         class MockContainer {}
         Environment.addContainer('myContainer', MockContainer as any, [], '<div></div>', undefined);
 
-        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
-                                      mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher,
+                                      mockConstructSubTree, mockRemoveChildren);
 
         expect(handler.hasNExpression).toBe(true);
     });
 
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
-        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
-                                      mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+        const attrs = new Attributes(el, false);
+        const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher,
+                                      mockConstructSubTree, mockRemoveChildren);
 
         expect(handler.hasNExpression).toBe(false);
     });
@@ -135,7 +135,7 @@ describe('Container handler', () => {
     describe('onCommit', () => {
         it('should set the ready attribute directly on the element on first commit', () => {
             const { handler, attrs, el } = createHandler('this.name');
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const readyAttr = `${Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
 
             mockContainersEnv({ has: true, isReady: true });
 
@@ -203,11 +203,11 @@ describe('Container handler', () => {
 
         it('keeps a #-pinned container name pinned when the element also has an nb-in (R6-2)', () => {
             const el = document.createElement('div');
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}`, '#this.name');
-            el.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}cfg`, 'this.cfg');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
-                                          mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            el.setAttribute(`${Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME}`, '#this.name');
+            el.setAttribute(`${Constants.HANDLERS.IN_HANDLER_ATTRIBUTE_NAME}${Constants.META_VALUE_SEPARATOR}cfg`, 'this.cfg');
+            const attrs = new Attributes(el, false);
+            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher,
+                                          mockConstructSubTree, mockRemoveChildren);
             const envMock = mockContainersEnv({ has: true, isReady: true });
 
             const exec1 = jest.fn((expression: string | null | undefined) => expression === 'this.name' ? 'containerA' : 1);
@@ -246,7 +246,7 @@ describe('Container handler', () => {
 
         it('should mark an initially empty container ready', () => {
             const { handler, el } = createHandler('this.name');
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const readyAttr = `${Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
             const { containers } = mockContainersEnv({ has: true, isReady: true });
 
             handler.bind(undefined, jest.fn().mockReturnValue(''));
@@ -262,9 +262,9 @@ describe('Container handler', () => {
         it('should keep the fallback children of an initially empty container in the DOM', () => {
             const el = createElementWithAttr('this.name');
             el.innerHTML = '<p id="fallback">Static fallback</p>text';
-            const attrs = new Attributes(el, () => false);
-            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
-                                          mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            const attrs = new Attributes(el, false);
+            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher,
+                                          mockConstructSubTree, mockRemoveChildren);
             mockContainersEnv({ has: true, isReady: true });
 
             handler.bind(undefined, jest.fn().mockReturnValue(''));
@@ -295,9 +295,9 @@ describe('Container handler', () => {
         it('should restore the fallback children when going empty -> real -> empty', () => {
             const el = createElementWithAttr('this.name');
             el.innerHTML = '<p id="fallback">Static fallback</p>';
-            const attrs = new Attributes(el, () => false);
-            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher, mockIsVisible,
-                                          mockConstructSubTree, mockRemoveChildren, mockRequestParentsDetect, mockContainerAttached, mockContainerDetached);
+            const attrs = new Attributes(el, false);
+            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher,
+                                          mockConstructSubTree, mockRemoveChildren);
             const { containers, mockContextBinder } = mockContainersEnv({ has: true, isReady: true });
 
             handler.bind(undefined, jest.fn().mockReturnValue(''));
@@ -314,6 +314,27 @@ describe('Container handler', () => {
 
             expect(mockContextBinder.dispose).toHaveBeenCalledTimes(1);
             expect(el.innerHTML).toBe('<p id="fallback">Static fallback</p>');
+        });
+
+        it('should notify the parent binder (not a closure) when the container attaches and detaches', () => {
+            const el = createElementWithAttr('this.name');
+            const attrs = new Attributes(el, false);
+            const handler = new Container(el, attrs, mockParentBinder, mockParentNElement, mockGetEventDispatcher,
+                                          mockConstructSubTree, mockRemoveChildren);
+            const { mockContextBinder } = mockContainersEnv({ has: true, isReady: true });
+
+            handler.bind(undefined, jest.fn().mockReturnValue('mycontainer'));
+            handler.commit();
+
+            expect(mockContainerAttached).toHaveBeenCalledTimes(1);
+            expect(mockContainerAttached).toHaveBeenCalledWith(mockContextBinder.context);
+            expect(mockContainerDetached).not.toHaveBeenCalled();
+
+            handler.bind(undefined, jest.fn().mockReturnValue(''));
+            handler.commit();
+
+            expect(mockContainerDetached).toHaveBeenCalledTimes(1);
+            expect(mockContainerDetached).toHaveBeenCalledWith(mockContextBinder.context);
         });
 
         it('should call tryPrepare when container is not ready', () => {
@@ -542,7 +563,7 @@ describe('Container handler', () => {
         });
 
         it('should mark a route container with an empty slot ready', () => {
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const readyAttr = `${Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
             const mockRouter = {
                 isConfigured: true,
                 state: { mySlot: undefined } as any,

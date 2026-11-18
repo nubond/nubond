@@ -3,6 +3,22 @@ import { Attributes } from '../../../src/nElement/handlers/Attributes';
 import { Constants } from '../../../src/Constants';
 import { Environment } from '../../../src/Environment';
 import { ExecutionParams } from '../../../src/expression/ExpressionExecParamsHelper';
+import { IContextBinder } from '../../../src/interfaces/contextBinders/IContextBinder';
+
+// The handler calls contextBinder.detectChanges() itself, and an event expression runs through
+// contextBinder.expressionExecutor with contextBinder.context — the executeExpression handed to bind() is
+// not kept (it used to be captured by the listener closure for the life of the subscription).
+// `exec` receives (expression, executionParams), the same shape as bind()'s executeExpression.
+const bindContext = { name: 'context' };
+const binderWith = (detectChanges: () => void, exec: (expression: any, executionParams: any) => any = () => undefined): IContextBinder =>
+    <IContextBinder><unknown>{
+        detectChanges,
+        context: bindContext,
+        expressionExecutor: { executeExpression: (expression: any, _context: any, _nativeElement: any, executionParams: any) => exec(expression, executionParams) }
+    };
+
+// bind() still takes an executeExpression (IHandler contract); Events must not use it for event expressions
+const unusedExec = jest.fn();
 
 // ExecutionParams is built incrementally (add / addOrReplace); this keeps the specs terse.
 function createParams(names: Array<string>, values: Array<any>): ExecutionParams {
@@ -25,7 +41,7 @@ describe('Events handler', () => {
         const el = document.createElement('div');
         for (const [name, expression] of Object.entries(events)) {
             el.setAttribute(
-                `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}${name}`,
+                `${Constants.HANDLERS.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}${name}`,
                 expression
             );
         }
@@ -45,8 +61,8 @@ describe('Events handler', () => {
 
     it('should detect event bindings', () => {
         const el = createElementWithEvents({ 'click': 'ctx.onClick($event)' });
-        const attrs = new Attributes(el, () => false);
-        const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+        const attrs = new Attributes(el, false);
+        const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
         expect(handler.hasNExpression).toBe(true);
         expect(handler.nExpression).toBeDefined();
@@ -55,8 +71,8 @@ describe('Events handler', () => {
 
     it('should have no expression when no event attributes', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
-        const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+        const attrs = new Attributes(el, false);
+        const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
         expect(handler.hasNExpression).toBe(false);
     });
@@ -66,28 +82,36 @@ describe('Events handler', () => {
             'click': 'ctx.onClick()',
             'mouseover': 'ctx.onHover()'
         });
-        const attrs = new Attributes(el, () => false);
-        const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+        const attrs = new Attributes(el, false);
+        const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
         expect(handler.nExpression!.size).toBe(2);
     });
 
     it('isDirty should always be false', () => {
         const el = createElementWithEvents({ 'click': 'ctx.onClick()' });
-        const attrs = new Attributes(el, () => false);
-        const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+        const attrs = new Attributes(el, false);
+        const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
         expect(handler.isDirty).toBe(false);
     });
 
-    describe('subscribe/unsubscribe', () => {
+    // subscribe is static: ElementSubscriptions reaches it through the NElement's native element, so a
+    // subscriber does not keep the Events handler (or any other handler) of that element alive.
+    describe('subscribe/unsubscribe (static Events.subscribe)', () => {
+        it('should be static — the handler instance has no subscribe', () => {
+            const el = document.createElement('div');
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges), mockGetManipulations);
+
+            expect(typeof Events.subscribe).toBe('function');
+            expect((handler as any).subscribe).toBeUndefined();
+        });
+
         it('should subscribe to a DOM event', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
 
             const callback = jest.fn();
-            const unsub = handler.subscribe('click', callback);
+            const unsub = Events.subscribe(el, 'click', callback);
 
             expect(typeof unsub).toBe('function');
 
@@ -95,27 +119,62 @@ describe('Events handler', () => {
             expect(callback).toHaveBeenCalledTimes(1);
         });
 
-        it('should invoke callback when event fires', () => {
+        it('should invoke the callback with the event on every dispatch', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
 
             const callback = jest.fn();
-            handler.subscribe('click', callback);
+            Events.subscribe(el, 'click', callback);
 
+            const first = new Event('click');
+            el.dispatchEvent(first);
+            el.dispatchEvent(new Event('click'));
+
+            expect(callback).toHaveBeenCalledTimes(2);
+            expect(callback).toHaveBeenNthCalledWith(1, first);
+        });
+
+        it('should subscribe on the given element only', () => {
+            const el = document.createElement('div');
+            const other = document.createElement('div');
+
+            const callback = jest.fn();
+            Events.subscribe(el, 'click', callback);
+
+            other.dispatchEvent(new Event('click'));
+            expect(callback).not.toHaveBeenCalled();
+        });
+
+        it('should pass the listener options through to addEventListener / removeEventListener', () => {
+            const el = document.createElement('div');
+            const add = jest.spyOn(el, 'addEventListener');
+            const remove = jest.spyOn(el, 'removeEventListener');
+            const callback = jest.fn();
+
+            const unsub = Events.subscribe(el, 'click', callback, { capture: true });
+            unsub();
+
+            expect(add).toHaveBeenCalledWith('click', callback, { capture: true });
+            expect(remove).toHaveBeenCalledWith('click', callback, { capture: true });
+        });
+
+        it('should honour once from the listener options', () => {
+            const el = document.createElement('div');
+
+            const callback = jest.fn();
+            Events.subscribe(el, 'click', callback, { once: true });
+
+            el.dispatchEvent(new Event('click'));
             el.dispatchEvent(new Event('click'));
             expect(callback).toHaveBeenCalledTimes(1);
         });
 
         it('should register independent listeners for every subscriber of the same event', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
 
             const cb1 = jest.fn();
             const cb2 = jest.fn();
-            handler.subscribe('click', cb1);
-            handler.subscribe('click', cb2);
+            Events.subscribe(el, 'click', cb1);
+            Events.subscribe(el, 'click', cb2);
 
             el.dispatchEvent(new Event('click'));
             // Both subscribers are live — no one-slot-per-event-name rule (R2-2)
@@ -125,11 +184,9 @@ describe('Events handler', () => {
 
         it('should unsubscribe from event', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
 
             const callback = jest.fn();
-            const unsub = handler.subscribe('click', callback);
+            const unsub = Events.subscribe(el, 'click', callback);
             unsub();
 
             // Listener was removed, so the callback should NOT fire
@@ -139,13 +196,11 @@ describe('Events handler', () => {
 
         it('should hand every subscriber its own unsubscribe (R2-2)', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
 
             const cb1 = jest.fn();
             const cb2 = jest.fn();
-            const unsub1 = handler.subscribe('click', cb1);
-            handler.subscribe('click', cb2);
+            const unsub1 = Events.subscribe(el, 'click', cb1);
+            Events.subscribe(el, 'click', cb2);
 
             unsub1();
 
@@ -158,14 +213,14 @@ describe('Events handler', () => {
         it('should not let a manual subscription block the nb-event template subscription (R2-2)', () => {
             // An aspect subscribing in its constructor runs before the first Events.bind()
             const el = createElementWithEvents({ 'click': 'this.onClick()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const exec = jest.fn().mockReturnValue(undefined);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges, exec), mockGetManipulations);
 
             const aspectCallback = jest.fn();
-            handler.subscribe('click', aspectCallback);
+            Events.subscribe(el, 'click', aspectCallback);
 
-            const exec = jest.fn().mockReturnValue(undefined);
-            handler.bind(undefined, exec);
+            handler.bind(undefined, unusedExec);
 
             el.dispatchEvent(new Event('click'));
 
@@ -175,26 +230,27 @@ describe('Events handler', () => {
 
         it('should keep manual subscriptions out of the template subscription map (R2-2)', () => {
             const el = createElementWithEvents({ 'mouseover': 'this.onHover()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
-            handler.subscribe('click', jest.fn());
+            Events.subscribe(el, 'click', jest.fn());
 
             expect(handler['_subscribed']!.size).toBe(0);
-            expect(handler['_unsubscribed']!.size).toBe(0);
+            // the unsubscribed set is created on the first permanent unsubscribe only
+            expect(handler['_unsubscribed']).toBeUndefined();
         });
 
         it('should not allocate the tracking maps without nb-event bindings, yet keep manual subscriptions working', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
             const callback = jest.fn();
 
             expect(handler.hasNExpression).toBe(false);
             expect(handler['_subscribed']).toBeUndefined();
             expect(handler['_unsubscribed']).toBeUndefined();
 
-            const unSubscribe = handler.subscribe('click', callback);
+            const unSubscribe = Events.subscribe(el, 'click', callback);
             el.dispatchEvent(new Event('click'));
             expect(callback).toHaveBeenCalledTimes(1);
 
@@ -205,11 +261,11 @@ describe('Events handler', () => {
 
         it('should dispose safely without nb-event bindings and leave manual subscriptions alone', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
             const callback = jest.fn();
 
-            handler.subscribe('click', callback);
+            Events.subscribe(el, 'click', callback);
 
             expect(() => handler.dispose()).not.toThrow();
 
@@ -221,11 +277,50 @@ describe('Events handler', () => {
     describe('bind', () => {
         it('should set up event subscriptions on first bind', () => {
             const el = createElementWithEvents({ 'click': 'ctx.onClick($event)' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
             handler.bind(undefined, () => undefined);
             expect(handler['_subscribed']!.has('click')).toBe(true);
+        });
+
+        it('should run the event expression through the binder executor with the binder context, not through bind()\'s executeExpression', () => {
+            const el = createElementWithEvents({ 'click': 'this.onClick()' });
+            const executeExpression = jest.fn().mockReturnValue(undefined);
+            const context = { name: 'live context' };
+            const binder = <IContextBinder><unknown>{ detectChanges: jest.fn(), context, expressionExecutor: { executeExpression } };
+            const handler = new Events(el, new Attributes(el, false), binder, mockGetManipulations);
+
+            handler.bind(undefined, unusedExec);
+            el.dispatchEvent(new Event('click'));
+
+            expect(unusedExec).not.toHaveBeenCalled();
+            expect(executeExpression).toHaveBeenCalledTimes(1);
+            expect(executeExpression).toHaveBeenCalledWith('this.onClick()', context, el, expect.any(ExecutionParams));
+            expect(binder.detectChanges).toHaveBeenCalledTimes(1);
+        });
+
+        it('should release the parsed bindings after the first bind and keep the listeners working', () => {
+            const el = createElementWithEvents({ 'click': 'this.onClick()', 'mouseover': 'this.onHover()' });
+            const exec = jest.fn();
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges, exec), mockGetManipulations);
+
+            expect(handler.nExpression!.size).toBe(2);
+
+            handler.bind(undefined, unusedExec);
+
+            // assigned, not deleted: a delete would switch the handler object to dictionary mode
+            expect(handler.nExpression).toBeUndefined();
+            expect(Object.prototype.hasOwnProperty.call(handler, 'nExpression')).toBe(true);
+            expect(handler.hasNExpression).toBe(true);
+
+            // later binds have nothing left to parse and must neither throw nor re-subscribe
+            expect(() => handler.bind(undefined, unusedExec)).not.toThrow();
+            expect(handler['_subscribed']!.size).toBe(2);
+
+            el.dispatchEvent(new Event('click'));
+            el.dispatchEvent(new Event('mouseover'));
+            expect(exec.mock.calls.map(call => call[0])).toEqual(['this.onClick()', 'this.onHover()']);
         });
     });
 
@@ -233,11 +328,11 @@ describe('Events handler', () => {
         it('should detect debounce from attribute name', () => {
             const el = document.createElement('div');
             el.setAttribute(
-                `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}input${Constants.META_VALUE_SEPARATOR}300`,
+                `${Constants.HANDLERS.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}input${Constants.META_VALUE_SEPARATOR}300`,
                 'ctx.onInput($event)'
             );
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
             expect(handler.hasNExpression).toBe(true);
             expect(handler.nExpression!.has('input')).toBe(true);
@@ -250,11 +345,11 @@ describe('Events handler', () => {
             const el = document.createElement('div');
             // nb-event: with no event name after the prefix separator
             el.setAttribute(
-                `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}`,
+                `${Constants.HANDLERS.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}`,
                 'ctx.onClick()'
             );
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
             // Should not register any event bindings since the event name is empty
             expect(handler.hasNExpression).toBe(true); // attribute prefix matched
@@ -267,26 +362,81 @@ describe('Events handler', () => {
     describe('event name parsing', () => {
         it('should parse correct event name for a single-event handler', () => {
             const el = createElementWithEvents({ 'focus': 'ctx.onFocus()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
             expect(handler.nExpression!.has('focus')).toBe(true);
             expect(handler.nExpression!.size).toBe(1);
         });
     });
 
+    // A non-debounced template subscription uses the handler itself as the listener (EventListenerObject):
+    // no closure per event; handleEvent finds the binding by evt.type. Only a debounced one goes through
+    // Events.subscribe, which wraps the callback in its timer.
     describe('bind subscription', () => {
-        it('should call subscribe on ElementSubscriptions when not yet subscribed', () => {
+        it('should register the handler itself as the listener when not yet subscribed', () => {
             const el = createElementWithEvents({ 'click': 'ctx.doSomething()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
-            const subscribeSpy = jest.spyOn(handler, 'subscribe');
+            const addSpy = jest.spyOn(el, 'addEventListener');
+            const subscribeSpy = jest.spyOn(Events, 'subscribe');
 
             handler.bind(undefined, () => undefined);
 
-            expect(subscribeSpy).toHaveBeenCalledWith('click', expect.any(Function), undefined, undefined);
-            expect(handler['_subscribed']!.has('click')).toBe(true);
+            expect(addSpy).toHaveBeenCalledTimes(1);
+            expect(addSpy).toHaveBeenCalledWith('click', handler);
+            expect(subscribeSpy).not.toHaveBeenCalled();
+            subscribeSpy.mockRestore();
+            // the subscription map holds the binding itself (nExpression is released after the first bind)
+            expect(handler['_subscribed']!.get('click')!.nExpression.expression).toBe('ctx.doSomething()');
+        });
+
+        it('should subscribe a debounced event through Events.subscribe and keep its unSubscribe on the binding', () => {
+            const el = createElementWithEvents({ [`input${Constants.META_VALUE_SEPARATOR}300`]: 'ctx.doSomething()' });
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
+
+            const subscribeSpy = jest.spyOn(Events, 'subscribe');
+
+            handler.bind(undefined, () => undefined);
+
+            expect(subscribeSpy).toHaveBeenCalledWith(el, 'input', expect.any(Function), undefined, 300);
+            subscribeSpy.mockRestore();
+            expect(handler['_subscribed']!.get('input')!.unSubscribe).toEqual(expect.any(Function));
+        });
+
+        it('should leave unSubscribe unset for a non-debounced binding', () => {
+            const el = createElementWithEvents({ 'click': 'ctx.doSomething()' });
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges), mockGetManipulations);
+
+            handler.bind(undefined, () => undefined);
+
+            expect(handler['_subscribed']!.get('click')!.unSubscribe).toBeUndefined();
+        });
+
+        it('should run only the binding of the dispatched event type', () => {
+            const el = createElementWithEvents({ 'click': 'this.onClick()', 'mouseover': 'this.onHover()' });
+            const exec = jest.fn().mockReturnValue(undefined);
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges, exec), mockGetManipulations);
+
+            handler.bind(undefined, unusedExec);
+            el.dispatchEvent(new Event('mouseover'));
+
+            expect(exec).toHaveBeenCalledTimes(1);
+            expect(exec.mock.calls[0][0]).toBe('this.onHover()');
+        });
+
+        it('should ignore an event type it is not subscribed to when handleEvent is called directly', () => {
+            const el = createElementWithEvents({ 'click': 'this.onClick()' });
+            const exec = jest.fn().mockReturnValue(undefined);
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges, exec), mockGetManipulations);
+
+            handler.bind(undefined, unusedExec);
+            handler.handleEvent(new Event('keydown'));
+
+            expect(exec).not.toHaveBeenCalled();
+            expect(mockDetectChanges).not.toHaveBeenCalled();
         });
     });
 
@@ -297,7 +447,7 @@ describe('Events handler', () => {
         function createRawEvent(rawName: string, expression: string): Element {
             const el = document.createElement('div');
             el.setAttribute(
-                `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}${rawName}`,
+                `${Constants.HANDLERS.EVENT_HANDLER_ATTRIBUTE_PREFIX_NAME}${Constants.META_VALUE_SEPARATOR}${rawName}`,
                 expression
             );
             return el;
@@ -305,7 +455,7 @@ describe('Events handler', () => {
 
         function buildHandler(rawName: string): Events {
             const el = createRawEvent(rawName, 'this.onEvent()');
-            return new Events(el, new Attributes(el, () => false), mockGetManipulations, mockDetectChanges);
+            return new Events(el, new Attributes(el, false), binderWith(mockDetectChanges), mockGetManipulations);
         }
 
         it('should keep a namespaced event name intact', () => {
@@ -361,12 +511,17 @@ describe('Events handler', () => {
 
         it('should subscribe with the namespaced name and no debounce', () => {
             const el = createRawEvent(`plugin${Constants.META_VALUE_SEPARATOR}ready`, 'this.onEvent()');
-            const handler = new Events(el, new Attributes(el, () => false), mockGetManipulations, mockDetectChanges);
-            const subscribeSpy = jest.spyOn(handler, 'subscribe');
+            const exec = jest.fn().mockReturnValue(undefined);
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges, exec), mockGetManipulations);
+            const addSpy = jest.spyOn(el, 'addEventListener');
 
             handler.bind(undefined, () => undefined);
 
-            expect(subscribeSpy).toHaveBeenCalledWith('plugin:ready', expect.any(Function), undefined, undefined);
+            expect(addSpy).toHaveBeenCalledWith('plugin:ready', handler);
+
+            // no debounce: the expression runs synchronously on dispatch
+            el.dispatchEvent(new Event('plugin:ready'));
+            expect(exec).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -376,11 +531,11 @@ describe('Events handler', () => {
 
         it('debounce wraps callback in setTimeout', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
             const callback = jest.fn();
 
-            handler.subscribe('input', callback, undefined, 200);
+            Events.subscribe(el, 'input', callback, undefined, 200);
 
             el.dispatchEvent(new Event('input'));
             expect(callback).not.toHaveBeenCalled();
@@ -391,11 +546,11 @@ describe('Events handler', () => {
 
         it('debounce clears previous timeout on rapid events', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
             const callback = jest.fn();
 
-            handler.subscribe('input', callback, undefined, 200);
+            Events.subscribe(el, 'input', callback, undefined, 200);
 
             el.dispatchEvent(new Event('input'));
             jest.advanceTimersByTime(100);
@@ -417,11 +572,11 @@ describe('Events handler', () => {
 
         function createClickHandler(eventName: string = 'click') {
             const el = createElementWithEvents({ [eventName]: 'this.onClick(item)' });
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const addSpy = jest.spyOn(el, 'addEventListener');
             const removeSpy = jest.spyOn(el, 'removeEventListener');
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
             const exec = jest.fn().mockReturnValue(undefined);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges, exec), mockGetManipulations);
 
             return { el, handler, exec, addSpy, removeSpy };
         }
@@ -429,12 +584,12 @@ describe('Events handler', () => {
         it('should keep the same subscription when executionParams change', () => {
             const { handler, exec, addSpy, removeSpy } = createClickHandler();
 
-            handler.bind(createParams(['item'], [1]), exec);
+            handler.bind(createParams(['item'], [1]), unusedExec);
             const firstUnSubscribe = handler['_subscribed']!.get('click');
             expect(firstUnSubscribe).toBeDefined();
 
-            handler.bind(createParams(['item'], [2]), exec);
-            handler.bind(createParams(['item', 'index'], [3, 0]), exec);
+            handler.bind(createParams(['item'], [2]), unusedExec);
+            handler.bind(createParams(['item', 'index'], [3, 0]), unusedExec);
 
             expect(handler['_subscribed']!.get('click')).toBe(firstUnSubscribe);
             expect(addSpy).toHaveBeenCalledTimes(1);
@@ -442,27 +597,26 @@ describe('Events handler', () => {
         });
 
         it('should not re-subscribe when executionParams are equal', () => {
-            const { handler, exec } = createClickHandler();
-            const subscribeSpy = jest.spyOn(handler, 'subscribe');
+            const { handler, addSpy } = createClickHandler();
 
-            handler.bind(undefined, exec);
-            expect(subscribeSpy).toHaveBeenCalledTimes(1);
+            handler.bind(undefined, unusedExec);
+            expect(addSpy).toHaveBeenCalledTimes(1);
 
-            handler.bind(undefined, exec);
-            expect(subscribeSpy).toHaveBeenCalledTimes(1);
+            handler.bind(undefined, unusedExec);
+            expect(addSpy).toHaveBeenCalledTimes(1);
         });
 
         it('should run the handler with the params of the latest bind', () => {
             const { el, handler, exec } = createClickHandler();
 
-            handler.bind(createParams(['item'], ['first']), exec);
-            handler.bind(createParams(['item'], ['second']), exec);
+            handler.bind(createParams(['item'], ['first']), unusedExec);
+            handler.bind(createParams(['item'], ['second']), unusedExec);
             el.dispatchEvent(new Event('click'));
 
             expect(exec).toHaveBeenCalledTimes(1);
             expect(getExecutionParam(exec.mock.calls[0][1], 'item')).toBe('second');
 
-            handler.bind(undefined, exec);
+            handler.bind(undefined, unusedExec);
             el.dispatchEvent(new Event('click'));
 
             // the scope param is gone, only the event params are left
@@ -476,8 +630,8 @@ describe('Events handler', () => {
             const original = { id: 1, name: 'row' };
             const replacement = { id: 1, name: 'row' };
 
-            handler.bind(createParams(['item'], [original]), exec);
-            handler.bind(createParams(['item'], [replacement]), exec);
+            handler.bind(createParams(['item'], [original]), unusedExec);
+            handler.bind(createParams(['item'], [replacement]), unusedExec);
             el.dispatchEvent(new Event('click'));
 
             expect(getExecutionParam(exec.mock.calls[0][1], 'item')).toBe(replacement);
@@ -489,7 +643,7 @@ describe('Events handler', () => {
             const { el, handler, exec, addSpy, removeSpy } = createClickHandler();
 
             for (let cycle = 0; cycle < 5; cycle++) {
-                handler.bind(createParams(['item'], [() => cycle]), exec);
+                handler.bind(createParams(['item'], [() => cycle]), unusedExec);
             }
 
             expect(addSpy).toHaveBeenCalledTimes(1);
@@ -508,11 +662,11 @@ describe('Events handler', () => {
                 const { el, handler, exec } = createClickHandler(`input${Constants.META_VALUE_SEPARATOR}100`);
                 const event = new Event('input');
 
-                handler.bind(createParams(['item'], ['first']), exec);
+                handler.bind(createParams(['item'], ['first']), unusedExec);
                 el.dispatchEvent(event);
                 jest.advanceTimersByTime(50);
 
-                handler.bind(createParams(['item'], ['second']), exec);
+                handler.bind(createParams(['item'], ['second']), unusedExec);
                 expect(exec).not.toHaveBeenCalled();
 
                 jest.advanceTimersByTime(60);
@@ -520,7 +674,7 @@ describe('Events handler', () => {
                 expect(exec).toHaveBeenCalledTimes(1);
                 // the debounced handler reads the params when it runs, not when the event was captured
                 expect(getExecutionParam(exec.mock.calls[0][1], 'item')).toBe('second');
-                expect(getExecutionParam(exec.mock.calls[0][1], Constants.EVENT_EXECUTION_PARAM_NAME)).toBe(event);
+                expect(getExecutionParam(exec.mock.calls[0][1], Constants.EXPRESSIONS.EVENT_EXECUTION_PARAM_NAME)).toBe(event);
             } finally {
                 jest.useRealTimers();
             }
@@ -536,12 +690,11 @@ describe('Events handler', () => {
 
         it('handleSubscription: sync expression invokes detectChanges', () => {
             const el = createElementWithEvents({ 'click': 'this.clicked = true' });
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const detectChanges = jest.fn();
-            const handler = new Events(el, attrs, mockGetManipulations, detectChanges);
-
             const exec = jest.fn().mockReturnValue('syncResult');
-            handler.bind(undefined, exec);
+            const handler = new Events(el, attrs, binderWith(detectChanges, exec), mockGetManipulations);
+            handler.bind(undefined, unusedExec);
 
             el.dispatchEvent(new Event('click'));
 
@@ -551,12 +704,11 @@ describe('Events handler', () => {
 
         it('handleSubscription: async expression invokes detectChanges after resolution', async () => {
             const el = createElementWithEvents({ 'click': 'this.doAsync()' });
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const detectChanges = jest.fn();
-            const handler = new Events(el, attrs, mockGetManipulations, detectChanges);
-
             const exec = jest.fn().mockReturnValue(Promise.resolve());
-            handler.bind(undefined, exec);
+            const handler = new Events(el, attrs, binderWith(detectChanges, exec), mockGetManipulations);
+            handler.bind(undefined, unusedExec);
 
             el.dispatchEvent(new Event('click'));
 
@@ -567,12 +719,11 @@ describe('Events handler', () => {
 
         it('handleSubscription: isSingleBinded sync expression unsubscribes after first call', () => {
             const el = createElementWithEvents({ 'click': '#this.val' });
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const detectChanges = jest.fn();
-            const handler = new Events(el, attrs, mockGetManipulations, detectChanges);
-
             const exec = jest.fn().mockReturnValue('result');
-            handler.bind(undefined, exec);
+            const handler = new Events(el, attrs, binderWith(detectChanges, exec), mockGetManipulations);
+            handler.bind(undefined, unusedExec);
 
             el.dispatchEvent(new Event('click'));
             expect(handler['_unsubscribed']!.has('click')).toBe(true);
@@ -584,12 +735,11 @@ describe('Events handler', () => {
 
         it('handleSubscription: isSingleBinded async expression unsubscribes after resolution', async () => {
             const el = createElementWithEvents({ 'click': '#this.asyncVal' });
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const detectChanges = jest.fn();
-            const handler = new Events(el, attrs, mockGetManipulations, detectChanges);
-
             const exec = jest.fn().mockReturnValue(Promise.resolve());
-            handler.bind(undefined, exec);
+            const handler = new Events(el, attrs, binderWith(detectChanges, exec), mockGetManipulations);
+            handler.bind(undefined, unusedExec);
 
             el.dispatchEvent(new Event('click'));
 
@@ -599,16 +749,16 @@ describe('Events handler', () => {
 
         it('handleSubscription: the injected unSubscribe stops only the template handler', () => {
             const el = createElementWithEvents({ 'click': 'this.onClick()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
-
-            const aspectCallback = jest.fn();
-            handler.subscribe('click', aspectCallback);
-
+            const attrs = new Attributes(el, false);
             // The expression calls the injected unSubscribe param permanently
             const exec = jest.fn().mockImplementation((_expression, params) =>
-                getExecutionParam(params, Constants.UNSUBSCRIBE_EXECUTION_PARAM_NAME)());
-            handler.bind(undefined, exec);
+                getExecutionParam(params, Constants.EXPRESSIONS.UNSUBSCRIBE_EXECUTION_PARAM_NAME)());
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges, exec), mockGetManipulations);
+
+            const aspectCallback = jest.fn();
+            Events.subscribe(el, 'click', aspectCallback);
+
+            handler.bind(undefined, unusedExec);
 
             el.dispatchEvent(new Event('click'));
             el.dispatchEvent(new Event('click'));
@@ -641,12 +791,11 @@ describe('Events handler', () => {
         it('a rejecting handler is logged and never escapes as an unhandled rejection', async () => {
             const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
             const el = createElementWithEvents({ 'click': 'this.save()' });
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const detectChanges = jest.fn();
-            const handler = new Events(el, attrs, mockGetManipulations, detectChanges);
-
             const exec = jest.fn().mockReturnValue(Promise.reject(new Error('boom')));
-            handler.bind(undefined, exec);
+            const handler = new Events(el, attrs, binderWith(detectChanges, exec), mockGetManipulations);
+            handler.bind(undefined, unusedExec);
 
             const unhandled = await withUnhandledRejectionWatch(async () => {
                 el.dispatchEvent(new Event('click'));
@@ -662,11 +811,12 @@ describe('Events handler', () => {
         it('change detection still runs after a rejection', async () => {
             const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
             const el = createElementWithEvents({ 'click': 'this.save()' });
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const detectChanges = jest.fn();
-            const handler = new Events(el, attrs, mockGetManipulations, detectChanges);
+            const handler = new Events(el, attrs, binderWith(detectChanges, jest.fn().mockReturnValue(Promise.reject(new Error('boom')))),
+                                       mockGetManipulations);
 
-            handler.bind(undefined, jest.fn().mockReturnValue(Promise.reject(new Error('boom'))));
+            handler.bind(undefined, unusedExec);
 
             await withUnhandledRejectionWatch(async () => {
                 el.dispatchEvent(new Event('click'));
@@ -680,11 +830,11 @@ describe('Events handler', () => {
         it('a rejected single-bind (#) handler stays subscribed - by design, one-time means one success', async () => {
             const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
             const el = createElementWithEvents({ 'click': '#this.save()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, jest.fn());
-
+            const attrs = new Attributes(el, false);
             const exec = jest.fn().mockReturnValue(Promise.reject(new Error('boom')));
-            handler.bind(undefined, exec);
+            const handler = new Events(el, attrs, binderWith(jest.fn(), exec), mockGetManipulations);
+
+            handler.bind(undefined, unusedExec);
 
             await withUnhandledRejectionWatch(async () => {
                 el.dispatchEvent(new Event('click'));
@@ -692,7 +842,7 @@ describe('Events handler', () => {
             });
 
             // The attempt did not complete, so the one-time subscription is kept alive
-            expect(handler['_unsubscribed']!.has('click')).toBe(false);
+            expect(handler['_unsubscribed']).toBeUndefined();   // never allocated: nothing was unsubscribed
 
             await withUnhandledRejectionWatch(async () => {
                 el.dispatchEvent(new Event('click'));
@@ -707,9 +857,9 @@ describe('Events handler', () => {
     describe('unsubscribe idempotency', () => {
         it('calling unsubscribe twice does not throw', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
-            const unsub = handler.subscribe('click', jest.fn());
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
+            const unsub = Events.subscribe(el, 'click', jest.fn());
             unsub();
             // The listener is already gone, so a second call is a no-op
             // (removeEventListener is also a no-op for an unknown listener).
@@ -718,15 +868,15 @@ describe('Events handler', () => {
 
         it('the injected permanent unSubscribe short-circuits on repeat calls', () => {
             const el = createElementWithEvents({ 'click': 'this.onClick()' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
-
+            const attrs = new Attributes(el, false);
             let injectedUnSubscribe: (() => void) | undefined;
             const exec = jest.fn().mockImplementation((_expression, params) => {
-                injectedUnSubscribe = getExecutionParam(params, Constants.UNSUBSCRIBE_EXECUTION_PARAM_NAME);
+                injectedUnSubscribe = getExecutionParam(params, Constants.EXPRESSIONS.UNSUBSCRIBE_EXECUTION_PARAM_NAME);
                 injectedUnSubscribe!();
             });
-            handler.bind(undefined, exec);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges, exec), mockGetManipulations);
+
+            handler.bind(undefined, unusedExec);
 
             el.dispatchEvent(new Event('click'));
 
@@ -742,13 +892,12 @@ describe('Events handler', () => {
     describe('R2-4: the injected unSubscribe and the single template subscription', () => {
         function captureInjectedUnSubscribe(): { el: Element, handler: Events, exec: jest.Mock, last: () => (() => void) } {
             const el = createElementWithEvents({ 'click': 'this.onClick(unSubscribe)' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
-
+            const attrs = new Attributes(el, false);
             let injected: (() => void) | undefined;
             const exec = jest.fn().mockImplementation((_expression, params) => {
-                injected = getExecutionParam(params, Constants.UNSUBSCRIBE_EXECUTION_PARAM_NAME);
+                injected = getExecutionParam(params, Constants.EXPRESSIONS.UNSUBSCRIBE_EXECUTION_PARAM_NAME);
             });
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges, exec), mockGetManipulations);
 
             return { el, handler, exec, last: () => injected! };
         }
@@ -758,11 +907,11 @@ describe('Events handler', () => {
         it('an unSubscribe kept from an earlier dispatch still unsubscribes after the params change', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
-            handler.bind(createParams(['a'], [1]), exec);
+            handler.bind(createParams(['a'], [1]), unusedExec);
             el.dispatchEvent(new Event('click'));
             const keptUnSubscribe = last();
 
-            handler.bind(createParams(['a'], [2]), exec);
+            handler.bind(createParams(['a'], [2]), unusedExec);
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(2);
             expect(getExecutionParam(exec.mock.calls[1][1], 'a')).toBe(2);
@@ -778,8 +927,8 @@ describe('Events handler', () => {
         it('dispose removes the listener and an unSubscribe kept from before it becomes inert', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
-            handler.bind(createParams(['a'], [1]), exec);
-            handler.bind(createParams(['a'], [2]), exec);
+            handler.bind(createParams(['a'], [1]), unusedExec);
+            handler.bind(createParams(['a'], [2]), unusedExec);
             el.dispatchEvent(new Event('click'));
             const keptUnSubscribe = last();
 
@@ -787,17 +936,17 @@ describe('Events handler', () => {
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(1);
             expect(handler['_subscribed']!.size).toBe(0);
-            expect(handler['_unsubscribed']!.size).toBe(0);
+            expect(handler['_unsubscribed']).toBeUndefined();
 
             // after dispose the kept closure no longer matches a live subscription
             keptUnSubscribe();
-            expect(handler['_unsubscribed']!.size).toBe(0);
+            expect(handler['_unsubscribed']).toBeUndefined();
         });
 
         it('still unsubscribes permanently when the injected unSubscribe is called', () => {
             const { el, handler, exec, last } = captureInjectedUnSubscribe();
 
-            handler.bind(createParams(['a'], [1]), exec);
+            handler.bind(createParams(['a'], [1]), unusedExec);
             el.dispatchEvent(new Event('click'));
             last()();
 
@@ -805,7 +954,7 @@ describe('Events handler', () => {
             expect(handler['_subscribed']!.has('click')).toBe(false);
 
             // A param change must not resurrect a permanently unsubscribed event
-            handler.bind(createParams(['a'], [2]), exec);
+            handler.bind(createParams(['a'], [2]), unusedExec);
             el.dispatchEvent(new Event('click'));
             expect(exec).toHaveBeenCalledTimes(1);
             expect(handler['_subscribed']!.has('click')).toBe(false);
@@ -818,11 +967,10 @@ describe('Events handler', () => {
                 'click': 'this.onClick()',
                 'mouseover': 'this.onHover()'
             });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
-
+            const attrs = new Attributes(el, false);
             const exec = jest.fn().mockReturnValue(undefined);
-            handler.bind(undefined, exec);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges, exec), mockGetManipulations);
+            handler.bind(undefined, unusedExec);
 
             handler.dispose();
 
@@ -832,18 +980,18 @@ describe('Events handler', () => {
             expect(exec).not.toHaveBeenCalled();
 
             expect(handler['_subscribed']!.size).toBe(0);
-            expect(handler['_unsubscribed']!.size).toBe(0);
+            expect(handler['_unsubscribed']).toBeUndefined();
         });
 
         it('leaves manual subscriptions to their owner — dispose does not track them', () => {
             // Subscriptions made through ElementSubscriptions.subscribe are not registered in
             // _subscribed, so the caller owns the returned unsubscribe function.
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
 
             const callback = jest.fn();
-            const unsub = handler.subscribe('click', callback);
+            const unsub = Events.subscribe(el, 'click', callback);
 
             handler.dispose();
 
@@ -855,10 +1003,56 @@ describe('Events handler', () => {
             expect(callback).toHaveBeenCalledTimes(1);
         });
 
+        it('removes the handler listener for a plain event and calls the stored unSubscribe for a debounced one', () => {
+            jest.useFakeTimers();
+            try {
+                const el = createElementWithEvents({
+                    'click': 'this.onClick()',
+                    [`input${Constants.META_VALUE_SEPARATOR}200`]: 'this.onInput()'
+                });
+                const exec = jest.fn().mockReturnValue(undefined);
+                const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges, exec), mockGetManipulations);
+                const removeSpy = jest.spyOn(el, 'removeEventListener');
+
+                handler.bind(undefined, unusedExec);
+                const debouncedBinding = handler['_subscribed']!.get('input')!;
+                const debouncedUnSubscribe = jest.fn(debouncedBinding.unSubscribe!);
+                debouncedBinding.unSubscribe = debouncedUnSubscribe;
+
+                // a pending debounced call must be cancelled by dispose
+                el.dispatchEvent(new Event('input'));
+                handler.dispose();
+                jest.advanceTimersByTime(200);
+
+                expect(removeSpy).toHaveBeenCalledWith('click', handler);
+                expect(debouncedUnSubscribe).toHaveBeenCalledTimes(1);
+                expect(exec).not.toHaveBeenCalled();
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('two handlers on separate elements stay independent (the listener is per handler instance)', () => {
+            const el1 = createElementWithEvents({ 'click': 'this.one()' });
+            const el2 = createElementWithEvents({ 'click': 'this.two()' });
+            const exec = jest.fn().mockReturnValue(undefined);
+            const h1 = new Events(el1, new Attributes(el1, false), binderWith(mockDetectChanges, exec), mockGetManipulations);
+            const h2 = new Events(el2, new Attributes(el2, false), binderWith(mockDetectChanges, exec), mockGetManipulations);
+            h1.bind(undefined, unusedExec);
+            h2.bind(undefined, unusedExec);
+
+            h1.dispose();
+            el1.dispatchEvent(new Event('click'));
+            el2.dispatchEvent(new Event('click'));
+
+            expect(exec).toHaveBeenCalledTimes(1);
+            expect(exec.mock.calls[0][0]).toBe('this.two()');
+        });
+
         it('is safe to call when there are no subscriptions', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
             expect(() => handler.dispose()).not.toThrow();
         });
     });
@@ -866,8 +1060,8 @@ describe('Events handler', () => {
     describe('commit', () => {
         it('always returns false', () => {
             const el = createElementWithEvents({ 'click': 'this.x' });
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
             expect(handler.commit()).toBe(false);
         });
     });
@@ -875,10 +1069,96 @@ describe('Events handler', () => {
     describe('bind with no expression', () => {
         it('returns executionParams unchanged', () => {
             const el = document.createElement('div');
-            const attrs = new Attributes(el, () => false);
-            const handler = new Events(el, attrs, mockGetManipulations, mockDetectChanges);
+            const attrs = new Attributes(el, false);
+            const handler = new Events(el, attrs, binderWith(mockDetectChanges), mockGetManipulations);
             const params = { x: 1 } as any;
             expect(handler.bind(params, jest.fn())).toBe(params);
+        });
+    });
+
+    // The manipulation proxy is reachable from an nb-event only through the injected `element` param.
+    // When no expression references it, the creator is not kept (so the NElement can release its
+    // Classes / Styles / Attributes / Properties) and `element` is undefined at event time.
+    describe('element manipulations detection', () => {
+        it('should report false without nb-event', () => {
+            const el = document.createElement('div');
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges), mockGetManipulations);
+
+            expect(handler.hasElementManipulations).toBe(false);
+        });
+
+        it.each([
+            ['element.classes.add("on")', true],
+            ['this.select(element)', true],
+            ['this.select(item, element)', true],
+            ['element?.styles.set("color", "red")', true],
+            ['this.ref = element', true],
+            ['this.select(item?.id)', false],
+            ['this.elementCount++', false],
+            ['this.element = 1', false],
+            ['this.select(myElement)', false],
+            ['nativeElement.focus()', false],
+            ['this.onClick($element)', false],
+        ])('%s → %s', (expression, expected) => {
+            const el = createElementWithEvents({ 'click': expression });
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges), mockGetManipulations);
+
+            expect(handler.hasElementManipulations).toBe(expected);
+        });
+
+        it('should report true when any of several events references element', () => {
+            const el = createElementWithEvents({
+                'click': 'this.onClick()',
+                'mouseover': 'element.classes.add("hover")'
+            });
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges), mockGetManipulations);
+
+            expect(handler.hasElementManipulations).toBe(true);
+        });
+
+        it('should ignore a rejected duplicate handler that references element', () => {
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+            const el = createElementWithEvents({
+                'click:100': 'this.onClick()',
+                'click:200': 'element.classes.add("never")'
+            });
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges), mockGetManipulations);
+
+            expect(handler.nExpression!.size).toBe(1);
+            expect(handler.hasElementManipulations).toBe(false);
+            errorSpy.mockRestore();
+        });
+
+        it('should never create the proxy and pass element as undefined when no expression references it', () => {
+            const el = createElementWithEvents({ 'click': 'this.onClick()' });
+            const getManipulations = jest.fn(() => ({} as any));
+            const exec = jest.fn();
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges, exec), getManipulations);
+            handler.bind(undefined, unusedExec);
+            el.dispatchEvent(new Event('click'));
+
+            expect(exec).toHaveBeenCalledTimes(1);
+            const params = exec.mock.calls[0][1];
+            expect(params.names).toContain(Constants.EXPRESSIONS.ELEMENT_EXECUTION_PARAM_NAME);
+            expect(getExecutionParam(params, Constants.EXPRESSIONS.ELEMENT_EXECUTION_PARAM_NAME)).toBeUndefined();
+            expect(getManipulations).not.toHaveBeenCalled();
+            expect(mockDetectChanges).toHaveBeenCalledTimes(1);
+        });
+
+        it('should create the proxy at event time and pass it as element when an expression references it', () => {
+            const el = createElementWithEvents({ 'click': 'element.classes.add("on")' });
+            const manipulations = { kind: 'manipulations' };
+            const getManipulations = jest.fn(() => manipulations as any);
+            const exec = jest.fn();
+            const handler = new Events(el, new Attributes(el, false), binderWith(mockDetectChanges, exec), getManipulations);
+
+            expect(getManipulations).not.toHaveBeenCalled();
+
+            handler.bind(undefined, unusedExec);
+            el.dispatchEvent(new Event('click'));
+
+            expect(getManipulations).toHaveBeenCalledTimes(1);
+            expect(getExecutionParam(exec.mock.calls[0][1], Constants.EXPRESSIONS.ELEMENT_EXECUTION_PARAM_NAME)).toBe(manipulations);
         });
     });
 });

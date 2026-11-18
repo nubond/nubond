@@ -2,6 +2,9 @@ import { Component } from '../../../src/nElement/handlers/Component';
 import { Attributes } from '../../../src/nElement/handlers/Attributes';
 import { Environment } from '../../../src/Environment';
 import { Constants } from '../../../src/Constants';
+import { ElementManipulations } from '../../../src/models/injections/ElementManipulations';
+import { ElementSubscriptions } from '../../../src/models/injections/ElementSubscriptions';
+import { ChangeDetector } from '../../../src/models/injections/ChangeDetector';
 
 // polyfill CSSStyleSheet.replaceSync for jsdom
 if (typeof CSSStyleSheet.prototype.replaceSync !== 'function') {
@@ -12,15 +15,15 @@ describe('Component handler', () => {
     const mockGetManipulations = () => ({} as any);
     const mockGetSubscriptions = () => ({} as any);
     const mockGetEventDispatcher = () => ({} as any);
-    const mockIsVisible = () => true;
     const mockParentBinder = {} as any;
-    const mockParentNElement = {} as any;
+    const mockParentNElement = { isVisible: true } as any;   // visibility is read from the host NElement on bind
 
     /** Mock Environment.components for the handler to use */
     function mockComponentsEnv(opts: {
         has?: boolean;
         isReady?: boolean;
         tryPrepareResult?: boolean;
+        dependencies?: ReadonlySet<unknown>;
     } = {}) {
         const mockContextBinder = {
             bind: jest.fn(),
@@ -39,6 +42,7 @@ describe('Component handler', () => {
             instantiateBinder: jest.fn().mockReturnValue(mockContextBinder),
             instantiateContext: jest.fn().mockReturnValue(mockContext),
             tryPrepare: jest.fn().mockReturnValue(opts.tryPrepareResult ?? false),
+            getDependencies: jest.fn().mockReturnValue(opts.dependencies),
         };
 
         (Environment as any)._components = components;
@@ -50,9 +54,9 @@ describe('Component handler', () => {
     function createComponentHandler(tagName: string) {
         const el = document.createElement(tagName);
         (el as any).$bind = jest.fn();
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Component(el, attrs, mockParentBinder, mockParentNElement, mockGetManipulations, mockGetSubscriptions,
-                                      mockGetEventDispatcher, mockIsVisible);
+                                      mockGetEventDispatcher);
         return { el, attrs, handler };
     }
 
@@ -62,9 +66,9 @@ describe('Component handler', () => {
 
     it('should have no expression for unregistered element', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
+        const attrs = new Attributes(el, false);
         const handler = new Component(el, attrs, mockParentBinder, mockParentNElement, mockGetManipulations, mockGetSubscriptions, 
-                                      mockGetEventDispatcher, mockIsVisible);
+                                      mockGetEventDispatcher);
 
         expect(handler.hasNExpression).toBe(false);
     });
@@ -92,7 +96,7 @@ describe('Component handler', () => {
         it('should mark ready and instantiate binder on first commit', () => {
             mockComponentsEnv({ has: true, isReady: true });
             const { handler, attrs, el } = createComponentHandler('my-widget');
-            const readyAttr = `${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.COMPONENT_MARKER_ATTRIBUTE_NAME}${Constants.DEFAULT_SEPARATOR}${Constants.HANDLER_READY_ATTRIBUTE_SUFFIX}`;
+            const readyAttr = `${Constants.HANDLERS.COMPONENT_MARKER_ATTRIBUTE_NAME}${Constants.HANDLERS.HANDLER_READY_MARKER_ATTRIBUTE_SUFFIX}`;
             expect(el.hasAttribute(readyAttr)).toBe(false);
 
             // The handler sets isEntityDataDirty in the constructor, so just commit
@@ -127,9 +131,9 @@ describe('Component handler', () => {
             const env1 = mockComponentsEnv({ has: true, isReady: true });
             const el = document.createElement('my-widget');
             (el as any).$bind = jest.fn();
-            const attrs = new Attributes(el, () => false);
+            const attrs = new Attributes(el, false);
             const handler = new Component(el, attrs, mockParentBinder, mockParentNElement, mockGetManipulations, mockGetSubscriptions,
-                                          mockGetEventDispatcher, mockIsVisible);
+                                          mockGetEventDispatcher);
 
             handler.commit(); // first commit
             expect(env1.mockContextBinder.dispose).not.toHaveBeenCalled();
@@ -165,6 +169,101 @@ describe('Component handler', () => {
             envMock.components.isReady.mockReturnValue(true);
             tryPrepareCallback();
             // The callback sets isEntityDataDirty and calls commit
+        });
+    });
+
+    // The manipulation / subscription proxies are only reachable when the component context asks for
+    // them through DI; otherwise the creators are not kept (so the NElement's Attributes / Styles /
+    // Properties / Classes can be released) and the context receives undefined in their place.
+    describe('element manipulations / subscriptions dependencies', () => {
+        function createWithCreators(tagName: string) {
+            const manipulations = { kind: 'manipulations' };
+            const subscriptions = { kind: 'subscriptions' };
+            const eventDispatcher = { kind: 'eventDispatcher' };
+            const getManipulations = jest.fn(() => manipulations as any);
+            const getSubscriptions = jest.fn(() => subscriptions as any);
+            const getEventDispatcher = jest.fn(() => eventDispatcher as any);
+
+            const el = document.createElement(tagName);
+            (el as any).$bind = jest.fn();
+            const handler = new Component(el, new Attributes(el, false), mockParentBinder, mockParentNElement,
+                                          getManipulations, getSubscriptions, getEventDispatcher);
+
+            return { el, handler, getManipulations, getSubscriptions, manipulations, subscriptions, eventDispatcher };
+        }
+
+        it('should report neither for an element that is not a component', () => {
+            mockComponentsEnv({ has: false });
+            const { handler } = createWithCreators('div');
+
+            expect(handler.hasNExpression).toBe(false);
+            expect(handler.hasElementManipulations).toBe(false);
+            expect(handler.hasElementSubscriptions).toBe(false);
+        });
+
+        it('should report neither when the component dependencies are unknown', () => {
+            const { components } = mockComponentsEnv({ has: true, dependencies: undefined });
+            const { handler } = createWithCreators('my-widget');
+
+            expect(components.getDependencies).toHaveBeenCalledWith('my-widget');
+            expect(handler.hasElementManipulations).toBe(false);
+            expect(handler.hasElementSubscriptions).toBe(false);
+        });
+
+        it('should report neither when the context injects other services only', () => {
+            mockComponentsEnv({ has: true, dependencies: new Set([ChangeDetector]) });
+            const { handler } = createWithCreators('my-widget');
+
+            expect(handler.hasElementManipulations).toBe(false);
+            expect(handler.hasElementSubscriptions).toBe(false);
+        });
+
+        it.each([
+            ['ElementManipulations only', [ElementManipulations], true, false],
+            ['ElementSubscriptions only', [ElementSubscriptions], false, true],
+            ['both', [ElementManipulations, ElementSubscriptions], true, true],
+        ])('should report the injected proxies (%s)', (_label, dependencies, manipulations, subscriptions) => {
+            mockComponentsEnv({ has: true, dependencies: new Set(dependencies) });
+            const { handler } = createWithCreators('my-widget');
+
+            expect(handler.hasElementManipulations).toBe(manipulations);
+            expect(handler.hasElementSubscriptions).toBe(subscriptions);
+        });
+
+        it('should pass undefined proxies and never call their creators when the context does not inject them', () => {
+            const { components } = mockComponentsEnv({ has: true, isReady: true, dependencies: new Set() });
+            const { el, handler, getManipulations, getSubscriptions, eventDispatcher } = createWithCreators('my-widget');
+
+            handler.commit();
+
+            expect(components.instantiateContext).toHaveBeenCalledWith('my-widget', el, expect.any(ChangeDetector),
+                                                                       undefined, undefined, eventDispatcher);
+            expect(getManipulations).not.toHaveBeenCalled();
+            expect(getSubscriptions).not.toHaveBeenCalled();
+        });
+
+        it('should pass the created proxies when the context injects them', () => {
+            const { components } = mockComponentsEnv({ has: true, isReady: true,
+                                                       dependencies: new Set([ElementManipulations, ElementSubscriptions]) });
+            const { el, handler, getManipulations, getSubscriptions, manipulations, subscriptions, eventDispatcher } = createWithCreators('my-widget');
+
+            handler.commit();
+
+            expect(components.instantiateContext).toHaveBeenCalledWith('my-widget', el, expect.any(ChangeDetector),
+                                                                       manipulations, subscriptions, eventDispatcher);
+            expect(getManipulations).toHaveBeenCalledTimes(1);
+            expect(getSubscriptions).toHaveBeenCalledTimes(1);
+        });
+
+        it('should create only the injected proxy when the context asks for one of them', () => {
+            const { components } = mockComponentsEnv({ has: true, isReady: true, dependencies: new Set([ElementSubscriptions]) });
+            const { el, handler, getManipulations, subscriptions, eventDispatcher } = createWithCreators('my-widget');
+
+            handler.commit();
+
+            expect(components.instantiateContext).toHaveBeenCalledWith('my-widget', el, expect.any(ChangeDetector),
+                                                                       undefined, subscriptions, eventDispatcher);
+            expect(getManipulations).not.toHaveBeenCalled();
         });
     });
 

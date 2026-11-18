@@ -5,7 +5,7 @@ import { Classes } from '../../../../src/nElement/handlers/Classes';
 import { Constants } from '../../../../src/Constants';
 
 describe('Case handler', () => {
-    const hideClassName = 'nb-hidden';
+    const hideClassName = Constants.STYLES.DEFAULT_HIDE_CLASS_NAME;   // Classes reads it from Constants (no getter is injected any more)
 
     function createSwitchAndCase(switchExpr: string, caseExpr: string): { 
         switchEl: Element; switchHandler: Switch;
@@ -13,15 +13,15 @@ describe('Case handler', () => {
         caseClasses: Classes;
     } {
         const switchEl = document.createElement('div');
-        switchEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_HANDLER_ATTRIBUTE_NAME}`, switchExpr);
-        const switchAttrs = new Attributes(switchEl, () => false);
-        const switchClasses = new Classes(switchEl, switchAttrs, () => hideClassName);
+        switchEl.setAttribute(`${Constants.HANDLERS.SWITCH_HANDLER_ATTRIBUTE_NAME}`, switchExpr);
+        const switchAttrs = new Attributes(switchEl, false);
+        const switchClasses = new Classes(switchEl, switchAttrs);
         const switchHandler = new Switch(switchEl, switchAttrs, switchClasses);
 
         const caseEl = document.createElement('div');
-        caseEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, caseExpr);
-        const caseAttrs = new Attributes(caseEl, () => false);
-        const caseClasses = new Classes(caseEl, caseAttrs, () => hideClassName);
+        caseEl.setAttribute(`${Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, caseExpr);
+        const caseAttrs = new Attributes(caseEl, false);
+        const caseClasses = new Classes(caseEl, caseAttrs);
         const caseHandler = new Case(caseEl, caseAttrs, caseClasses, switchHandler);
 
         return { switchEl, switchHandler, caseEl, caseHandler, caseClasses };
@@ -34,8 +34,8 @@ describe('Case handler', () => {
 
     it('should have no expression when attribute missing', () => {
         const el = document.createElement('div');
-        const attrs = new Attributes(el, () => false);
-        const classes = new Classes(el, attrs, () => hideClassName);
+        const attrs = new Attributes(el, false);
+        const classes = new Classes(el, attrs);
         const handler = new Case(el, attrs, classes, undefined);
 
         expect(handler.hasNExpression).toBe(false);
@@ -94,9 +94,9 @@ describe('Case handler', () => {
     it('should error and disable expression when case has no valid parent switch (M-37 fix)', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const caseEl = document.createElement('div');
-        caseEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'home');
-        const caseAttrs = new Attributes(caseEl, () => false);
-        const caseClasses = new Classes(caseEl, caseAttrs, () => hideClassName);
+        caseEl.setAttribute(`${Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'home');
+        const caseAttrs = new Attributes(caseEl, false);
+        const caseClasses = new Classes(caseEl, caseAttrs);
 
         // Pass undefined as controllingSwitch
         const caseHandler = new Case(caseEl, caseAttrs, caseClasses, undefined);
@@ -128,9 +128,9 @@ describe('Case handler', () => {
     it('should dispose without error when no removeFromParentSwitch', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const caseEl = document.createElement('div');
-        caseEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'test');
-        const caseAttrs = new Attributes(caseEl, () => false);
-        const caseClasses = new Classes(caseEl, caseAttrs, () => hideClassName);
+        caseEl.setAttribute(`${Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'test');
+        const caseAttrs = new Attributes(caseEl, false);
+        const caseClasses = new Classes(caseEl, caseAttrs);
         const caseHandler = new Case(caseEl, caseAttrs, caseClasses, undefined);
 
         // dispose should not throw even without valid parent switch
@@ -141,9 +141,9 @@ describe('Case handler', () => {
     it('isDirty getter should reflect internal state', () => {
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const caseEl = document.createElement('div');
-        caseEl.setAttribute(`${Constants.DEFAULT_PREFIX}${Constants.DEFAULT_SEPARATOR}${Constants.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'tab1');
-        const caseAttrs = new Attributes(caseEl, () => false);
-        const caseClasses = new Classes(caseEl, caseAttrs, () => hideClassName);
+        caseEl.setAttribute(`${Constants.HANDLERS.SWITCH_CASE_HANDLER_ATTRIBUTE_NAME}`, 'tab1');
+        const caseAttrs = new Attributes(caseEl, false);
+        const caseClasses = new Classes(caseEl, caseAttrs);
         const caseHandler = new Case(caseEl, caseAttrs, caseClasses, undefined);
 
         expect(caseHandler.isDirty).toBe(false);

@@ -350,7 +350,7 @@ Load a reference file when the task touches its area — don't read them all up 
 | `references/template-bindings.md` | Every `nb-*` attribute in full: exact syntax, semantics per data type, escaping, guard rails, projection |
 | `references/entities-and-di.md` | Decorator signatures, template sources, naming rules, DI resolution, built-in services, lifecycle hooks |
 | `references/routing-and-change-detection.md` | Route template grammar, Router API, slot binding, CD strategies, `@Detector`/`@Eventer`, manual triggers |
-| `references/project-setup.md` | Scaffolding a new app, Parcel/PostHTML/tsconfig wiring, file layout, the `add-*` CLI, reserved file names |
+| `references/project-setup.md` | Scaffolding a new app, Parcel/PostHTML/tsconfig wiring, file layout, the `add-*` CLI, reserved file names, unit-test setup (jsdom polyfills, Jest config for the ES-module package) |
 | `references/patterns.md` | Proven patterns from real apps: services, localization, adopted styles, third-party web components, base classes, binding-cost control |
 | `references/pitfalls.md` | Console error → cause → fix, plus the traps that don't produce errors |
 | `references/known-limitations.md` | **Confirmed framework limitations in 1.0.9** — data-flow, change detection, routing/deployment, DI, registration timing, security. Read before designing anything non-trivial, and when behavior defies explanation |

@@ -34,7 +34,7 @@ describe('ExpressionExecutor', () => {
         transformers = new Transformers(new Injectables());
         (Environment as any).transformers = transformers;
 
-        executor = new ExpressionExecutor(() => false);
+        executor = new ExpressionExecutor(false);
         element = document.createElement('div');
         jest.spyOn(console, 'error').mockImplementation();
         jest.spyOn(console, 'warn').mockImplementation();
@@ -202,7 +202,7 @@ describe('ExpressionExecutor', () => {
 
     describe('debug mode', () => {
         it('should throw on compilation error in debug mode', () => {
-            const debugExecutor = new ExpressionExecutor(() => true);
+            const debugExecutor = new ExpressionExecutor(true);
 
             expect(() => {
                 debugExecutor.executeExpression('this.is.bad.!!!', {}, element);
@@ -210,7 +210,7 @@ describe('ExpressionExecutor', () => {
         });
 
         it('should emit a warning for multi-statement fallback in debug mode', () => {
-            const debugExecutor = new ExpressionExecutor(() => true);
+            const debugExecutor = new ExpressionExecutor(true);
 
             debugExecutor.executeExpression('this.a = 1; this.b = 2', { a: 0, b: 0 }, element);
             expect(console.warn).toHaveBeenCalled();
@@ -441,7 +441,7 @@ describe('ExpressionExecutor', () => {
         });
 
         it('dispose should release the subscription and be repeatable', () => {
-            const other = new ExpressionExecutor(() => false);
+            const other = new ExpressionExecutor(false);
             expect(subscriptionCount()).toBe(2);
 
             other.dispose();

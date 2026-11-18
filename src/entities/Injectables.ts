@@ -10,6 +10,7 @@ import { Console } from '../Console';
 class InjectableMetaData {
     public readonly injectable: IInjectableConstructor | IContextConstructor | IComponentContextConstructor | IAspectContextConstructor | ITransformerContextConstructor;
     public readonly dependencies: Array<ObjectConstructor | IInjectableConstructor>;
+    public readonly dependenciesSet: Set<ObjectConstructor | IInjectableConstructor>;
     public readonly singleton: boolean;
 
     public instance: IInjectable | IContext | IComponentContext| IAspectContext | ITransformerContext | undefined;
@@ -18,6 +19,7 @@ class InjectableMetaData {
                 dependencies: Array<ObjectConstructor | IInjectableConstructor>, instanceOrSingletonFlag?: object | boolean) {
         this.injectable = injectable;
         this.dependencies = dependencies;
+        this.dependenciesSet = new Set(dependencies);
 
         if (Helpers.isObject(instanceOrSingletonFlag)) {
             this.singleton = true;
@@ -39,6 +41,14 @@ export class Injectables {
             return this.resolveInternal(injectableMetaData!, contextDependantInjections);
         } else {
             Console.error(`Injection '${injectable.name}' cannot be resolved.`);
+        }
+    }
+
+    public getDependencies(injectable: IInjectableConstructor | IContextConstructor | IComponentContextConstructor | IAspectContextConstructor): ReadonlySet<ObjectConstructor | IInjectableConstructor> | undefined {
+        const injectableMetaData = this._data.get(injectable);
+
+        if (!Helpers.isUndefined(injectableMetaData)) {
+            return injectableMetaData!.dependenciesSet;
         }
     }
     

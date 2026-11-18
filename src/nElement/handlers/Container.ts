@@ -37,7 +37,6 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
     private readonly _getEventDispatcher: (() => EventDispatcher) | undefined;
     private readonly _constructSubTree: (() => void) | undefined;
     private readonly _removeChildren: (() => void) | undefined;
-    private readonly _requestParentsDetectChanges: (() => void) | undefined;
 
     private readonly _associatedRouteSlot: string | undefined;
 
@@ -53,13 +52,9 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
     constructor(nativeElement: Element, attributes: Attributes,
                 parentContextBinder: IContextBinder, parentNElement: INElement,
                 getEventDispatcher: () => EventDispatcher,
-                isElementVisible: () => boolean,
                 constructSubTree: () => void,
-                removeChildren: () => void,
-                requestParentsDetectChanges: () => void,
-                notifyContainerAttached: (context: object) => void,
-                notifyContainerDetached: (context: object) => void) {
-        let expression = <string | undefined>attributes.get(Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, true);
+                removeChildren: () => void) {
+        let expression = <string | undefined>attributes.get(Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, true);
         let associatedRouteSlot: string | undefined;
 
         if (Helpers.isString(expression) && expression!.startsWith('%')) {
@@ -69,15 +64,13 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
 
         super(expression, 
               nativeElement, attributes, parentContextBinder, parentNElement,
-              Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME,
-              isElementVisible,
-              notifyContainerAttached, notifyContainerDetached);
+              Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME,
+              true);
         
         if (this.hasNExpression) {
             this._getEventDispatcher = getEventDispatcher;
             this._constructSubTree = constructSubTree;
             this._removeChildren = removeChildren;
-            this._requestParentsDetectChanges = requestParentsDetectChanges;
 
             if (Helpers.isString(associatedRouteSlot)) {
                 this._associatedRouteSlot = associatedRouteSlot;
@@ -87,7 +80,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
 
                     this._unSubscribeFromRouteOnStateChanged = Environment.router!.onAfterStateChange(() => {
                         this.setContextDataFromRoute();
-                        this._requestParentsDetectChanges!();
+                        this.parentContextBinder!.detectChanges();
                     });
                 } else {
                     Console.error(nativeElement, 'container is mapped to route, that is not configured.');
@@ -102,7 +95,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
                   executeExpression: (expression: string | null | undefined, 
                                       executionParams: ExecutionParams | undefined) => any): ExecutionParams | undefined {
         if (Helpers.isUndefined(this._associatedRouteSlot)) {
-            this.processExpressionExecution(this.nExpression!.nExpression, Constants.CONTAINER_HANDLER_ATTRIBUTE_NAME, 
+            this.processExpressionExecution(this.nExpression!.nExpression, Constants.HANDLERS.CONTAINER_HANDLER_ATTRIBUTE_NAME, 
                                             expression => executeExpression(expression, executionParams), 
                                             data => this.setContextData(Helpers.stringify(data)));
         }
@@ -218,7 +211,7 @@ export class Container extends ContextedBase<TemplateEntityContextData> {
 
         if (fallbackExists) {
             this._constructSubTree!();
-            this._requestParentsDetectChanges!();
+            this.parentContextBinder!.detectChanges();
         } else {
             let child = this.nativeElement!.firstChild;
             while (child !== null) {

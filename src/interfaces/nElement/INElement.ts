@@ -4,6 +4,9 @@
 // import { IContextBaseBindings } from './bindings/IContextBaseBindings';
 // import { ITemplateBindings } from './bindings/ITemplateBindings';
 
+// import { IElementManipulationsConsumer } from './IElementManipulationsConsumer';
+// import { IElementSubscriptionsConsumer } from './IElementSubscriptionsConsumer';
+
 import { IHandler } from './IHandler';
 import { IDisposable } from '../IDisposable';
 import { IVisible } from './IVisible';
@@ -31,7 +34,7 @@ import { Switch } from '../../nElement/handlers/switch/Switch';
 // import { Template } from '../../nElement/handlers/Template';
 // import { Bound } from '../../nElement/handlers/Bound';
 // import { Variables } from '../../nElement/handlers/Variables';
-//import { Projection } from '../../nElement/handlers/Projection';
+// import { Projection } from '../../nElement/handlers/Projection';
 
 export interface INTreeElement extends IDisposable {
     readonly isSubTreeHandled: boolean;
@@ -63,19 +66,22 @@ export interface INElement extends INTreeElement {
     // readonly value: Value & IHandler<IExpressionDetails>;
     // readonly html: Html & IHandler<IExpressionDetails>;
     // readonly if: If & IHandler<IExpressionDetails> & IVisible;
-    // readonly events: Events & IHandler<Map<string, IEventsBindings>> & IDisposable;
+    // readonly events: Events & IHandler<Map<string, IEventsBindings> | undefined> & IElementManipulationsConsumer & IDisposable;
     // readonly properties: Properties & IHandler<Map<string, IExpressionDetails>>;
     readonly repeat: (Repeat & IHandler<IExpressionDetails> & IVisible) | undefined;
     // readonly exec: Exec & IHandler<IExpressionDetails>;
     readonly switch: (Switch & IHandler<IExpressionDetails> & IVisible) | undefined;
     // readonly case: Case & IHandler<IExpressionDetails> & IDisposable;
     // readonly default: Default & IHandler<IExpressionDetails> & IDisposable;
-    // readonly bound: Bound & IHandler<IExpressionDetails>;
+    // readonly bound: Bound & IHandler<IExpressionDetails | undefined> & IElementManipulationsConsumer;
     // readonly variables: Variables & IHandler<Map<string, IExpressionDetails>>;
 
     // readonly container: Container & IHandler<IContextBaseBindings> & IDisposable;
-    // readonly component: Component & IHandler<IContextBaseBindings> & IDisposable;
-    // readonly aspects: Aspects & IHandler<Map<string, IAspectBindings>> & IDisposable & IConstructable;
-    // readonly template: Template & IHandler<ITemplateBindings> & IConstructable;
-    // readonly projection: Projection & IHandler<IExpressionDetails> & IConstructable;
+    // readonly component: Component & IHandler<IContextBaseBindings> & IElementManipulationsConsumer & IDisposable;
+    // readonly aspects: Aspects & IHandler<Map<string, IAspectBindings>> & IElementManipulationsConsumer & IDisposable;
+    // readonly template: Template & IHandler<ITemplateBindings | undefined> & IConstructable;
+    // readonly projection: Projection & IHandler<IExpressionDetails | undefined> & IDisposable;
+
+    remove(): void;
+    clone(): void;
 }
