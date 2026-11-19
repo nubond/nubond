@@ -80,7 +80,7 @@ The same data-table app (js-framework-benchmark style) is built in each framewor
 | Startup to first render (ms) | 34.2 | 33.5 | **28.4** | 45.4 |
 | JS heap with 1,000 rows (MB) | 3.4 | **2.6** | 2.7 | 3.1 |
 
-<sub>Chrome 157, Intel Core Ultra 5 125H, Windows 11, 2026-11-18. Re-run with `cd benchmarks && npm run all`.</sub>
+<sub>Chrome 157, Intel Core Ultra 5 125H, Windows 11, 2026-11-18.</sub>
 
 ## Quick Start
 
